@@ -1,0 +1,15 @@
+PROJECT_NAME = "BoBa"
+PROJECT_LOGO = logo/boba_icon_tiny.png
+
+INPUT = bibtex/boba_bibliography.html \
+        ../README.md \
+        ../README_CONTRIBUTING.md \
+        umpire_replays.md \
+        ../include/BOBA
+
+RECURSIVE = YES
+
+USE_MDFILE_AS_MAINPAGE = ../README.md
+HTML_HEADER = html_base/headerFile
+HTML_EXTRA_FILES = html_base/favicon.ico \
+			   bibtex/boba_bibliography.html

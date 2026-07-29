@@ -1,0 +1,71 @@
+# tests
+file_*
+
+!recipes
+
+# c++
+*.out
+*.o
+.vscode
+*.d
+
+# Codex
+.codex
+
+# matlab
+*.asv
+*.mat
+
+# mac
+.DS_Store
+
+# python 
+__pycache__
+*.json
+
+# images
+*.png
+
+# cuda 
+*.ncu-rep
+
+# dirs
+tpl_source
+build
+install
+CAL_LIB
+
+# other 
+*.dump
+*.tmp
+*.gch
+*.log
+*.core
+gpucore*
+*.swp
+*.report
+*.ult
+*.replay
+*.replay.bin
+*.raw
+.clangd
+caliper_lib_path*
+hdf5_lib_path*
+
+# bibtex cruft
+*.4ct
+*.4tc
+*.aux
+*.bbl
+*.blg
+*.css
+*.dvi
+*.html
+*.idv
+*.lg
+*.pdf
+*.xref
+
+# Doxygen
+html
+latex

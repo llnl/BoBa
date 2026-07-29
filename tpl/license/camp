@@ -1,0 +1,7 @@
+camp
+====
+
+Upstream package: `tpl/camp`
+Declared license: BSD 3-Clause License
+Retain the upstream notice file: `tpl/camp/NOTICE`
+Also retain `tpl/camp/LLVM_LICENSE` for LLVM-derived files.

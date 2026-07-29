@@ -1,0 +1,6 @@
+HDF5
+====
+
+Upstream package: `tpl/hdf5`
+Declared license: HDF5 license
+Retain `tpl/hdf5/COPYING` and `tpl/hdf5/COPYING_LBNL_HDF5`.

@@ -1,0 +1,37 @@
+BasedOnStyle: LLVM
+Language:        Cpp
+Standard:        c++20
+IndentWidth: 2
+ColumnLimit: 0
+BreakBeforeBraces: Allman
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortEnumsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLambdasOnASingleLine: None
+AllowShortLoopsOnASingleLine: false
+BinPackArguments: false
+BinPackParameters: false
+PackConstructorInitializers: Never
+AttributeMacros:
+  - __boba_host_device__
+Macros:
+  - __boba_device__=[[maybe_unused]]
+  - __boba_host__=[[maybe_unused]]
+BreakAfterAttributes: Always
+BreakConstructorInitializers: BeforeColon
+ConstructorInitializerAllOnOneLineOrOnePerLine: true
+ContinuationIndentWidth: 2
+FixNamespaceComments: true
+IncludeBlocks: Regroup
+SortIncludes: CaseSensitive
+SpaceAfterTemplateKeyword: true
+SpaceBeforeParens: ControlStatements
+SpaceBeforeCtorInitializerColon: true
+SpaceBeforeInheritanceColon: true
+SpaceBeforeRangeBasedForLoopColon: true
+PointerAlignment: Left
+ReferenceAlignment: Pointer
+LambdaBodyIndentation: OuterScope
+UseTab: Never

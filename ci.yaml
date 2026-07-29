@@ -1,0 +1,1451 @@
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+---
+  #
+  # This is the input script for ci.py
+  #
+  # executable_name:
+  #  test_name:
+  #    test options...
+
+  tutorial_inputs_and_debugging:
+    tutorial_inputs_and_debugging:
+      skip: []
+
+  tutorial_0_objects_loops:
+    tutorial_0_objects_loops:
+      skip: []
+
+  tutorial_1_tensors:
+    tutorial_1_tensors:
+      skip: []
+
+  tutorial_2_linear_algebra:
+    tutorial_2_linear_algebra:
+      skip: [hip]
+
+  tutorial_3_tensor_trains:
+    tutorial_3_tensor_trains:
+      skip: []
+
+  tutorial_4_tucker:
+    tutorial_4_tucker:
+      skip: [hip]
+
+  tutorial_5_dimension_trees:
+    tutorial_5_dimension_trees:
+      skip: [hip, cuda]
+
+  tutorial_6_htucker:
+    tutorial_6_htucker:
+      skip: [hip, cuda]
+
+  tutorial_7_quantized_tensor_trains:
+    tutorial_7_quantized_tensor_trains:
+      skip: []
+
+  tutorial_8_canonical_polyadic:
+     tutorial_8_canonical_polyadic:     
+      skip: []
+
+  test_abstractions:
+    test_abstractions:
+      skip: [cuda, hip]
+
+  test_argparse:
+    test_argparse_int_0010:
+      inputs: "--case int_0010 --required -n 0010"
+      skip: []
+    test_argparse_int_100:
+      inputs: "--case int_100 --required --number 100"
+      skip: []
+    test_argparse_int_neg7:
+      inputs: "--case int_neg7 --required -n -7"
+      skip: []
+    test_argparse_int_1e3_invalid:
+      inputs: "--case int_1e3_invalid --required -n 1e3"
+      skip: []
+    test_argparse_double_0p011:
+      inputs: "--case double_0p011 --required -d 0.011"
+      skip: []
+    test_argparse_double_1p00:
+      inputs: "--case double_1p00 --required --double 1.00"
+      skip: []
+    test_argparse_double_1:
+      inputs: "--case double_1 --required -d 1"
+      skip: []
+    test_argparse_double_1e_minus_2_lower:
+      inputs: "--case double_1e_minus_2_lower --required -d 1.0e-2"
+      skip: []
+    test_argparse_double_1e_minus_2_upper:
+      inputs: "--case double_1e_minus_2_upper --required -d 1.0E-2"
+      skip: []
+    test_argparse_double_neg2p5:
+      inputs: "--case double_neg2p5 --required -d -2.5"
+      skip: []
+    test_argparse_size_0010:
+      inputs: "--case size_0010 --required -s 0010"
+      skip: []
+    test_argparse_size_100:
+      inputs: "--case size_100 --required --size 100"
+      skip: []
+    test_argparse_size_0:
+      inputs: "--case size_0 --required -s 0"
+      skip: []
+    test_argparse_size_neg1_invalid:
+      inputs: "--case size_neg1_invalid --required -s -1"
+      skip: []
+    test_argparse_bool_string:
+      inputs: "--case bool_string --required --verbose --label alpha-beta"
+      skip: []
+    test_argparse_bool_default:
+      inputs: "--case bool_default --required"
+      skip: []
+    test_argparse_bool_duplicate:
+      inputs: "--case bool_duplicate --required -v -v"
+      skip: []
+    test_argparse_unknown_option:
+      inputs: "--case unknown_option --required --unknown"
+      skip: []
+    test_argparse_missing_argument:
+      inputs: "--case missing_argument --required -n"
+      skip: []
+    test_argparse_missing_required:
+      inputs: "--case missing_required"
+      skip: []
+
+  test_backsolve:
+    test_backsolve:
+      skip: []
+
+  test_boba_linear_algebra:
+    # QR
+    test_qr_double:
+      inputs: "--which 1"
+      skip: []
+    test_qr_single:
+      environment: "linalg_test_single_precision=1"
+      inputs: "--which 1"
+      skip: []
+    test_qr_complex_double:
+      environment: "linalg_test_complex_double_precision=1"
+      inputs: "--which 1"
+      skip: []
+    test_qr_complex_single:
+      environment: "linalg_test_complex_single_precision=1"
+      inputs: "--which 1"
+      skip: [ubsan]
+    # QRRR
+    test_qrrr_double:
+      inputs: "--which 2"
+      skip: [hip]
+    test_qrrr_single:
+      environment: "linalg_test_single_precision=1"
+      inputs: "--which 2"
+      skip: [cuda, hip]
+    test_qrrr_complex_double:
+      environment: "linalg_test_complex_double_precision=1"
+      inputs: "--which 2"
+      skip: [cuda, hip]
+    test_qrrr_complex_single:
+      environment: "linalg_test_complex_single_precision=1"
+      inputs: "--which 2"
+      skip: [cuda, hip, ubsan]
+    # SVD
+    test_svd_double:
+      inputs: "--which 3"
+      skip: []
+    test_svd_single:
+      environment: "linalg_test_single_precision=1"
+      inputs: "--which 3"
+      skip: []
+    test_svd_complex_double:
+      environment: "linalg_test_complex_double_precision=1"
+      inputs: "--which 3"
+      skip: []
+    test_svd_complex_single:
+      environment: "linalg_test_complex_single_precision=1"
+      inputs: "--which 3"
+      skip: [cuda, hip, ubsan]
+    test_svd_randomized_double:
+      inputs: "--which 8"
+      skip: []
+    test_svd_randomized_single:
+      environment: "linalg_test_single_precision=1"
+      inputs: "--which 8"
+      skip: []
+    test_svd_randomized_complex_double:
+      environment: "linalg_test_complex_double_precision=1"
+      inputs: "--which 8"
+      skip: []
+    test_svd_randomized_complex_single:
+      environment: "linalg_test_complex_single_precision=1"
+      inputs: "--which 8"
+      skip: []
+    # Truncated SVD
+    test_svd_truncated_double:
+      inputs: "--which 4"
+    test_svd_truncated_single:
+      environment: "linalg_test_single_precision=1"
+      inputs: "--which 4"
+      skip: [cuda]
+    test_svd_truncated_complex_double:
+      environment: "linalg_test_complex_double_precision=1"
+      inputs: "--which 4"
+      skip: [cuda]
+    test_svd_truncated_complex_single:
+      environment: "linalg_test_complex_single_precision=1"
+      inputs: "--which 4"
+      skip: [cuda]
+    # LU
+    test_lu_double:
+      inputs: "--which 5"
+    test_lu_single:
+      environment: "linalg_test_single_precision=1"
+      inputs: "--which 5"
+      skip: []
+    test_lu_complex_double:
+      environment: "linalg_test_complex_double_precision=1"
+      inputs: "--which 5"
+      skip: []
+    test_lu_complex_single:
+      environment: "linalg_test_complex_single_precision=1"
+      inputs: "--which 5"
+      skip: [ubsan]
+    # LU full pivot
+    test_lu_full_pivot_double:
+      inputs: "--which 6"
+    test_lu_full_pivot_single:
+      environment: "linalg_test_single_precision=1"
+      inputs: "--which 6"
+      skip: [cuda, hip]
+    test_lu_full_pivot_complex_double:
+      environment: "linalg_test_complex_double_precision=1"
+      inputs: "--which 6"
+      skip: [cuda, hip]
+    test_lu_full_pivot_complex_single:
+      environment: "linalg_test_complex_single_precision=1"
+      inputs: "--which 6"
+      skip: [cuda, hip, ubsan]
+    # Cholesky
+    test_choleskly_full_pivot_double:
+      inputs: "--which 7"
+    test_choleskly_full_pivot_single:
+      environment: "linalg_test_single_precision=1"
+      inputs: "--which 7"
+      skip: []
+    test_choleskly_full_pivot_complex_double:
+      environment: "linalg_test_complex_double_precision=1"
+      inputs: "--which 7"
+      skip: []
+    test_choleskly_full_pivot_complex_single:
+      environment: "linalg_test_complex_single_precision=1"
+      inputs: "--which 7"
+      skip: [ubsan]
+
+  test_cur:
+    # CUR decomposition
+    test_cur_double:
+      skip: [cuda, hip]
+
+  test_nnmf:
+    multiplicative_updates_ones:
+      inputs: "--scheme 0 --which 0"
+      skip: [cuda, hip]
+    multiplicative_updates_identity:
+      inputs: "--scheme 0 --which 1"
+      skip: [cuda, hip]
+    multiplicative_updates_checkerboard:
+      inputs: "--scheme 0 --which 2"
+      skip: [cuda, hip]
+    nonnegative_least_squares_ones:
+      inputs: "--scheme 1 --which 0"
+      skip: [cuda, hip]
+    nonnegative_least_squares_indentity:
+      inputs: "--scheme 1 --which 1"
+      skip: [cuda, hip]
+    nonnegative_least_squares_checkerboard:
+      inputs: "--scheme 1 --which 2"
+      skip: [cuda, hip]
+
+  test_nnls:
+    test_nnls:
+      skip: [cuda, hip]
+
+  test_boba_tensor_train:
+    test_boba_tensor_train:
+      skip: [hip]
+
+  test_simplicial_multiindexer:
+    test_simplicial_multiindexer:
+      skip: []
+
+  test_tt_pow:
+    test_tt_pow:
+      skip: [hip]
+
+  test_folding:
+    test_folding: {}
+
+  test_objects:
+    test_objects: {}
+
+  test_tensor_functions:
+    test_tensor_functions: {}
+
+  test_cross:
+    test_cross:
+      skip: [cuda, hip]
+
+  test_preconditioner:
+    test_preconditioned_gmres:
+      inputs: "--method 0"
+      skip: []
+    test_preconditioned_cg:
+      inputs: "--method 1"
+      skip: []
+    test_preconditioned_bicgstab:
+      inputs: "--method 2"
+      skip: []
+    test_preconditioned_flex_gmres:
+      inputs: "--method 3"
+      skip: []
+
+  test_quantized_tensor_train:
+    test_quantized_tensor_train:
+      skip: []
+
+  test_qtt_search:
+    test_qtt_search:
+      skip: [hip, cuda]
+
+  test_qtt_fft:
+    test_qtt_fft:
+      skip: []
+
+  test_qtt_support_functions:
+    test_qtt_support_functions:
+      skip: []
+
+  test_quantized_tensor_train_matrix:
+    test_quantized_tensor_train_matrix:
+      skip: [hip, cuda]
+
+  test_tensors:
+    test_tensors:
+      inputs: "--size_factor 1 --which 0"
+      skip: []
+
+  test_io:
+    # Tensors
+    test_tensor_io_3d_float:
+      inputs: "--dimension 3 --which 1 --datatype 1"
+      skip: [hip]
+    test_tensor_io_4d_float:
+      inputs: "--dimension 4 --which 1 --datatype 1"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_tensor_io_5d_float:
+      inputs: "--dimension 5 --which 1 --datatype 1"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_tensor_io_3d_complex_float:
+      inputs: "--dimension 3 --which 1 --datatype 2"
+      skip: [cuda, hip]
+    test_tensor_io_4d_complex_float:
+      inputs: "--dimension 4 --which 1 --datatype 2"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_tensor_io_5d_complex_float:
+      inputs: "--dimension 5 --which 1 --datatype 2"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_tensor_io_3d_double:
+      inputs: "--dimension 3 --which 1 --datatype 3"
+      skip: [hip]
+    test_tensor_io_4d_double:
+      inputs: "--dimension 4 --which 1 --datatype 3"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_tensor_io_5d_double:
+      inputs: "--dimension 5 --which 1 --datatype 3"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_tensor_io_3d_complex_double:
+      inputs: "--dimension 3 --which 1 --datatype 4"
+      skip: [cuda, hip]
+    test_tensor_io_4d_complex_double:
+      inputs: "--dimension 4 --which 1 --datatype 4"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_tensor_io_5d_complex_double:
+      inputs: "--dimension 5 --which 1 --datatype 4"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_tensor_io_3d_sizet:
+      inputs: "--dimension 3 --which 1 --datatype 5"
+      skip: [cuda, hip]
+    test_tensor_io_4d_sizet:
+      inputs: "--dimension 4 --which 1 --datatype 5"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_tensor_io_5d_sizet:
+      inputs: "--dimension 5 --which 1 --datatype 5"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_tensor_io_3d_int:
+      inputs: "--dimension 3 --which 1 --datatype 6"
+      skip: [cuda, hip]
+    test_tensor_io_4d_int:
+      inputs: "--dimension 4 --which 1 --datatype 6"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_tensor_io_5d_int:
+      inputs: "--dimension 5 --which 1 --datatype 6"
+      skip: [cuda, hip, debug, ubsan, asan]
+
+    # TTs
+    test_tt_io_3d_float:
+      inputs: "--dimension 3 --which 2 --datatype 1"
+      skip: [hip]
+    test_tt_io_4d_float:
+      inputs: "--dimension 4 --which 2 --datatype 1"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_tt_io_5d_float:
+      inputs: "--dimension 5 --which 2 --datatype 1"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_tt_io_3d_complex_float:
+      inputs: "--dimension 3 --which 2 --datatype 2"
+      skip: [cuda, hip, ubsan]
+    test_tt_io_4d_complex_float:
+      inputs: "--dimension 4 --which 2 --datatype 2"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_tt_io_5d_complex_float:
+      inputs: "--dimension 5 --which 2 --datatype 2"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_tt_io_3d_double:
+      inputs: "--dimension 3 --which 2 --datatype 3"
+      skip: [hip]
+    test_tt_io_4d_double:
+      inputs: "--dimension 4 --which 2 --datatype 3"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_tt_io_5d_double:
+      inputs: "--dimension 5 --which 2 --datatype 3"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_tt_io_3d_complex_double:
+      inputs: "--dimension 3 --which 2 --datatype 4"
+      skip: [cuda, hip]
+    test_tt_io_4d_complex_double:
+      inputs: "--dimension 4 --which 2 --datatype 4"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_tt_io_5d_complex_double:
+      inputs: "--dimension 5 --which 2 --datatype 4"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_tt_io_3d_sizet:
+      inputs: "--dimension 3 --which 2 --datatype 5"
+      skip: [cuda, hip, ubsan]
+    test_tt_io_4d_sizet:
+      inputs: "--dimension 4 --which 2 --datatype 5"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_tt_io_5d_sizet:
+      inputs: "--dimension 5 --which 2 --datatype 5"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_tt_io_3d_int:
+      inputs: "--dimension 3 --which 2 --datatype 6"
+      skip: [cuda, hip]
+    test_tt_io_4d_int:
+      inputs: "--dimension 4 --which 2 --datatype 6"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_tt_io_5d_int:
+      inputs: "--dimension 5 --which 2 --datatype 6"
+      skip: [cuda, hip, debug, ubsan, asan]
+
+    # TTM
+    test_ttm_io_3d_float:
+      inputs: "--dimension 3 --which 3 --datatype 1"
+      skip: [hip]
+    test_ttm_io_4d_float:
+      inputs: "--dimension 4 --which 3 --datatype 1"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_ttm_io_5d_float:
+      inputs: "--dimension 5 --which 3 --datatype 1"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_ttm_io_3d_complex_float:
+      inputs: "--dimension 3 --which 3 --datatype 2"
+      skip: [cuda, hip, ubsan]
+    test_ttm_io_4d_complex_float:
+      inputs: "--dimension 4 --which 3 --datatype 2"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_ttm_io_5d_complex_float:
+      inputs: "--dimension 5 --which 3 --datatype 2"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_ttm_io_3d_double:
+      inputs: "--dimension 3 --which 3 --datatype 3"
+      skip: [hip]
+    test_ttm_io_4d_double:
+      inputs: "--dimension 4 --which 3 --datatype 3"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_ttm_io_5d_double:
+      inputs: "--dimension 5 --which 3 --datatype 3"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_ttm_io_3d_complex_double:
+      inputs: "--dimension 3 --which 3 --datatype 4"
+      skip: [cuda, hip]
+    test_ttm_io_4d_complex_double:
+      inputs: "--dimension 4 --which 3 --datatype 4"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_ttm_io_5d_complex_double:
+      inputs: "--dimension 5 --which 3 --datatype 4"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_ttm_io_3d_sizet:
+      inputs: "--dimension 3 --which 3 --datatype 5"
+      skip: [cuda, hip, ubsan]
+    test_ttm_io_4d_sizet:
+      inputs: "--dimension 4 --which 3 --datatype 5"
+      skip: [cuda, hip, ubsan]
+    test_ttm_io_5d_sizet:
+      inputs: "--dimension 5 --which 3 --datatype 5"
+      skip: [cuda, hip, ubsan]
+    test_ttm_io_3d_int:
+      inputs: "--dimension 3 --which 3 --datatype 6"
+      skip: [cuda, hip]
+    test_ttm_io_4d_int:
+      inputs: "--dimension 4 --which 3 --datatype 6"
+      skip: [cuda, hip]
+    test_ttm_io_5d_int:
+      inputs: "--dimension 5 --which 3 --datatype 6"
+      skip: [cuda, hip]
+
+    # Tucker
+    test_Tucker_io_3d_float:
+      inputs: "--dimension 3 --which 4 --datatype 1"
+      skip: [hip]
+    test_Tucker_io_4d_float:
+      inputs: "--dimension 4 --which 4 --datatype 1"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_Tucker_io_5d_float:
+      inputs: "--dimension 5 --which 4 --datatype 1"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_Tucker_io_3d_complex_float:
+      inputs: "--dimension 3 --which 4 --datatype 2"
+      skip: [cuda, hip, ubsan]
+    test_Tucker_io_4d_complex_float:
+      inputs: "--dimension 4 --which 4 --datatype 2"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_Tucker_io_5d_complex_float:
+      inputs: "--dimension 5 --which 4 --datatype 2"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_Tucker_io_3d_double:
+      inputs: "--dimension 3 --which 4 --datatype 3"
+      skip: [hip]
+    test_Tucker_io_4d_double:
+      inputs: "--dimension 4 --which 4 --datatype 3"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_Tucker_io_5d_double:
+      inputs: "--dimension 5 --which 4 --datatype 3"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_Tucker_io_3d_complex_double:
+      inputs: "--dimension 3 --which 4 --datatype 4"
+      skip: [cuda, hip]
+    test_Tucker_io_4d_complex_double:
+      inputs: "--dimension 4 --which 4 --datatype 4"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_Tucker_io_5d_complex_double:
+      inputs: "--dimension 5 --which 4 --datatype 4"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_Tucker_io_3d_sizet:
+      inputs: "--dimension 3 --which 4 --datatype 5"
+      skip: [cuda, hip, ubsan]
+    test_Tucker_io_4d_sizet:
+      inputs: "--dimension 4 --which 4 --datatype 5"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_Tucker_io_5d_sizet:
+      inputs: "--dimension 5 --which 4 --datatype 5"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_Tucker_io_3d_int:
+      inputs: "--dimension 3 --which 4 --datatype 6"
+      skip: [cuda, hip]
+    test_Tucker_io_4d_int:
+      inputs: "--dimension 4 --which 4 --datatype 6"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_Tucker_io_5d_int:
+      inputs: "--dimension 5 --which 4 --datatype 6"
+      skip: [cuda, hip, debug, ubsan, asan]
+
+    # CPD
+    test_cpd_io_3d_float:
+      inputs: "--dimension 3 --which 5 --datatype 1"
+      skip: [hip]
+    test_cpd_io_4d_float:
+      inputs: "--dimension 4 --which 5 --datatype 1"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_cpd_io_5d_float:
+      inputs: "--dimension 5 --which 5 --datatype 1"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_cpd_io_3d_complex_float:
+      inputs: "--dimension 3 --which 5 --datatype 2"
+      skip: [cuda, hip]
+    test_cpd_io_4d_complex_float:
+      inputs: "--dimension 4 --which 5 --datatype 2"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_cpd_io_5d_complex_float:
+      inputs: "--dimension 5 --which 5 --datatype 2"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_cpd_io_3d_double:
+      inputs: "--dimension 3 --which 5 --datatype 3"
+      skip: [hip]
+    test_cpd_io_4d_double:
+      inputs: "--dimension 4 --which 5 --datatype 3"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_cpd_io_5d_double:
+      inputs: "--dimension 5 --which 5 --datatype 3"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_cpd_io_3d_complex_double:
+      inputs: "--dimension 3 --which 5 --datatype 4"
+      skip: [cuda, hip]
+    test_cpd_io_4d_complex_double:
+      inputs: "--dimension 4 --which 5 --datatype 4"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_cpd_io_5d_complex_double:
+      inputs: "--dimension 5 --which 5 --datatype 4"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_cpd_io_3d_sizet:
+      inputs: "--dimension 3 --which 5 --datatype 5"
+      skip: [cuda, hip]
+    test_cpd_io_4d_sizet:
+      inputs: "--dimension 4 --which 5 --datatype 5"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_cpd_io_5d_sizet:
+      inputs: "--dimension 5 --which 5 --datatype 5"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_cpd_io_3d_int:
+      inputs: "--dimension 3 --which 5 --datatype 6"
+      skip: [cuda, hip]
+    test_cpd_io_4d_int:
+      inputs: "--dimension 4 --which 5 --datatype 6"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_cpd_io_5d_int:
+      inputs: "--dimension 5 --which 5 --datatype 6"
+      skip: [cuda, hip, debug, ubsan, asan]
+
+    # QTT
+    test_qtt_io_3d_float:
+      inputs: "--dimension 3 --which 6 --datatype 1"
+      skip: [hip]
+    test_qtt_io_4d_float:
+      inputs: "--dimension 4 --which 6 --datatype 1"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_qtt_io_5d_float:
+      inputs: "--dimension 5 --which 6 --datatype 1"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_qtt_io_3d_complex_float:
+      inputs: "--dimension 3 --which 6 --datatype 2"
+      skip: [cuda, hip, ubsan]
+    test_qtt_io_4d_complex_float:
+      inputs: "--dimension 4 --which 6 --datatype 2"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_qtt_io_5d_complex_float:
+      inputs: "--dimension 5 --which 6 --datatype 2"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_qtt_io_3d_double:
+      inputs: "--dimension 3 --which 6 --datatype 3"
+      skip: [hip]
+    test_qtt_io_4d_double:
+      inputs: "--dimension 4 --which 6 --datatype 3"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_qtt_io_5d_double:
+      inputs: "--dimension 5 --which 6 --datatype 3"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_qtt_io_3d_complex_double:
+      inputs: "--dimension 3 --which 6 --datatype 4"
+      skip: [cuda, hip]
+    test_qtt_io_4d_complex_double:
+      inputs: "--dimension 4 --which 6 --datatype 4"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_qtt_io_5d_complex_double:
+      inputs: "--dimension 5 --which 6 --datatype 4"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_qtt_io_3d_sizet:
+      inputs: "--dimension 3 --which 6 --datatype 5"
+      skip: [cuda, hip]
+    test_qtt_io_4d_sizet:
+      inputs: "--dimension 4 --which 6 --datatype 5"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_qtt_io_5d_sizet:
+      inputs: "--dimension 5 --which 6 --datatype 5"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_qtt_io_3d_int:
+      inputs: "--dimension 3 --which 6 --datatype 6"
+      skip: [cuda, hip]
+    test_qtt_io_4d_int:
+      inputs: "--dimension 4 --which 6 --datatype 6"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_qtt_io_5d_int:
+      inputs: "--dimension 5 --which 6 --datatype 6"
+      skip: [cuda, hip, debug, ubsan, asan]
+
+    # Block vector
+    test_block_vector_io_3d_float:
+      inputs: "--dimension 3 --which 7 --datatype 1"
+      skip: [hip]
+    test_block_vector_io_4d_float:
+      inputs: "--dimension 4 --which 7 --datatype 1"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_vector_io_5d_float:
+      inputs: "--dimension 5 --which 7 --datatype 1"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_vector_io_3d_complex_float:
+      inputs: "--dimension 3 --which 7 --datatype 2"
+      skip: [cuda, hip, ubsan]
+    test_block_vector_io_4d_complex_float:
+      inputs: "--dimension 4 --which 7 --datatype 2"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_vector_io_5d_complex_float:
+      inputs: "--dimension 5 --which 7 --datatype 2"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_vector_io_3d_double:
+      inputs: "--dimension 3 --which 7 --datatype 3"
+      skip: [hip]
+    test_block_vector_io_4d_double:
+      inputs: "--dimension 4 --which 7 --datatype 3"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_vector_io_5d_double:
+      inputs: "--dimension 5 --which 7 --datatype 3"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_vector_io_3d_complex_double:
+      inputs: "--dimension 3 --which 7 --datatype 4"
+      skip: [cuda, hip]
+    test_block_vector_io_4d_complex_double:
+      inputs: "--dimension 4 --which 7 --datatype 4"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_vector_io_5d_complex_double:
+      inputs: "--dimension 5 --which 7 --datatype 4"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_vector_io_3d_sizet:
+      inputs: "--dimension 3 --which 7 --datatype 5"
+      skip: [cuda, hip, ubsan]
+    test_block_vector_io_4d_sizet:
+      inputs: "--dimension 4 --which 7 --datatype 5"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_vector_io_5d_sizet:
+      inputs: "--dimension 5 --which 7 --datatype 5"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_vector_io_3d_int:
+      inputs: "--dimension 3 --which 7 --datatype 6"
+      skip: [cuda, hip]
+    test_block_vector_io_4d_int:
+      inputs: "--dimension 4 --which 7 --datatype 6"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_vector_io_5d_int:
+      inputs: "--dimension 5 --which 7 --datatype 6"
+      skip: [cuda, hip, debug, ubsan, asan]
+
+    # Block operator
+    test_block_operator_io_3d_float:
+      inputs: "--dimension 3 --which 8 --datatype 1"
+      skip: [hip]
+    test_block_operator_io_4d_float:
+      inputs: "--dimension 4 --which 8 --datatype 1"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_operator_io_5d_float:
+      inputs: "--dimension 5 --which 8 --datatype 1"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_operator_io_3d_complex_float:
+      inputs: "--dimension 3 --which 8 --datatype 2"
+      skip: [cuda, hip, ubsan]
+    test_block_operator_io_4d_complex_float:
+      inputs: "--dimension 4 --which 8 --datatype 2"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_operator_io_5d_complex_float:
+      inputs: "--dimension 5 --which 8 --datatype 2"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_operator_io_3d_double:
+      inputs: "--dimension 3 --which 8 --datatype 3"
+      skip: [hip]
+    test_block_operator_io_4d_double:
+      inputs: "--dimension 4 --which 8 --datatype 3"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_operator_io_5d_double:
+      inputs: "--dimension 5 --which 8 --datatype 3"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_operator_io_3d_complex_double:
+      inputs: "--dimension 3 --which 8 --datatype 4"
+      skip: [cuda, hip]
+    test_block_operator_io_4d_complex_double:
+      inputs: "--dimension 4 --which 8 --datatype 4"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_operator_io_5d_complex_double:
+      inputs: "--dimension 5 --which 8 --datatype 4"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_operator_io_3d_sizet:
+      inputs: "--dimension 3 --which 8 --datatype 5"
+      skip: [cuda, hip, ubsan]
+    test_block_operator_io_4d_sizet:
+      inputs: "--dimension 4 --which 8 --datatype 5"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_operator_io_5d_sizet:
+      inputs: "--dimension 5 --which 8 --datatype 5"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_operator_io_3d_int:
+      inputs: "--dimension 3 --which 8 --datatype 6"
+      skip: [cuda, hip]
+    test_block_operator_io_4d_int:
+      inputs: "--dimension 4 --which 8 --datatype 6"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_operator_io_5d_int:
+      inputs: "--dimension 5 --which 8 --datatype 6"
+      skip: [cuda, hip, debug, ubsan, asan]
+
+    # Block tensor
+    test_block_tensor_io_3d_float:
+      inputs: "--dimension 3 --which 9 --datatype 1"
+      skip: [hip]
+    test_block_tensor_io_4d_float:
+      inputs: "--dimension 4 --which 9 --datatype 1"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_tensor_io_5d_float:
+      inputs: "--dimension 5 --which 9 --datatype 1"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_tensor_io_3d_complex_float:
+      inputs: "--dimension 3 --which 9 --datatype 2"
+      skip: [cuda, hip]
+    test_block_tensor_io_4d_complex_float:
+      inputs: "--dimension 4 --which 9 --datatype 2"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_tensor_io_5d_complex_float:
+      inputs: "--dimension 5 --which 9 --datatype 2"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_tensor_io_3d_double:
+      inputs: "--dimension 3 --which 9 --datatype 3"
+      skip: [hip]
+    test_block_tensor_io_4d_double:
+      inputs: "--dimension 4 --which 9 --datatype 3"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_tensor_io_5d_double:
+      inputs: "--dimension 5 --which 9 --datatype 3"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_tensor_io_3d_complex_double:
+      inputs: "--dimension 3 --which 9 --datatype 4"
+      skip: [cuda, hip]
+    test_block_tensor_io_4d_complex_double:
+      inputs: "--dimension 4 --which 9 --datatype 4"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_tensor_io_5d_complex_double:
+      inputs: "--dimension 5 --which 9 --datatype 4"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_tensor_io_3d_sizet:
+      inputs: "--dimension 3 --which 9 --datatype 5"
+      skip: [cuda, hip]
+    test_block_tensor_io_4d_sizet:
+      inputs: "--dimension 4 --which 9 --datatype 5"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_tensor_io_5d_sizet:
+      inputs: "--dimension 5 --which 9 --datatype 5"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_tensor_io_3d_int:
+      inputs: "--dimension 3 --which 9 --datatype 6"
+      skip: [cuda, hip]
+    test_block_tensor_io_4d_int:
+      inputs: "--dimension 4 --which 9 --datatype 6"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_block_tensor_io_5d_int:
+      inputs: "--dimension 5 --which 9 --datatype 6"
+      skip: [cuda, hip, debug, ubsan, asan]
+
+    # HTucker
+    test_HTucker_io_3d_float:
+      inputs: "--dimension 3 --which 10 --datatype 1"
+      skip: [hip]
+    test_HTucker_io_4d_float:
+      inputs: "--dimension 4 --which 10 --datatype 1"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_HTucker_io_5d_float:
+      inputs: "--dimension 5 --which 10 --datatype 1"
+      skip: [cpu, cuda, hip, debug, ubsan, asan]
+    test_HTucker_io_3d_complex_float:
+      inputs: "--dimension 3 --which 10 --datatype 2"
+      skip: [cuda, hip, ubsan]
+    test_HTucker_io_4d_complex_float:
+      inputs: "--dimension 4 --which 10 --datatype 2"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_HTucker_io_5d_complex_float:
+      inputs: "--dimension 5 --which 10 --datatype 2"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_HTucker_io_3d_double:
+      inputs: "--dimension 3 --which 10 --datatype 3"
+      skip: [hip]
+    test_HTucker_io_4d_double:
+      inputs: "--dimension 4 --which 10 --datatype 3"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_HTucker_io_5d_double:
+      inputs: "--dimension 5 --which 10 --datatype 3"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_HTucker_io_3d_complex_double:
+      inputs: "--dimension 3 --which 10 --datatype 4"
+      skip: [cuda, hip]
+    test_HTucker_io_4d_complex_double:
+      inputs: "--dimension 4 --which 10 --datatype 4"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_HTucker_io_5d_complex_double:
+      inputs: "--dimension 5 --which 10 --datatype 4"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_HTucker_io_3d_sizet:
+      inputs: "--dimension 3 --which 10 --datatype 5"
+      skip: [cuda, hip, ubsan]
+    test_HTucker_io_4d_sizet:
+      inputs: "--dimension 4 --which 10 --datatype 5"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_HTucker_io_5d_sizet:
+      inputs: "--dimension 5 --which 10 --datatype 5"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_HTucker_io_3d_int:
+      inputs: "--dimension 3 --which 10 --datatype 6"
+      skip: [cuda, hip]
+    test_HTucker_io_4d_int:
+      inputs: "--dimension 4 --which 10 --datatype 6"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_HTucker_io_5d_int:
+      inputs: "--dimension 5 --which 10 --datatype 6"
+      skip: [cuda, hip, debug, ubsan, asan]
+
+  test_fft:
+    test_fft:
+      skip: []
+
+  test_cp:
+    test_cp_1:
+       inputs: "--dimension 1"
+       skip: []
+    test_cp_2:
+       inputs: "--dimension 2"
+       skip: [cuda, hip]
+    test_cp_3:
+       inputs: "--dimension 3"
+       skip: [cuda, hip]
+    test_cp_4:
+       inputs: "--dimension 4 --size_base 3"
+       skip: []
+    test_cp_5:
+       inputs: "--dimension 5 --size_base 2"
+       skip: [cuda, hip]
+    test_cp_6:
+       inputs: "--dimension 6 --size_base 1"
+       skip: [cuda, hip]
+
+  test_static_views:
+    test_static_views_tt:
+      inputs: "--which 1"
+      skip: [cuda_h100]
+    test_static_views_tucker:
+      inputs: "--which 2"
+      skip: [cuda, hip]
+
+  test_ttm_norm:
+    test_ttm_norm:
+      inputs: "--rows 10 --columns 10"
+      skip: [hip]
+    rectangular:
+      inputs: "--rows 10 --columns 6"
+    rectangular_transpose:
+      inputs: "--rows 6 --columns 10"
+
+  test_tt_solvers:
+    test_amen_2d:
+      inputs: "--dimension 2 --which 0"
+      skip: [hip]
+    test_amen_3d:
+      inputs: "--dimension 3 --which 0"
+      skip: [cuda, hip]
+    test_amen_4d:
+      inputs: "--dimension 4 --which 0"
+      skip: [hip, cuda] # non-deterministic failures
+    test_amen_high:
+      inputs: "--resolution 64 --dimension 2 --which 0"
+      skip: [cuda, hip, debug]
+    test_amen_3d_high:
+      inputs: "--resolution 32 --dimension 3 --which 0"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_amen_4d_high:
+      inputs: "--resolution 16 --dimension 4 --which 0"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_amen_6d:
+      inputs: "--resolution 8 --dimension 6 --which 0"
+      skip: [cpu, cuda, hip, debug]
+    test_dmrg_2d:
+      inputs: "--dimension 2 --which 1"
+      skip: [hip]
+    test_dmrg_3d:
+      inputs: "--dimension 3 --which 1"
+      skip: [hip]
+    test_dmrg_4d:
+      inputs: "--dimension 4 --which 1"
+      skip: [hip, cuda, ubsan, asan]
+    test_dmrg_high:
+      inputs: "--resolution 64 --dimension 2 --which 1"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_dmrg_3d_high:
+      inputs: "--resolution 32 --dimension 3 --which 1"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_dmrg_4d_high:
+      inputs: "--resolution 16 --dimension 4 --which 1"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_dmrg_6d:
+      inputs: "--resolution 8 --dimension 6 --which 1"
+      skip: [cpu, cuda, hip, debug, ubsan, asan]
+
+  test_amen_block:
+    test_amen_block_2d:
+      inputs: "--dimension 2 --resolution 4 --coupling_strength 0.2 --coupling_rank 2 --exact_solution_rank 3 --max_direct_solve_size 0"
+      skip: [cuda, hip]
+    test_amen_block_3d:
+      inputs: "--dimension 3 --resolution 4 --coupling_strength 0.2 --coupling_rank 2 --exact_solution_rank 3 --max_direct_solve_size 0"
+      skip: [cuda, hip]
+    test_amen_block_4d:
+      inputs: "--dimension 4 --resolution 3 --coupling_strength 0.2 --coupling_rank 2 --exact_solution_rank 3 --max_direct_solve_size 0"
+      skip: [cuda, hip]
+    test_amen_block_singleton_3d:
+      inputs: "--dimension 3 --resolution 1 --coupling_strength 0.2 --coupling_rank 2 --exact_solution_rank 3 --max_direct_solve_size 0"
+      skip: [cuda, hip]
+
+  example_implicit:
+    bicgstab:
+      environment: "SOLVER=bicgstab"
+      inputs: "--svd_tolerance_relative 1.0e-4 --svd_tolerance_absolute 1.0e-12"
+      skip: [cuda, hip]
+    cg:
+      environment: "SOLVER=cg"
+      inputs: "--svd_tolerance_relative 1.0e-4 --svd_tolerance_absolute 1.0e-12"
+      skip: [cuda, hip]
+    gmres:
+      environment: "SOLVER=gmres"
+      inputs: "--svd_tolerance_relative 1.0e-4 --svd_tolerance_absolute 1.0e-12"
+      skip: [cuda, hip]
+    gmres_bandwidth:
+      environment: "SOLVER=gmres"
+      inputs: "--svd_tolerance_relative 1.0e-4 --svd_tolerance_absolute 1.0e-12 --bandwidth "
+      skip: [cuda, hip]
+    cg_bandwidth:
+      environment: "SOLVER=cg"
+      inputs: "--svd_tolerance_relative 1.0e-4 --svd_tolerance_absolute 1.0e-12 --bandwidth "
+      skip: [cuda, hip]
+    bicgstab_bandwidth:
+      environment: "SOLVER=bicgstab"
+      inputs: "--svd_tolerance_relative 1.0e-4 --svd_tolerance_absolute 1.0e-12 --bandwidth "
+      skip: [cuda, hip]
+    dirichlet_bicgstab:
+      environment: "SOLVER=bicgstab"
+      inputs: "--boundary-conditions 1 --svd_tolerance_relative 1.0e-4 --svd_tolerance_absolute 1.0e-12"
+      skip: [cuda, hip]
+    dirichlet_cg:
+      environment: "SOLVER=cg"
+      inputs: "--boundary-conditions 1 --svd_tolerance_relative 1.0e-4 --svd_tolerance_absolute 1.0e-12"
+      skip: [cuda, hip]
+    dirichlet_gmres:
+      environment: "SOLVER=gmres"
+      inputs: "--boundary-conditions 1 --svd_tolerance_relative 1.0e-4 --svd_tolerance_absolute 1.0e-12"
+      skip: [cuda, hip]
+    gmres:
+      environment: "SOLVER=gmres"
+      inputs: "--boundary-conditions 1 --svd_tolerance_relative 1.0e-4 --svd_tolerance_absolute 1.0e-12"
+      skip: [cuda, hip]
+
+  example_implicit_block:
+    gmres:
+      environment: "SOLVER=gmres"
+      inputs: "--boundary-conditions 1"
+      skip: [cpu, cuda, hip]
+    periodic_gmres:
+      environment: "SOLVER=gmres"
+      inputs: "--boundary-conditions 0"
+      skip: [cpu, cuda, hip]
+
+  example_eigel:
+    example_eigel:
+      inputs: "--compare_with_full"
+      skip: [hip]
+
+  test_krylov:
+    # GMRES
+    test_gmres_tt:
+      inputs: "-s 0 --krylov_method 0"
+      skip: [hip, cuda_h100]
+
+    test_gmres_tensor:
+      inputs: "-s 1 --krylov_method 0"
+      skip: []
+
+    test_gmres_tensor_lowmem:
+      inputs: "-s 1 --krylov_method 0"
+      environment: "TTMVEC_METHOD=LOWMEM"
+      skip: [cuda, hip]
+
+    test_gmres_vector:
+      inputs: "-s 2 --krylov_method 0"
+      skip: []
+
+    test_gmres_tucker:
+      inputs: "-s 3 --krylov_method 0"
+      skip: [cuda, hip]
+
+    test_gmres_block_tt:
+      inputs: "-s 4 --krylov_method 0"
+      skip: [hip]
+
+    test_gmres_block_qtt:
+      inputs: "-s 5 --krylov_method 0"
+      skip: [hip]
+
+    test_gmres_qrrr:
+      inputs: "-s 0 --krylov_method 0"
+      environment: "QR_TYPE=qrrr"
+      skip: [cuda, hip]
+
+    test_gmres_tt_bandwidth:
+      inputs: "-s 0 --krylov_method 0 --bandwidth"
+      skip: [hip, cuda_h100]
+
+    test_gmres_tensor_bandwidth:
+      inputs: "-s 1 --krylov_method 0 --bandwidth"
+      skip: []
+
+    test_gmres_tensor_lowmem_bandwidth:
+      inputs: "-s 1 --krylov_method 0 --bandwidth"
+      environment: "TTMVEC_METHOD=LOWMEM"
+      skip: [cuda, hip]
+
+    test_gmres_vector_bandwidth:
+      inputs: "-s 2 --krylov_method 0 --bandwidth"
+      skip: []
+
+    test_gmres_tucker_bandwidth:
+      inputs: "-s 3 --krylov_method 0 --bandwidth"
+      skip: [cuda, hip]
+
+    test_gmres_block_tt_bandwidth:
+      inputs: "-s 4 --krylov_method 0 --bandwidth"
+      skip: [hip]
+
+    test_gmres_block_qtt_bandwidth:
+      inputs: "-s 5 --krylov_method 0 --bandwidth"
+      skip: [hip]
+
+    test_gmres_qrrr_bandwidth:
+      inputs: "-s 0 --krylov_method 0 --bandwidth"
+      environment: "QR_TYPE=qrrr"
+      skip: [cuda, hip]
+
+    # CG
+    test_cg_tt:
+      inputs: "-s 0 --krylov_method 1"
+      skip: [hip]
+
+    test_cg_tensor:
+      inputs: "-s 1 --krylov_method 1"
+      skip: [hip]
+
+    test_cg_tensor_lowmem:
+      inputs: "-s 1 --krylov_method 1"
+      environment: "TTMVEC_METHOD=LOWMEM"
+      skip: [hip, cuda_h100]
+
+    test_cg_vector:
+      inputs: "-s 2 --krylov_method 1"
+      skip: [hip]
+
+    test_cg_tucker:
+      inputs: "-s 3 --krylov_method 1"
+      skip: [cuda, hip]
+
+    test_cg_block_tt:
+      inputs: "-s 4 --krylov_method 1"
+      skip: [hip, cuda_h100]
+
+    test_cg_block_qtt:
+      inputs: "-s 5 --krylov_method 1"
+      skip: [hip, cuda_h100]
+
+    test_cg_qrrr:
+      inputs: "-s 0 --krylov_method 1"
+      environment: "QR_TYPE=qrrr"
+      skip: [cuda, hip]
+
+    test_cg_tt_bandwidth:
+      inputs: "-s 0 --krylov_method 1 --bandwidth"
+      skip: [hip]
+
+    test_cg_tensor_bandwidth:
+      inputs: "-s 1 --krylov_method 1 --bandwidth"
+      skip: [hip]
+
+    test_cg_tensor_lowmem_bandwidth:
+      inputs: "-s 1 --krylov_method 1 --bandwidth"
+      environment: "TTMVEC_METHOD=LOWMEM"
+      skip: [hip, cuda_h100]
+
+    test_cg_vector_bandwidth:
+      inputs: "-s 2 --krylov_method 1 --bandwidth"
+      skip: [hip]
+
+    test_cg_tucker_bandwidth:
+      inputs: "-s 3 --krylov_method 1 --bandwidth"
+      skip: [cuda, hip]
+
+    test_cg_block_tt_bandwidth:
+      inputs: "-s 4 --krylov_method 1 --bandwidth"
+      skip: [hip, cuda_h100]
+
+    test_cg_block_qtt_bandwidth:
+      inputs: "-s 5 --krylov_method 1 --bandwidth"
+      skip: [hip, cuda_h100]
+
+    test_cg_qrrr_bandwidth:
+      inputs: "-s 0 --krylov_method 1 --bandwidth"
+      environment: "QR_TYPE=qrrr"
+      skip: [cuda, hip]
+
+    # BiCGstab
+    test_bicgstab_tt:
+      inputs: "-s 0 --krylov_method 2"
+      skip: [hip, cuda_h100]
+
+    test_bicgstab_tensor:
+      inputs: "-s 1 --krylov_method 2"
+      skip: [hip]
+
+    test_bicgstab_tensor_lowmem:
+      inputs: "-s 1 --krylov_method 2"
+      environment: "TTMVEC_METHOD=LOWMEM"
+      skip: [hip, cuda_h100]
+
+    test_bicgstab_vector:
+      inputs: "-s 2 --krylov_method 2"
+      skip: [cuda_h100]
+
+    test_bicgstab_tucker:
+      inputs: "-s 3 --krylov_method 2"
+      skip: [cuda, hip]
+
+    test_bicgstab_block_tt:
+      inputs: "-s 4 --krylov_method 2"
+      skip: [hip, cuda_h100]
+
+    test_bicgstab_block_qtt:
+      inputs: "-s 5 --krylov_method 2"
+      skip: [hip, cuda_h100]
+
+    test_bicgstab_qrrr:
+      inputs: "-s 0 --krylov_method 2"
+      environment: "QR_TYPE=qrrr"
+      skip: [cuda, hip]
+
+    test_bicgstab_tt_bandwidth:
+      inputs: "-s 0 --krylov_method 2 --bandwidth"
+      skip: [hip, cuda_h100]
+
+    test_bicgstab_tensor_bandwidth:
+      inputs: "-s 1 --krylov_method 2 --bandwidth"
+      skip: [hip]
+
+    test_bicgstab_tensor_lowmem_bandwidth:
+      inputs: "-s 1 --krylov_method 2 --bandwidth"
+      environment: "TTMVEC_METHOD=LOWMEM"
+      skip: [hip, cuda_h100]
+
+    test_bicgstab_vector_bandwidth:
+      inputs: "-s 2 --krylov_method 2 --bandwidth"
+      skip: [cuda_h100]
+
+    test_bicgstab_tucker_bandwidth:
+      inputs: "-s 3 --krylov_method 2 --bandwidth"
+      skip: [cuda, hip]
+
+    test_bicgstab_block_tt_bandwidth:
+      inputs: "-s 4 --krylov_method 2 --bandwidth"
+      skip: [hip, cuda_h100]
+
+    test_bicgstab_block_qtt_bandwidth:
+      inputs: "-s 5 --krylov_method 2 --bandwidth"
+      skip: [hip, cuda_h100]
+
+    test_bicgstab_qrrr_bandwidth:
+      inputs: "-s 0 --krylov_method 2 --bandwidth"
+      environment: "QR_TYPE=qrrr"
+      skip: [cuda, hip]
+
+    # Flexible GMRES
+    test_flex_gmres_tt:
+      inputs: "-s 0 --krylov_method 3"
+      skip: [hip, cuda_h100]
+
+    test_flex_gmres_tensor:
+      inputs: "-s 1 --krylov_method 3"
+      skip: []
+
+    test_flex_gmres_tensor_lowmem:
+      inputs: "-s 1 --krylov_method 3"
+      environment: "TTMVEC_METHOD=LOWMEM"
+      skip: [hip, cuda_h100]
+
+    test_flex_gmres_vector:
+      inputs: "-s 2 --krylov_method 3"
+      skip: []
+
+    test_flex_gmres_tucker:
+      inputs: "-s 3 --krylov_method 3"
+      skip: [cuda, hip]
+
+    test_flex_gmres_block_tt:
+      inputs: "-s 4 --krylov_method 3"
+      skip: [hip, cuda_h100]
+
+    test_flex_gmres_block_qtt:
+      inputs: "-s 5 --krylov_method 3"
+      skip: [hip, cuda_h100]
+
+    test_flex_gmres_qrrr:
+      inputs: "-s 0 --krylov_method 3"
+      environment: "QR_TYPE=qrrr"
+      skip: [cuda, hip]
+
+    test_flex_gmres_tt_bandwidth:
+      inputs: "-s 0 --krylov_method 3 --bandwidth"
+      skip: [hip, cuda_h100]
+
+    test_flex_gmres_tensor_bandwidth:
+      inputs: "-s 1 --krylov_method 3 --bandwidth"
+      skip: []
+
+    test_flex_gmres_tensor_lowmem_bandwidth:
+      inputs: "-s 1 --krylov_method 3 --bandwidth"
+      environment: "TTMVEC_METHOD=LOWMEM"
+      skip: [hip, cuda_h100]
+
+    test_flex_gmres_vector_bandwidth:
+      inputs: "-s 2 --krylov_method 3 --bandwidth"
+      skip: []
+
+    test_flex_gmres_tucker_bandwidth:
+      inputs: "-s 3 --krylov_method 3 --bandwidth"
+      skip: [cuda, hip]
+
+    test_flex_gmres_block_tt_bandwidth:
+      inputs: "-s 4 --krylov_method 3 --bandwidth"
+      skip: [hip, cuda_h100]
+
+    test_flex_gmres_block_qtt_bandwidth:
+      inputs: "-s 5 --krylov_method 3 --bandwidth"
+      skip: [hip, cuda_h100]
+
+    test_flex_gmres_qrrr_bandwidth:
+      inputs: "-s 0 --krylov_method 3 --bandwidth"
+      environment: "QR_TYPE=qrrr"
+      skip: [cuda, hip]
+
+    # Non-orthogonal GMRES
+    test_nonortho_gmres_tt:
+      inputs: "-s 0 --krylov_method 4"
+      skip: [hip, cuda_h100]
+
+    test_nonortho_gmres_tensor:
+      inputs: "-s 1 --krylov_method 4"
+      skip: [ubsan, asan]
+
+    test_nonortho_gmres_tensor_lowmem:
+      inputs: "-s 1 --krylov_method 4"
+      environment: "TTMVEC_METHOD=LOWMEM"
+      skip: [hip, cuda_h100, ubsan, asan]
+
+    test_nonortho_gmres_vector:
+      inputs: "-s 2 --krylov_method 4"
+      skip: [ubsan, asan]
+
+    test_nonortho_gmres_tucker:
+      inputs: "-s 3 --krylov_method 4"
+      skip: [cuda, hip, asan, ubsan]
+
+    test_nonortho_gmres_block_tt:
+      inputs: "-s 4 --krylov_method 4"
+      skip: [hip, cuda_h100, ubsan, asan]
+
+    test_nonortho_gmres_block_qtt:
+      inputs: "-s 5 --krylov_method 4"
+      skip: [hip, cuda_h100, ubsan, asan]
+
+    test_nonortho_gmres_qrrr:
+      inputs: "-s 0 --krylov_method 4"
+      environment: "QR_TYPE=qrrr"
+      skip: [cuda, hip, ubsan, asan]
+
+    test_nonortho_gmres_tt_bandwidth:
+      inputs: "-s 0 --krylov_method 4 --bandwidth"
+      skip: [hip, cuda_h100, ubsan, asan]
+
+    test_nonortho_gmres_tensor_bandwidth:
+      inputs: "-s 1 --krylov_method 4 --bandwidth"
+      skip: [ubsan, asan]
+
+    test_nonortho_gmres_tensor_lowmem_bandwidth:
+      inputs: "-s 1 --krylov_method 4 --bandwidth"
+      environment: "TTMVEC_METHOD=LOWMEM"
+      skip: [hip, cuda_h100, ubsan, asan]
+
+    test_nonortho_gmres_vector_bandwidth:
+      inputs: "-s 2 --krylov_method 4 --bandwidth"
+      skip: [ubsan, asan]
+
+    test_nonortho_gmres_tucker_bandwidth:
+      inputs: "-s 3 --krylov_method 4 --bandwidth"
+      skip: [cuda, hip, ubsan, asan]
+
+    test_nonortho_gmres_block_tt_bandwidth:
+      inputs: "-s 4 --krylov_method 4 --bandwidth"
+      skip: [hip, cuda_h100, ubsan, asan]
+
+    test_nonortho_gmres_block_qtt_bandwidth:
+      inputs: "-s 5 --krylov_method 4 --bandwidth"
+      skip: [hip, cuda_h100, ubsan, asan]
+
+    test_nonortho_gmres_qrrr_bandwidth:
+      inputs: "-s 0 --krylov_method 4 --bandwidth"
+      environment: "QR_TYPE=qrrr"
+      skip: [cuda, hip, ubsan, asan]
+
+  example_explicit:
+    file_dump:
+      environment: "FILE_DUMP=y"
+      skip: [cuda, hip]
+
+    advection:
+      inputs: "-s 0.0 -c 1.0 -d 0.0 -D 2"
+      skip: []
+
+    source_only:
+      inputs: "-s 1.0 -c 0.0 -d 0.0"
+      skip: [hip]
+
+    source_advection:
+      inputs: "-s 1.0 -c 1.0 -d 0.0"
+      skip: [hip]
+
+    source_advection_diffusion:
+      inputs: "-s 1.0 -c 1.0 -d 1.0"
+      skip: [cuda, hip]
+
+  example_explicit_burgers:
+    burgers_tensor:
+      skip: [cuda, hip]
+    burgers_tt_cross_maxvol:
+      skip: [cuda, hip]
+      inputs: "  --solver_type 1 -N 20 "
+    burgers_tt_cross_deim:
+      skip: [cuda, hip]
+      inputs: "  --solver_type 2 -N 20 "
+
+  test_tensor_train_matrix:
+    test_ttmatrix:
+      skip: [cuda, hip]
+
+  test_block_operator:
+    test_block_operator:
+      inputs: " "
+      skip: []
+
+  test_subtensorviews:
+    test_subtensorviews:
+      skip: []
+
+  test_orthogonalize:
+    test_orthogonalize:
+      skip: []
+
+  test_sum_and_round:
+    test_sum_and_round:
+      skip: []

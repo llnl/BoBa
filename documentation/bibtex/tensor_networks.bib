@@ -1,0 +1,522 @@
+
+@article{doi:10.1137/090752286,
+author = {Oseledets, I. V.},
+title = {Tensor-Train Decomposition},
+journal = {SIAM Journal on Scientific Computing},
+volume = {33},
+number = {5},
+pages = {2295-2317},
+year = {2011},
+doi = {10.1137/090752286},
+URL = {https://doi.org/10.1137/090752286},
+eprint = {https://doi.org/10.1137/090752286},
+abstract = { A simple nonrecursive form of the tensor decomposition in d dimensions is presented. It does not inherently suffer from the curse of dimensionality, it has asymptotically the same number of parameters as the canonical decomposition, but it is stable and its computation is based on low-rank approximation of auxiliary unfolding matrices. The new form gives a clear and convenient way to implement all basic operations efficiently. A fast rounding procedure is presented, as well as basic linear algebra operations. Examples showing the benefits of the decomposition are given, and the efficiency is demonstrated by the computation of the smallest eigenvalue of a 19-dimensional operator. }
+}
+
+@article{doi:10.1137/100818893,
+author = {Holtz, Sebastian and Rohwedder, Thorsten and Schneider, Reinhold},
+title = {The Alternating Linear Scheme for Tensor Optimization in the Tensor Train Format},
+journal = {SIAM Journal on Scientific Computing},
+volume = {34},
+number = {2},
+pages = {A683-A713},
+year = {2012},
+doi = {10.1137/100818893},
+URL = {https://doi.org/10.1137/100818893},
+eprint = {https://doi.org/10.1137/100818893},
+abstract = { Recent achievements in the field of tensor product approximation provide promising new formats for the representation of tensors in form of tree tensor networks. In contrast to the canonical r-term representation (CANDECOMP, PARAFAC), these new formats provide stable representations, while the amount of required data is only slightly larger. The tensor train (TT) format [SIAM J. Sci. Comput., 33 (2011), pp. 2295–2317], a simple special case of the hierarchical Tucker format [J. Fourier Anal. Appl., 5 (2009), p. 706], is a useful prototype for practical low-rank tensor representation. In this article, we show how optimization tasks can be treated in the TT format by a generalization of the well-known alternating least squares (ALS) algorithm and by a modified approach (MALS) that enables dynamical rank adaptation. A formulation of the component equations in terms of so-called retraction operators helps to show that many structural properties of the original problems transfer to the micro-iterations, giving what is to our knowledge the first stable generic algorithm for the treatment of optimization tasks in the tensor format. For the examples of linear equations and eigenvalue equations, we derive concrete working equations for the micro-iteration steps; numerical examples confirm the theoretical results concerning the stability of the TT decomposition and of ALS and MALS but also show that in some cases, high TT ranks are required during the iterative approximation of low-rank tensors, showing some potential of improvement. }
+}
+
+@misc{lee2016fundamental,
+      title={Fundamental Tensor Operations for Large-Scale Data Analysis in Tensor Train Formats},
+      author={Namgil Lee and Andrzej Cichocki},
+      year={2016},
+      eprint={1405.7786},
+      archivePrefix={arXiv},
+      primaryClass={math.NA}
+}
+
+@misc{kazeev2020quantized,
+      title={Quantized tensor FEM for multiscale problems: diffusion problems in two and three dimensions},
+      author={V. Kazeev and I. Oseledets and M. Rakhuba and Ch. Schwab},
+      year={2020},
+      eprint={2006.01455},
+      archivePrefix={arXiv},
+      primaryClass={math.NA}
+}
+
+@article{Lubich_2015,
+   title={Time Integration of Tensor Trains},
+   volume={53},
+   ISSN={1095-7170},
+   url={http://dx.doi.org/10.1137/140976546},
+   DOI={10.1137/140976546},
+   number={2},
+   journal={SIAM Journal on Numerical Analysis},
+   publisher={Society for Industrial & Applied Mathematics (SIAM)},
+   author={Lubich, Christian and Oseledets, Ivan V. and Vandereycken, Bart},
+   year={2015},
+   month=jan, pages={917–941} }
+
+@article{GUO2022111089,
+title = {A low rank tensor representation of linear transport and nonlinear Vlasov solutions and their associated flow maps},
+journal = {Journal of Computational Physics},
+volume = {458},
+pages = {111089},
+year = {2022},
+issn = {0021-9991},
+doi = {https://doi.org/10.1016/j.jcp.2022.111089},
+url = {https://www.sciencedirect.com/science/article/pii/S0021999122001516},
+author = {Wei Guo and Jing-Mei Qiu},
+keywords = {Low rank, Hierarchical Tuck decomposition of tensors, Vlasov dynamics, Flow map},
+abstract = {We propose a low-rank tensor approach to approximate linear transport and nonlinear Vlasov solutions and their associated flow maps. The approach takes advantage of the fact that the differential operators in the Vlasov equation are tensor friendly, based on which we propose a novel way to dynamically and adaptively build up low-rank solution basis by adding new basis functions from discretization of the PDE, and removing basis from an SVD-type truncation procedure. For the discretization, we adopt a high order finite difference spatial discretization and a second order strong stability preserving multi-step time discretization. We apply the same procedure to evolve the dynamics of the flow map in a low-rank fashion, which proves to be advantageous when the flow map enjoys the low rank structure, while the solution suffers from high rank or displays filamentation structures. Hierarchical Tucker decomposition is adopted for high dimensional problems. An extensive set of linear and nonlinear Vlasov test examples are performed to show the high order spatial and temporal convergence of the algorithm with mesh refinement up to SVD-type truncation, the significant computational savings of the proposed low-rank approach especially for high dimensional problems, the improved performance of the flow map approach for solutions with filamentations.}
+}
+
+@article{Peng_2020,
+   title={A low-rank method for two-dimensional time-dependent radiation transport calculations},
+   volume={421},
+   ISSN={0021-9991},
+   url={http://dx.doi.org/10.1016/j.jcp.2020.109735},
+   DOI={10.1016/j.jcp.2020.109735},
+   journal={Journal of Computational Physics},
+   publisher={Elsevier BV},
+   author={Peng, Zhuogang and McClarren, Ryan G. and Frank, Martin},
+   year={2020},
+   month=nov, pages={109735} }
+
+@article{MCCLARREN2022110756,
+title = {Data-driven acceleration of thermal radiation transfer calculations with the dynamic mode decomposition and a sequential singular value decomposition},
+journal = {Journal of Computational Physics},
+volume = {448},
+pages = {110756},
+year = {2022},
+issn = {0021-9991},
+doi = {https://doi.org/10.1016/j.jcp.2021.110756},
+url = {https://www.sciencedirect.com/science/article/pii/S0021999121006513},
+author = {Ryan G. McClarren and Terry S. Haut},
+keywords = {Radiative transfer, Discrete ordinates method, Dynamic mode decomposition, Acceleration methods},
+abstract = {We present a method for accelerating discrete ordinates radiative transfer calculations for radiative transfer. Our method works with nonlinear positivity fixes, in contrast to most acceleration schemes. The method is based on the dynamic mode decomposition (DMD) and using a sequence of rank-one updates to compute the singular value decomposition needed for DMD. Using a sequential method allows us to automatically determine the number of solution vectors to include in the DMD acceleration. We present results for slab geometry discrete ordinates calculations with the standard temperature linearization. Compared with positive source iteration, our results demonstrate that our acceleration method reduces the number of transport sweeps required to solve the problem by a factor of about 3 on a standard diffusive Marshak wave problem, a factor of several thousand on a cooling problem where the effective scattering ratio approaches unity, and a factor of 20 improvement in a realistic, multimaterial radiating shock problem.}
+}
+
+@article{McClarren_2022,
+   title={Data-driven acceleration of thermal radiation transfer calculations with the dynamic mode decomposition and a sequential singular value decomposition},
+   volume={448},
+   ISSN={0021-9991},
+   url={http://dx.doi.org/10.1016/j.jcp.2021.110756},
+   DOI={10.1016/j.jcp.2021.110756},
+   journal={Journal of Computational Physics},
+   publisher={Elsevier BV},
+   author={McClarren, Ryan G. and Haut, Terry S.},
+   year={2022},
+   month=jan, pages={110756} }
+
+@misc{ryzhakov2022constructive,
+      title={Constructive TT-representation of the tensors given as index interaction functions with applications},
+      author={Gleb Ryzhakov and Ivan Oseledets},
+      year={2022},
+      eprint={2206.03832},
+      archivePrefix={arXiv},
+      primaryClass={math.NA}
+}
+
+@article{wang2019distributed,
+  title={A distributed tensor-train decomposition method for cyber-physical-social services},
+  author={Wang, Xiaokang and Yang, Laurence T and Wang, Yihao and Liu, Xingang and Zhang, Qingxia and Deen, M Jamal},
+  journal={ACM Transactions on Cyber-Physical Systems},
+  volume={3},
+  number={4},
+  pages={1--15},
+  year={2019},
+  publisher={ACM New York, NY, USA}
+}
+
+@article{qin2022error,
+  title={Error analysis of tensor-train cross approximation},
+  author={Qin, Zhen and Lidiak, Alexander and Gong, Zhexuan and Tang, Gongguo and Wakin, Michael B and Zhu, Zhihui},
+  journal={Advances in Neural Information Processing Systems},
+  volume={35},
+  pages={14236--14249},
+  year={2022}
+}
+
+@article{PhysRevE.106.035208,
+  title = {Quantum-inspired method for solving the {V}lasov-{P}oisson equations},
+  author = {Ye, Erika and Loureiro, Nuno F. G.},
+  journal = {Phys. Rev. E},
+  volume = {106},
+  issue = {3},
+  pages = {035208},
+  numpages = {20},
+  year = {2022},
+  month = {Sep},
+}
+
+@article{MANZINI2023615,
+title = {The tensor-train mimetic finite difference method for three-dimensional {M}axwell’s wave propagation equations},
+journal = {Mathematics and Computers in Simulation},
+volume = {210},
+pages = {615-639},
+year = {2023},
+author = {G. Manzini and P.M.D. Truong and R. Vuchkov and B. Alexandrov},
+}
+
+@article{coulaud2022robust,
+  title={A robust {GMRES} algorithm in Tensor Train format},
+  author={Coulaud, Olivier and Giraud, Luc and Iannacito, Martina},
+  journal={arXiv preprint arXiv:2210.14533},
+  year={2022}
+}
+@article{giannakopoulos2021compression,
+  title={Compression of volume-surface integral equation matrices via {T}ucker decomposition for magnetic resonance applications},
+  author={Giannakopoulos, Ilias I and Guryev, Georgy D and Serrall{\'e}s, Jos{\'e} EC and Georgakis, Ioannis P and Daniel, Luca and White, Jacob K and Lattanzi, Riccardo},
+  journal={IEEE transactions on antennas and propagation},
+  volume={70},
+  number={1},
+  pages={459--471},
+  year={2021},
+  publisher={IEEE}
+}
+
+@article{bachmayr2016tensor,
+  title={Tensor networks and hierarchical tensors for the solution of high-dimensional partial differential equations},
+  author={Bachmayr, Markus and Schneider, Reinhold and Uschmajew, Andr{\'e}},
+  journal={Foundations of Computational Mathematics},
+  volume={16},
+  pages={1423--1472},
+  year={2016},
+  publisher={Springer}
+}
+
+@article{dolgov2021tensor,
+  title={Tensor decomposition methods for high-dimensional {H}amilton--{J}acobi--{B}ellman equations},
+  author={Dolgov, Sergey and Kalise, Dante and Kunisch, Karl K},
+  journal={SIAM Journal on Scientific Computing},
+  volume={43},
+  number={3},
+  pages={A1625--A1650},
+  year={2021},
+  publisher={SIAM}
+}
+
+ @inproceedings{haastad1989tensor,
+  title={Tensor rank is {NP}-complete},
+  author={H{\aa}stad, Johan},
+  booktitle={Automata, Languages and Programming: 16th International Colloquium Stresa, Italy, July 11--15, 1989 Proceedings 16},
+  pages={451--460},
+  year={1989},
+  organization={Springer}
+}
+
+@article{kamalakara2022exploring,
+  title={Exploring low rank training of deep neural networks},
+  author={Kamalakara, Siddhartha Rao and Locatelli, Acyr and Venkitesh, Bharat and Ba, Jimmy and Gal, Yarin and Gomez, Aidan N},
+  journal={arXiv preprint arXiv:2209.13569},
+  year={2022}
+}
+
+@article{Oseledets2012,
+  doi = {10.1007/s00365-012-9175-x},
+  url = {https://doi.org/10.1007/s00365-012-9175-x},
+  year = {2012},
+  month = Dec,
+  publisher = {Springer Science and Business Media {LLC}},
+  volume = {37},
+  number = {1},
+  pages = {1--18},
+  author = {I. V. Oseledets},
+  title = {Constructive Representation of Functions in Low-Rank Tensor Formats},
+  journal = {Constructive Approximation}
+}
+@article{novikov2020tensor,
+  title={Tensor train decomposition on tensorflow (t3f)},
+  author={Novikov, Alexander and Izmailov, Pavel and Khrulkov, Valentin and Figurnov, Michael and Oseledets, Ivan},
+  journal={The Journal of Machine Learning Research},
+  volume={21},
+  number={1},
+  pages={1105--1111},
+  year={2020},
+  publisher={JMLRORG}
+}
+
+@article{lubich2013dynamical,
+  title={Dynamical approximation by hierarchical {T}ucker and tensor-train tensors},
+  author={Lubich, Christian and Rohwedder, Thorsten and Schneider, Reinhold and Vandereycken, Bart},
+  journal={SIAM Journal on Matrix Analysis and Applications},
+  volume={34},
+  number={2},
+  pages={470--494},
+  year={2013},
+  publisher={SIAM}
+}
+
+@article{tucker1963implications,
+  title={Implications of factor analysis of three-way matrices for measurement of change},
+  author={Tucker, Ledyard R},
+  journal={Problems in measuring change},
+  volume={15},
+  number={122-137},
+  pages={3},
+  year={1963},
+  publisher={University of Wisconsin Press Madison}
+}
+
+@article{de2008tensor,
+  title={Tensor rank and the ill-posedness of the best low-rank approximation problem},
+  author={De Silva, Vin and Lim, Lek-Heng},
+  journal={SIAM Journal on Matrix Analysis and Applications},
+  volume={30},
+  number={3},
+  pages={1084--1127},
+  year={2008},
+  publisher={SIAM}
+}
+
+@article{de2008decompositions,
+  title={Decompositions of a higher-order tensor in block terms—{P}art I: Lemmas for partitioned matrices},
+  author={De Lathauwer, Lieven},
+  journal={SIAM Journal on Matrix Analysis and Applications},
+  volume={30},
+  number={3},
+  pages={1022--1032},
+  year={2008},
+  publisher={SIAM}
+}
+
+@article{novikov2015tensorizing,
+  title={Tensorizing neural networks},
+  author={Novikov, Alexander and Podoprikhin, Dmitrii and Osokin, Anton and Vetrov, Dmitry P},
+  journal={Advances in neural information processing systems},
+  volume={28},
+  year={2015}
+}
+
+@article{Hitchcock1927,
+author = {Hitchcock, Frank L.},
+title = {The expression of a tensor or a polyadic as a sum of products},
+journal = {Journal of Mathematics and Physics},
+volume = {6},
+number = {1-4},
+pages = {164-189},
+doi = {https://doi.org/10.1002/sapm192761164},
+url = {https://onlinelibrary.wiley.com/doi/abs/10.1002/sapm192761164},
+year = {1927}
+}
+@article{Astrid2017CPdecompositionWT,
+  title={{CP}-decomposition with tensor power method for convolutional neural networks compression},
+  author={M. Astrid and Seung-Ik Lee},
+  journal={2017 IEEE International Conference on Big Data and Smart Computing (BigComp)},
+  year={2017},
+  pages={115-118}
+}
+@inproceedings{phan2020stable,
+  title={Stable low-rank tensor decomposition for compression of convolutional neural network},
+  author={Phan, Anh-Huy and Sobolev, Konstantin and Sozykin, Konstantin and Ermilov, Dmitry and Gusak, Julia and Tichavsk{\`y}, Petr and Glukhov, Valeriy and Oseledets, Ivan and Cichocki, Andrzej},
+  booktitle={Computer Vision--ECCV 2020: 16th European Conference, Glasgow, UK, August 23--28, 2020, Proceedings, Part XXIX 16},
+  pages={522--539},
+  year={2020},
+  organization={Springer}
+}
+@article{Oseledets2011,
+author = {Oseledets, I. V.},
+title = {Tensor-train decomposition},
+journal = {SIAM Journal on Scientific Computing},
+volume = {33},
+number = {5},
+pages = {2295-2317},
+year = {2011},
+doi = {10.1137/090752286},
+URL = {https://doi.org/10.1137/090752286}
+}
+@article{Wang2022Tensor,
+author = {Yinan Wang and Weihong "Grace" Guo and Xiaowei Yue},
+title = {Tensor decomposition to compress convolutional layers in deep learning},
+journal = {IISE Transactions},
+volume = {54},
+number = {5},
+pages = {481-495},
+year  = {2022},
+publisher = {Taylor \& Francis},
+doi = {10.1080/24725854.2021.1894514},
+URL = {https://doi.org/10.1080/24725854.2021.1894514}
+}
+@ARTICLE{Sun2021Deep,
+  author={Sun, Weize and Chen, Shaowu and Huang, Lei and So, Hing Cheung and Xie, Min},
+  journal={IEEE Journal of Selected Topics in Signal Processing},
+  title={Deep convolutional neural network compression via coupled tensor decomposition},
+  year={2021},
+  volume={15},
+  number={3},
+  pages={603-616},
+  doi={10.1109/JSTSP.2020.3038227}}
+
+@Article{Tucker1966,
+author={Tucker, Ledyard R.},
+title={Some mathematical notes on three-mode factor analysis},
+journal={Psychometrika},
+year={1966},
+month={Sep},
+volume={31},
+number={3},
+pages={279-311},
+issn={1860-0980},
+doi={10.1007/BF02289464},
+url={https://doi.org/10.1007/BF02289464}
+}
+@misc{cerebras,
+  title = {{LLNL} pairs world’s largest computer chip from Cerebras with Lassen to advance machine learning, AI research},
+  howpublished = {\url{https://www.llnl.gov/article/46691/llnl-pairs-worlds-largest-computer-chip-cerebras-lassen-advance-machine-learning-ai-research}},
+  note = {Accessed: 2023-09-29}
+}
+
+@misc{cusolver,
+  title = {cusolver {API} reference},
+  howpublished = {\url{https://docs.nvidia.com/cuda/cusolver/}},
+  note = {Accessed: 2023-09-29}
+}
+
+@ARTICLE{umpire,
+ author={Beckingsale, D. A. and McFadden, M. J. and Dahm, J. P. S. and Pankajakshan, R. and Hornung, R. D.},
+ journal={IBM Journal of Research and Development},
+ title={Umpire: {A}pplication-focused management and coordination of complex hierarchical memory},
+ year={2020},
+ volume={64},
+ number={3/4},
+ pages={00:1-00:10},
+ doi={10.1147/JRD.2019.2954403}
+ }
+
+@misc{cublas,
+  title = {cublas {API} reference},
+  howpublished = {\url{https://docs.nvidia.com/cuda/cublas/index.html}},
+  note = {Accessed: 2023-09-29}
+}
+
+@article{hackbusch2006low,
+  title={Low-rank {K}ronecker-product approximation to multi-dimensional nonlocal operators. Part {II}. {HKT} representation of certain operators},
+  author={Hackbusch, Wolfgang and Khoromskij, Boris N},
+  journal={Computing},
+  volume={76},
+  pages={203--225},
+  year={2006},
+  publisher={Springer}
+}
+@article{hackbusch2006lowI,
+  title={Low-rank Kronecker-product approximation to multi-dimensional nonlocal operators. Part {I}. Separable approximation of multi-variate functions},
+  author={Hackbusch, Wolfgang and Khoromskij, Boris N},
+  journal={Computing},
+  volume={76},
+  pages={177--202},
+  year={2006},
+  publisher={Springer}
+}
+@article{grasedyck2013literature,
+  title={A literature survey of low-rank tensor approximation techniques},
+  author={Grasedyck, Lars and Kressner, Daniel and Tobler, Christine},
+  journal={GAMM-Mitteilungen},
+  volume={36},
+  number={1},
+  pages={53--78},
+  year={2013},
+  publisher={Wiley Online Library}
+}
+
+@misc{hipblas,
+  title = {hipblas {API} reference},
+  howpublished = {\url{https://hipblas.readthedocs.io/en/latest/api.html}},
+  note = {Accessed: 2023-09-29}
+}
+
+@misc{hipsolver,
+  title = {hipsolver {API} reference},
+  howpublished = {\url{https://hipsolver.readthedocs.io/en/rocm-5.6.0/}},
+  note = {Accessed: 2023-09-29}
+}
+
+@article{guo2023local,
+  title={A Local Macroscopic Conservative ({LoMaC}) low rank tensor method with the discontinuous {G}alerkin method for the {V}lasov dynamics},
+  author={Guo, Wei and Ema, Jannatul Ferdous and Qiu, Jing-Mei},
+  journal={Communications on Applied Mathematics and Computation},
+  pages={1--26},
+  year={2023},
+  publisher={Springer}
+}
+
+@inproceedings{acm2023,
+  title={Scalable Parallelization for the Solution of Phonon
+{B}oltzmann {T}ransport {E}quation},
+  author={Tran, H. D. and Saurav, S. and Sadayappan, P. and Mazumder, S. and Sundar H.},
+  booktitle={ICS '23: Proceedings of the 37th International Conference on Supercomputing},
+  pages={215--226},
+  year={2023}
+}
+
+@article{akm2014,
+  title={Large-Scale Parallel Computation of the Phonon {B}oltzmann {T}ransport {E}quation},
+  author={Ali, S. A. and Kollu, G. and Mazumder, S. and Sadayappan, P. and Mittal, A.},
+  journal={International Journal of Thermal Sciences},
+  pages={341--351},
+  year={2014},
+  volume={86}
+}
+
+@article{bvt2020,
+  title={Tensor methods for the {Boltzmann-BGK} equation},
+  author={Boelens A. and Venturi, D. and Tartakovsky, D.},
+  journal={Journal of Computational Physics},
+  pages={109744},
+  year={2020},
+  volume={421}
+}
+
+@article{liu2022deep,
+  title={Deep neural network compression by Tucker decomposition with nonlinear response},
+  author={Liu, Ye and Ng, Michael K},
+  journal={Knowledge-Based Systems},
+  volume={241},
+  pages={108171},
+  year={2022},
+  publisher={Elsevier}
+}
+
+@article{MANTZAFLARIS2017,
+title = {Low rank tensor methods in Galerkin-based isogeometric analysis},
+journal = {Computer Methods in Applied Mechanics and Engineering},
+volume = {316},
+pages = {1062-1085},
+year = {2017},
+note = {Special Issue on Isogeometric Analysis: Progress and Challenges},
+issn = {0045-7825},
+doi = {https://doi.org/10.1016/j.cma.2016.11.013},
+url = {https://www.sciencedirect.com/science/article/pii/S0045782516315377},
+author = {Angelos Mantzaflaris and Bert Jüttler and Boris N. Khoromskij and Ulrich Langer},
+keywords = {Low rank approximation, Stiffness matrix, Matrix formation, Tensor decomposition, Kronecker product, Numerical quadrature},
+abstract = {The global (patch-wise) geometry map, which describes the computational domain, is a new feature in isogeometric analysis. This map has a global tensor structure, inherited from the parametric spline geometry representation. The use of this global structure in the discretization of partial differential equations may be regarded as a drawback at first glance, as opposed to the purely local nature of (high-order) classical finite elements. In this work we demonstrate that it is possible to exploit the regularity of this structure and to identify the great potential for the efficient implementation of isogeometric discretizations. First, we formulate tensor-product B-spline bases as well as the corresponding mass and stiffness matrices as tensors in order to reveal their intrinsic structure. Second, we derive an algorithm for the separation of variables in the integrands arising in the discretization. This is possible by means of low rank approximation of the integral kernels. We arrive at a compact, separated representation of the integrals. The separated form implies an expression of Galerkin matrices as Kronecker products of matrix factors with small dimensions. This representation is very appealing, due to the reduction in both memory consumption and computation times. Our benchmarks, performed using the C++ library G+Smo, demonstrate that the use of tensor methods in isogeometric analysis possesses significant advantages.}
+}
+
+@article{ION20221,
+title = {Tensor train based isogeometric analysis for {PDE} approximation on parameter dependent geometries},
+journal = {Computer Methods in Applied Mechanics and Engineering},
+volume = {401},
+pages = {115593},
+year = {2022},
+issn = {0045-7825},
+doi = {https://doi.org/10.1016/j.cma.2022.115593},
+url = {https://www.sciencedirect.com/science/article/pii/S0045782522005618},
+author = {Ion Gabriel Ion and Dimitrios Loukrezis and Herbert {De Gersem}},
+keywords = {Tensor decomposition, Tensor train, Isogeometric analysis, Partial differential equations, Parametric approximation, Geometry deformation},
+abstract = {This work develops a numerical solver based on the combination of isogeometric analysis (IGA) and the tensor train (TT) decomposition for the approximation of partial differential equations (PDEs) on parameter-dependent geometries. First, the discrete Galerkin operator as well as the solution for a fixed geometry configuration are represented as tensors and the TT format is employed to reduce their computational complexity. Parametric dependencies are included by considering the parameters that control the geometry configuration as additional dimensions next to the physical space coordinates. The parameters are easily incorporated within the TT-IGA solution framework by introducing a tensor product basis expansion in the parameter space. The discrete Galerkin operators are accordingly extended to accommodate the parameter dependence, thus obtaining a single system that includes the parameter dependency. The system is solved directly in the TT format and a low-rank representation of the parameter-dependent solution is obtained. The proposed TT-IGA solver is applied to several test cases which showcase its high computational efficiency and tremendous compression ratios achieved for representing the parameter-dependent IGA operators and solutions.}
+}
+
+@article{MANZINI2023,
+title = {The tensor-train mimetic finite difference method for three-dimensional {M}axwell’s wave propagation equations},
+journal = {Mathematics and Computers in Simulation},
+volume = {210},
+pages = {615-639},
+year = {2023},
+issn = {0378-4754},
+doi = {https://doi.org/10.1016/j.matcom.2023.03.026},
+url = {https://www.sciencedirect.com/science/article/pii/S0378475423001313},
+author = {G. Manzini and P.M.D. Truong and R. Vuchkov and B. Alexandrov},
+keywords = {Tensor-train format, Mimetic calculus, Maxwell’s equations, Partial differential equations},
+abstract = {Coupling the mimetic finite difference method with the tensor-train format results in a very effective method for low-rank numerical approximations of the solutions of the time-dependent Maxwell wave propagation equations in three dimensions. To this end, we discretize the curl operators on the primal/dual tensor product grid complex and we couple the space discretization with a staggered-in-time second-order accurate time-marching scheme. The resulting solver is accurate to the second order in time and space, and still compatible, so that the approximation of the magnetic flux field has zero discrete divergence with a discrepancy close to the machine precision level. Our approach is not limited to the second-order of accuracy. We can devise higher-order formulations in space through suitable extensions of the tensor-train stencil to compute the derivatives of the mimetic differential operators. Employing the tensor-train format improves the solver performance by orders of magnitude in terms of CPU time and memory storage. A final set of numerical experiments confirms this expectation.}
+}

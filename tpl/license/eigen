@@ -1,0 +1,8 @@
+Eigen
+=====
+
+Upstream package: `tpl/eigen`
+Primary license: Mozilla Public License 2.0
+Retain the additional component license texts in `tpl/eigen/COPYING.BSD`,
+`tpl/eigen/COPYING.APACHE`, `tpl/eigen/COPYING.MINPACK`, and
+`tpl/eigen/COPYING.README`.

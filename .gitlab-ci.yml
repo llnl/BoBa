@@ -1,0 +1,246 @@
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+    - if: $CI_COMMIT_TAG
+
+variables:
+  GIT_STRATEGY: fetch
+  GIT_DEPTH: "0"
+
+  GCC_VERSION: "ml gcc/13.3.1"
+  CLANG_VERSION: "ml clang/14.0.6"
+  GCC_MATRIX_VERSION: "ml gcc/13.3.1"
+  MATRIX_CUDA_VERSION: "ml cuda/12.6"
+  ROCM_VERSION: "ml rocm/7.2.1"
+  ROCMCC_VERSION: "ml rocmcc/7.2.0-magic"
+  CMAKE_VERSION: "ml cmake/3.23.1"
+
+  BOBA_CI: "1"
+  CPU_MACHINE: "dane"
+  H100_MACHINE: "matrix"
+  HIP_MACHINE: "tuolumne"
+
+  BOBA_TPL_FARM: "/usr/workspace/boba_dev/boba_tpl_build_farms/2026_05_20_python"
+
+include:
+  - project: 'lc-templates/id_tokens'
+    file: 'id_tokens.yml'
+
+stages:
+  - prep
+  - build_and_test
+  - update_web
+
+default:
+  timeout: 1 hour
+  artifacts:
+    expire_in: 2 weeks
+
+.shell_cpu:
+  tags:
+    - dane
+    - batch
+  variables:
+    LLNL_SLURM_SCHEDULER_PARAMETERS: "--nodes=1 --ntasks=90 --time=00:20:00 --partition=pci --reservation=ci"
+
+.shell_cpu_mpi:
+  tags:
+    - dane
+    - batch
+  variables:
+    LLNL_SLURM_SCHEDULER_PARAMETERS: "--nodes=1 --ntasks=11 --time=00:20:00 --partition=pci --reservation=ci"
+
+.shell_h100:
+  tags:
+    - matrix
+    - batch
+  variables:
+    LLNL_SLURM_SCHEDULER_PARAMETERS: "--nodes=1 --ntasks=1 --gres=gpu:1 --time=00:20:00 --cpus-per-task=28 --partition=pci"
+
+.shell_hip:
+  tags:
+    - tuolumne
+    - batch
+  variables:
+    LLNL_FLUX_SCHEDULER_PARAMETERS: "--queue pci -N 1 -n 1 "
+    JACAMAR_SCHEDULER_DEBUG: "1"
+
+.boba_base:
+  before_script:
+    - git rev-parse HEAD
+    - pwd
+    - export BOBA_TPL_INSTALL_DIR="${BOBA_TPL_FARM}/install"
+
+ci_sanity_checks:
+  stage: prep
+  extends:
+    - .shell_cpu
+    - .boba_base
+  script:
+    - echo Ensuring build farm permissions are correct
+    - chgrp boba_dev /usr/workspace/boba_dev/boba_tpl_build_farms || echo "You are not the owner of this TPL build farm"
+    - chgrp boba_dev "${BOBA_TPL_FARM}" || echo "You are not the owner of this TPL build farm"
+    - chgrp boba_dev "${BOBA_TPL_FARM}/tpl" || echo "You are not the owner of this TPL build farm"
+    - chgrp -R boba_dev "${BOBA_TPL_FARM}/install" || echo "You are not the owner of this TPL build farm"
+    - chgrp -R boba_dev "${BOBA_TPL_FARM}/tpl/blt" || echo "You are not the owner of this TPL build farm"
+    - chgrp boba_dev "${BOBA_TPL_FARM}"/caliper_* || echo "You are not the owner of this TPL build farm"
+    - chgrp boba_dev "${BOBA_TPL_FARM}/tpl/license" || echo "You are not the owner of this TPL build farm"
+    - chmod g+rwxs /usr/workspace/boba_dev/boba_tpl_build_farms || echo "You are not the owner of this TPL build farm"
+    - chmod g+rwxs "${BOBA_TPL_FARM}" || echo "You are not the owner of this TPL build farm"
+    - chmod g+rwxs "${BOBA_TPL_FARM}/tpl" || echo "You are not the owner of this TPL build farm"
+    - chmod -R g+rwxs "${BOBA_TPL_FARM}/install" || echo "You are not the owner of this TPL build farm"
+    - chmod -R g+rwxs "${BOBA_TPL_FARM}/tpl/blt" || echo "You are not the owner of this TPL build farm"
+    - chmod -R g+rwxs "${BOBA_TPL_FARM}"/caliper_* || echo "You are not the owner of this TPL build farm"
+    - chmod -R g+rwxs "${BOBA_TPL_FARM}/tpl/license" || echo "You are not the owner of this TPL build farm"
+    - echo Ensuring repo contains no version control markers
+    - |
+      if git grep -n -I -E '^[<]{4,}|^[>]{4,}'; then
+        echo "Found version control conflict markers. Remove them before merging."
+        exit 1
+      else
+        status=$?
+        if [ "${status}" -gt 1 ]; then
+          exit "${status}"
+        fi
+      fi
+      echo "No version control conflict markers found."
+
+cpu_build_and_test:
+  extends:
+    - .shell_cpu
+    - .boba_base
+  stage: build_and_test
+  needs: ["ci_sanity_checks"]
+  script:
+    - ${GCC_VERSION}
+    - squeue -p pci
+    - time srun -n 1 make all BOBA_CI=1 BOBA_DEBUG=1 BOBA_HDF5=1 -j 36 --output-sync
+    - time srun -n 1 python3 ci.py --debug
+    - make clean
+    - squeue -p pci
+    - time srun -n 1 make all BOBA_CI=1 BOBA_UMPIRE=1 BOBA_HDF5=1 -j 36 --output-sync
+    - time srun -n 1 python3 ci.py --umpire
+
+cpu_mpi_build_and_test:
+  extends:
+    - .shell_cpu_mpi
+    - .boba_base
+  stage: build_and_test
+  needs: ["ci_sanity_checks"]
+  script:
+    - ml mvapich2/2.3.7
+    - ml intel/2023.2.1
+    - squeue -p pci
+    - time srun -n 1 make BOBA_ENABLE_MPI=1 example_permutation_finder_parallel -j 36
+    - time srun -n 11 -t 10 ./example_permutation_finder_parallel_mpi_cpu.out
+
+cpu_asan_ubsan_build_and_test:
+  extends:
+    - .shell_cpu
+    - .boba_base
+  stage: build_and_test
+  needs: ["ci_sanity_checks"]
+  script:
+    - ${GCC_VERSION}
+    - squeue -p pci
+    - time srun -n 1 make all BOBA_CI=1 BOBA_ASAN=1 -j 36 --output-sync
+    - time srun -n 1 python3 ci.py --asan
+    - make clean
+    - squeue -p pci
+    - time srun -n 1 make all BOBA_CI=1 BOBA_UBSAN=1 -j 36 --output-sync
+    - time srun -n 1 python3 ci.py --ubsan
+
+h100_build_and_test:
+  extends:
+    - .shell_h100
+    - .boba_base
+  stage: build_and_test
+  needs: ["ci_sanity_checks"]
+  script:
+    - ${GCC_MATRIX_VERSION}
+    - ${MATRIX_CUDA_VERSION}
+    - squeue -p pci
+    - time srun -n 1 make all BOBA_CI=1 BOBA_CUDA=1 BOBA_CUTENSOR=1 BOBA_UMPIRE=1 -j 36
+    - time srun -n 1 python3 ci.py --umpire
+
+.hip_build_and_test:
+  extends:
+    - .shell_hip
+    - .boba_base
+  stage: build_and_test
+  needs: ["ci_sanity_checks"]
+  script:
+    - ${ROCM_VERSION}
+    - ${ROCMCC_VERSION}
+    - module list
+    - flux queue list || true
+    - flux resource list || true
+    - time flux run -N 1 -n 1 --exclusive make all BOBA_CI=1 BOBA_HIP=1 BOBA_HIPTENSOR=1 BOBA_UMPIRE=1 -j 12 --output-sync
+    - cp ./test_boba_linear_algebra_hip_ump.out ./test_boba_linear_algebra_rocm_ump.out
+    - time flux run -N 1 -n 1 --exclusive python3 ci.py --umpire
+
+cmake_boba_cpu:
+  extends:
+    - .shell_cpu
+    - .boba_base
+  stage: build_and_test
+  script:
+    - ${GCC_VERSION}
+    - ${CMAKE_VERSION}
+    - cd examples/cmake_examples
+    - echo Base CPU example
+    - time srun -n 1 ./install_example_cpu.bash
+    - time srun -n 1 ./example_cpu/example
+    - rm -rf example_cpu
+    - echo Umpire example
+    - time srun -n 1 ./install_example_cpu_umpire.bash
+    - time srun -n 1 ./example_cpu_umpire/example
+    - rm -rf example_cpu_umpire
+
+cmake_boba_h100:
+  extends:
+    - .shell_h100
+    - .boba_base
+  stage: build_and_test
+  script:
+    - ${GCC_MATRIX_VERSION}
+    - ${MATRIX_CUDA_VERSION}
+    - ${CMAKE_VERSION}
+    - cd examples/cmake_examples
+    - time srun -n 1 ./install_example_h100.bash
+    - ls -la ./example_cuda_h100/
+    - source "${BOBA_TPL_FARM}/caliper_lib_path_info_cuda_h100"
+    - squeue -p pci
+    - time srun -n 1 ./example_cuda_h100/example
+    - rm -rf example_cuda_h100
+
+.cmake_boba_hip:
+  extends:
+    - .shell_hip
+    - .boba_base
+  stage: build_and_test
+  script:
+    - ${ROCM_VERSION}
+    - ${CMAKE_VERSION}
+    - ml gcc/13.3.1
+    - cd examples/cmake_examples
+    - time flux run -n 1 ./install_example_hip.bash
+    - source "${BOBA_TPL_FARM}/caliper_lib_path_info_hip"
+    - time flux run -n 1 ./example_hip/example
+
+update_website:
+  extends:
+    - .shell_cpu
+    - .boba_base
+  stage: update_web
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  script:
+    - cd documentation/bibtex
+    - time ./make_html.bash
+    - cd ..
+    - doxygen Doxyfile
+    - rm -rf /usr/global/web-pages/lc/www/boba/*
+    - cp -rf html/* /usr/global/web-pages/lc/www/boba/
