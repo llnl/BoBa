@@ -1,0 +1,211 @@
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+
+# Set up BOBA_ENABLE prefixed options
+if(NOT DEFINED BOBA_ENABLE_OPENMP)
+  set(BOBA_ENABLE_OPENMP ${ENABLE_OPENMP})
+endif()
+if(NOT DEFINED BOBA_ENABLE_APPLE)
+  if(APPLE)
+    set(BOBA_ENABLE_APPLE On)
+  else()
+    set(BOBA_ENABLE_APPLE Off)
+  endif()
+endif()
+if(NOT DEFINED BOBA_ENABLE_CUDA)
+  set(BOBA_ENABLE_CUDA ${ENABLE_CUDA})
+endif()
+if(NOT DEFINED BOBA_ENABLE_CUTENSOR)
+  set(BOBA_ENABLE_CUTENSOR ${ENABLE_CUTENSOR})
+endif()
+if(NOT DEFINED BOBA_ENABLE_HIP)
+  set(BOBA_ENABLE_HIP ${ENABLE_HIP})
+endif()
+if(NOT DEFINED BOBA_ENABLE_HIPTENSOR)
+  set(BOBA_ENABLE_HIPTENSOR ${ENABLE_HIPTENSOR})
+endif()
+if(NOT DEFINED BOBA_ENABLE_EIGEN)
+  set(BOBA_ENABLE_EIGEN On)
+endif()
+if(NOT DEFINED BOBA_ENABLE_METAL)
+  set(BOBA_ENABLE_METAL Off)
+endif()
+if(NOT DEFINED BOBA_ENABLE_UMPIRE)
+  set(BOBA_ENABLE_UMPIRE On)
+endif()
+if(NOT DEFINED BOBA_ENABLE_CALIPER)
+  set(BOBA_ENABLE_CALIPER Off)
+endif()
+if(NOT DEFINED BOBA_ENABLE_HDF5)
+  set(BOBA_ENABLE_HDF5 Off)
+endif()
+if(NOT DEFINED BOBA_ENABLE_RAJA)
+  set(BOBA_ENABLE_RAJA Off)
+endif()
+if(NOT DEFINED BOBA_ENABLE_FMT)
+  set(BOBA_ENABLE_FMT Off)
+endif()
+if(NOT DEFINED BOBA_ENABLE_MPI)
+  set(BOBA_ENABLE_MPI ${ENABLE_MPI})
+endif()
+
+if(ENABLE_CUDA OR ENABLE_HIP)
+  set(BOBA_CPU Off)
+else()
+  set(BOBA_CPU On)
+endif()
+
+string(TOUPPER "${CMAKE_BUILD_TYPE}" _BOBA_BUILD_TYPE)
+if(_BOBA_BUILD_TYPE STREQUAL "DEBUG")
+  set(BOBA_DEBUG On)
+endif()
+
+# we need these while we transition to cmake
+set(_BOBA_REQUEST_APPLE ${BOBA_ENABLE_APPLE})
+set(_BOBA_REQUEST_METAL ${BOBA_ENABLE_METAL})
+set(_BOBA_REQUEST_EIGEN ${BOBA_ENABLE_EIGEN})
+set(_BOBA_REQUEST_CAMP ${BOBA_ENABLE_CAMP})
+set(_BOBA_REQUEST_FMT ${BOBA_ENABLE_FMT})
+set(_BOBA_REQUEST_RAJA ${BOBA_ENABLE_RAJA})
+set(_BOBA_REQUEST_HDF5 ${BOBA_ENABLE_HDF5})
+set(_BOBA_REQUEST_UMPIRE ${BOBA_ENABLE_UMPIRE})
+set(_BOBA_REQUEST_CALIPER ${BOBA_ENABLE_CALIPER})
+set(_BOBA_REQUEST_CALIPER_OBJECTS ${BOBA_ENABLE_CALIPER_OBJECTS})
+set(_BOBA_REQUEST_CALIPER_EXTERNAL ${BOBA_ENABLE_CALIPER_EXTERNAL})
+
+if(APPLE AND _BOBA_REQUEST_APPLE)
+  set(BOBA_ENABLE_APPLE On)
+else()
+  set(BOBA_ENABLE_APPLE Off)
+endif()
+
+if(EIGEN_FOUND AND _BOBA_REQUEST_EIGEN)
+  set(BOBA_ENABLE_EIGEN On)
+else()
+  set(BOBA_ENABLE_EIGEN Off)
+endif()
+
+if(CAMP_FOUND AND _BOBA_REQUEST_CAMP)
+  set(BOBA_ENABLE_CAMP On)
+else()
+  set(BOBA_ENABLE_CAMP Off)
+endif()
+
+if(FMT_FOUND AND _BOBA_REQUEST_FMT)
+  set(BOBA_ENABLE_FMT On)
+else()
+  set(BOBA_ENABLE_FMT Off)
+endif()
+
+if(RAJA_FOUND AND _BOBA_REQUEST_RAJA)
+  set(BOBA_ENABLE_RAJA On)
+else()
+  set(BOBA_ENABLE_RAJA Off)
+endif()
+
+if(HDF5_FOUND AND _BOBA_REQUEST_HDF5)
+  set(BOBA_ENABLE_HDF5 On)
+else()
+  set(BOBA_ENABLE_HDF5 Off)
+endif()
+
+if(CALIPER_FOUND)
+  if(_BOBA_REQUEST_CALIPER OR _BOBA_REQUEST_CALIPER_OBJECTS OR _BOBA_REQUEST_CALIPER_EXTERNAL OR BOBA_PROFILING)
+    set(BOBA_ENABLE_CALIPER On)
+  else()
+    set(BOBA_ENABLE_CALIPER Off)
+  endif()
+else()
+  set(BOBA_ENABLE_CALIPER Off)
+  set(BOBA_ENABLE_CALIPER_OBJECTS Off)
+  set(BOBA_ENABLE_CALIPER_EXTERNAL Off)
+endif()
+
+if(EIGEN_FOUND AND _BOBA_REQUEST_EIGEN AND BOBA_EIGEN_TENSOR)
+  set(BOBA_EIGEN_TENSOR On)
+else()
+  set(BOBA_EIGEN_TENSOR Off)
+endif()
+
+if(APPLE AND _BOBA_REQUEST_METAL)
+  set(BOBA_ENABLE_METAL On)
+else()
+  set(BOBA_ENABLE_METAL Off)
+endif()
+
+set(BOBA_APPLE ${BOBA_ENABLE_APPLE})
+set(BOBA_RAJA ${BOBA_ENABLE_RAJA})
+set(BOBA_CUDA ${BOBA_ENABLE_CUDA})
+set(BOBA_CUDA_LIBS ${BOBA_ENABLE_CUDA})
+set(BOBA_CUTENSOR ${BOBA_ENABLE_CUTENSOR})
+set(BOBA_HIP ${BOBA_ENABLE_HIP})
+set(BOBA_HIP_LIBS ${BOBA_ENABLE_HIP})
+set(BOBA_HIPTENSOR ${BOBA_ENABLE_HIPTENSOR})
+if(UMPIRE_FOUND AND _BOBA_REQUEST_UMPIRE)
+  set(BOBA_ENABLE_UMPIRE On)
+else()
+  set(BOBA_ENABLE_UMPIRE Off)
+endif()
+set(BOBA_UMPIRE ${BOBA_ENABLE_UMPIRE})
+set(BOBA_METAL ${BOBA_ENABLE_METAL})
+set(BOBA_HDF5 ${BOBA_ENABLE_HDF5})
+set(BOBA_FMT ${BOBA_ENABLE_FMT})
+
+# Configure a header file with all the variables we found.
+boba_configure_file(${PROJECT_SOURCE_DIR}/include/BOBA/config.hpp.in
+  ${PROJECT_BINARY_DIR}/include/BOBA/config.hpp)
+
+include(CMakePackageConfigHelpers)
+configure_package_config_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/share/boba/cmake/BOBA-config.cmake.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/share/boba/cmake/boba-config.cmake"
+  INSTALL_DESTINATION "${PROJECT_BINARY_DIR}/share/boba/cmake/boba-config.cmake"
+  )
+
+
+install(
+  FILES ${PROJECT_BINARY_DIR}/include/BOBA/config.hpp
+  PERMISSIONS OWNER_EXECUTE OWNER_WRITE OWNER_READ GROUP_EXECUTE GROUP_READ GROUP_WRITE
+  DESTINATION include/BOBA)
+
+install(
+  FILES ${PROJECT_BINARY_DIR}/share/boba/cmake/boba-config.cmake
+  PERMISSIONS OWNER_EXECUTE OWNER_WRITE OWNER_READ GROUP_EXECUTE GROUP_READ GROUP_WRITE
+  DESTINATION share/boba/cmake/)
+
+# Setup pkg-config
+find_package(PkgConfig QUIET)
+if(PKG_CONFIG_FOUND)
+  # convert lists of link libraries into -lstdc++ -lm etc..
+  foreach(LIB ${CMAKE_CXX_IMPLICIT_LINK_LIBRARIES} ${PLATFORM_LIBS} ${CUDA_LIBRARIES})
+    set(PRIVATE_LIBS "${PRIVATE_LIBS} -l${LIB}")
+  endforeach()
+  foreach(INCDIR ${INCLUDE_DIRECTORIES} ${CUDA_INCLUDE_DIRS})
+    set(PC_C_FLAGS "${PC_C_FLAGS} -I${INCDIR}")
+  endforeach()
+  if(BOBA_ENABLE_EXTERNAL_ROCPRIM)
+    foreach(INCDIR ${ROCPRIM_INCLUDE_DIRS})
+      set(PC_C_FLAGS "${PC_C_FLAGS} -I${INCDIR}")
+    endforeach()
+  endif()
+  if(BOBA_ENABLE_EXTERNAL_CUB)
+    foreach(INCDIR ${CUB_INCLUDE_DIRS})
+      set(PC_C_FLAGS "${PC_C_FLAGS} -I${INCDIR}")
+    endforeach()
+  endif()
+  if(BOBA_ENABLE_CUDA)
+    foreach(FLAG ${BOBA_NVCC_FLAGS})
+      set(PC_C_FLAGS "${PC_C_FLAGS} ${FLAG}")
+    endforeach()
+  else()
+    foreach(FLAG ${CMAKE_CXX_FLAGS_RELEASE} ${CMAKE_CXX_FLAGS})
+      set(PC_C_FLAGS "${PC_C_FLAGS} ${FLAG}")
+    endforeach()
+  endif()
+  # Produce a pkg-config file for linking against the shared lib
+  configure_file("share/boba/pkg-config/BOBA.pc.in" "BOBA.pc" @ONLY)
+  install(
+    FILES       "${CMAKE_CURRENT_BINARY_DIR}/BOBA.pc"
+    PERMISSIONS OWNER_EXECUTE OWNER_WRITE OWNER_READ GROUP_EXECUTE GROUP_READ GROUP_WRITE
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig")
+endif()
