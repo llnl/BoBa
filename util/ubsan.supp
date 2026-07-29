@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+#available suppressions are the last string in the triples here
+#https://github.com/gcc-mirror/gcc/blob/master/libsanitizer/ubsan/ubsan_checks.inc
+
+#suppress hash
+implicit-integer-sign-change:PacketMath.h
+implicit-integer-sign-change:Complex.h
+unsigned-integer-overflow:random.tcc
