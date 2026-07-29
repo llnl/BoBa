@@ -1,0 +1,102 @@
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+/*!
+ ******************************************************************************
+ *
+ * \file
+ *
+ * \brief   Header file for basic BOBA configuration options.
+ *
+ *          This file contains platform-specific parameters that control
+ *          aspects of compilation of codes using BOBA.
+ *
+ *          IMPORTANT: These options are set by CMake and depend on the options
+ *          passed to it.
+ *
+ *          IMPORTANT: Exactly one BOBA_COMPILER_* option must be defined to
+ *          ensure correct behavior.
+ *
+ *          Definitions in this file will propagate to all BOBA header files.
+ *
+ ******************************************************************************
+ */
+
+#pragma once
+
+#include <cstddef>
+#include <type_traits>
+#include <utility>
+
+/*!
+ ******************************************************************************
+ *
+ * \brief Programming model back-ends.
+ *
+ ******************************************************************************
+ */
+#cmakedefine BOBA_ENABLE_CUDA
+#cmakedefine BOBA_ENABLE_HIP
+
+/*!
+ ******************************************************************************
+ *
+ * \brief Dependencies
+ *
+ ******************************************************************************
+ */
+#cmakedefine BOBA_ENABLE_EIGEN
+#cmakedefine BOBA_ENABLE_CAMP
+#cmakedefine BOBA_ENABLE_FMT
+#cmakedefine BOBA_ENABLE_METAL
+#cmakedefine BOBA_ENABLE_UMPIRE
+#cmakedefine BOBA_ENABLE_CALIPER
+#cmakedefine BOBA_ENABLE_HDF5
+#cmakedefine BOBA_ENABLE_RAJA
+
+/* Transition variables*/
+#cmakedefine BOBA_CI
+#cmakedefine BOBA_CPU
+#cmakedefine BOBA_ENABLE_APPLE
+#cmakedefine BOBA_APPLE
+#cmakedefine BOBA_METAL
+#cmakedefine BOBA_RAJA
+#cmakedefine BOBA_CUDA
+#cmakedefine BOBA_CUDA_LIBS
+#cmakedefine BOBA_CUTENSOR
+#cmakedefine BOBA_HIP
+#cmakedefine BOBA_HIP_LIBS
+#cmakedefine BOBA_HIPTENSOR
+#cmakedefine BOBA_EIGEN_TENSOR
+#cmakedefine BOBA_UMPIRE
+#cmakedefine BOBA_ENABLE_CALIPER_OBJECTS
+#cmakedefine BOBA_ENABLE_CALIPER_EXTERNAL
+#cmakedefine BOBA_HDF5
+#cmakedefine BOBA_CHECKPOINTS
+#cmakedefine BOBA_CHECKPOINTS_OBJECTS
+#cmakedefine BOBA_DEBUG
+#cmakedefine BOBA_ASAN
+#cmakedefine BOBA_UBSAN
+#cmakedefine BOBA_VERBOSE_MEMORY
+#cmakedefine BOBA_PROFILING
+#cmakedefine BOBA_ENABLE_MPI
+
+/*!
+ ******************************************************************************
+ *
+ * \brief Detect the host C++ compiler we are using.
+ *
+ ******************************************************************************
+ */
+
+/*!
+ ******************************************************************************
+ *
+ * \brief BOBA software version number.
+ *
+ ******************************************************************************
+ */
+// clang-format off
+#define BOBA_VERSION_MAJOR @BOBA_VERSION_MAJOR@
+#define BOBA_VERSION_MINOR @BOBA_VERSION_MINOR@
+#define BOBA_VERSION_STRING "@BOBA_VERSION_MAJOR@.@BOBA_VERSION_MINOR@"
+#define BOBA_VERSION_CODE ((BOBA_VERSION_MAJOR * 1000) + BOBA_VERSION_MINOR)
+// clang-format on

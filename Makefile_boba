@@ -1,0 +1,543 @@
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+.PHONY: all clean
+
+HOSTNAME=$(shell hostname)
+
+ifndef BOBA_TPL_INSTALL_DIR
+	BOBA_TPL_INSTALL_DIR = ${BOBA_TOP_DIR}/install
+endif
+
+######################################################
+#  Compiler setup
+######################################################
+ifdef BOBA_CUDA
+	OPT := --compiler-options
+else
+	ifndef BOBA_HIP
+		BOBA_CPU=1
+		CXXFLAGS := ${CXXFLAGS} -std=c++20
+	endif
+endif
+
+# Options
+ifdef BOBA_ENABLE_MPI
+BOBA_ENABLE_MPI=1
+endif
+
+CXX = g++
+
+IS_DANE := $(findstring dane, ${HOSTNAME})
+
+ifeq ($(IS_DANE), dane)
+CXX=/usr/tce/packages/gcc/gcc-13.3.1/bin/g++
+ifdef BOBA_ENABLE_MPI
+CXX=/usr/tce/packages/mvapich2/mvapich2-2.3.7-intel-2025.2.0/bin/mpic++
+endif
+ifdef BOBA_ASAN
+CXX=/usr/tce/packages/clang/clang-19.1.3/bin/clang++
+endif
+ifdef BOBA_UBSAN
+CXX=/usr/tce/packages/clang/clang-19.1.3/bin/clang++
+endif
+endif
+
+ifdef BOBA_APPLE
+CXX = clang++ -std=c++20
+endif
+ifdef BOBA_ENABLE_METAL
+CXX = clang++ -std=c++20
+endif
+
+ifdef BOBA_ENABLE_MPI
+CXXFLAGS := ${CXXFLAGS} -fp-model=precise
+endif
+
+CXX_DEFINES := ${CXX_DEFINES} -DBOBA_ENABLE_EIGEN
+
+CPP_VER := ${shell $(CXX) --version}
+IS_CLANGPP := $(findstring clang++, ${CPP_VER})
+IS_CLANG := $(findstring clang, ${CPP_VER})
+IS_GCC := $(findstring GCC, ${CPP_VER})
+
+
+ifdef BOBA_CUDA
+ERROR_LIMIT := ${ERROR_LIMIT} ${OPT} -fmax-errors=4
+endif
+ifdef BOBA_HIP
+ERROR_LIMIT := ${ERROR_LIMIT} -ferror-limit=4
+IS_GCC =
+endif
+
+ifndef ERROR_LIMIT
+ifeq ($(IS_CLANG), clang)
+  ERROR_LIMIT := ${ERROR_LIMIT} -ferror-limit=4
+else ifeq ($(IS_CLANGPP), clang++)
+  ERROR_LIMIT := ${ERROR_LIMIT} -ferror-limit=4
+else ifeq ($(IS_GCC), GCC)
+  ERROR_LIMIT := ${ERROR_LIMIT} -fmax-errors=4
+else
+  # enjoy those error messages
+endif
+endif
+
+CXXFLAGS := ${CXXFLAGS} ${ERROR_LIMIT}
+
+NAME_FLAG =
+ifdef BOBA_ENABLE_MPI
+NAME_FLAG := ${NAME_FLAG}_mpi
+endif
+
+ifdef BOBA_CPU
+	ifdef BOBA_DEBUG
+	LINKFLAGS := ${LINKFLAGS} -Og -g -ggdb
+	CXXFLAGS := ${CXXFLAGS} -Og -g -ggdb
+	else
+	LINKFLAGS := ${LINKFLAGS} -O3
+	CXXFLAGS := ${CXXFLAGS} -O3
+	ifdef BOBA_ASAN
+		LINKFLAGS := ${LINKFLAGS} -g
+		CXXFLAGS := ${CXXFLAGS} -g
+	else ifdef BOBA_UBSAN
+		LINKFLAGS := ${LINKFLAGS} -g
+		CXXFLAGS := ${CXXFLAGS} -g
+	endif
+	endif
+endif
+
+######################################################
+#  Sanitizers
+######################################################
+
+# add flags for address sanitizer, works with CXX=clang++ and CXX=g++
+ifdef BOBA_ASAN
+#env ASAN_OPTIONS=print_stacktrace=1:print_suppressions=0
+#env LSAN_OPTIONS=suppressions=${CI_PROJECT_DIR}/util/lsan.supp:print_stacktrace=1:report_error_type=1
+LINKFLAGS := ${LINKFLAGS} -fsanitize=address
+CXXFLAGS := ${CXXFLAGS} -fsanitize=address
+NAME_FLAG := ${NAME_FLAG}_asan
+CXX_DEFINES := ${CXX_DEFINES} -DBOBA_ASAN
+endif
+
+# add flags for undefined behavior sanitizers, works with CXX=clang++
+ifdef BOBA_UBSAN
+#env UBSAN_OPTIONS=suppressions=${CI_PROJECT_DIR}/util/ubsan.supp:print_stacktrace=1:report_error_type=1
+LINKFLAGS := ${LINKFLAGS} -fsanitize=undefined -fsanitize=integer -fsanitize=local-bounds
+CXXFLAGS := ${CXXFLAGS} -fsanitize=undefined -fsanitize=integer -fsanitize=local-bounds
+NAME_FLAG := ${NAME_FLAG}_ubsan
+CXX_DEFINES := ${CXX_DEFINES} -DBOBA_UBSAN
+endif
+
+ifdef BOBA_ASAN
+#env ASAN_OPTIONS=print_stacktrace=1:print_suppressions=0
+#env LSAN_OPTIONS=suppressions=${CI_PROJECT_DIR}/util/lsan.supp:print_stacktrace=1:report_error_type=1
+LINKFLAGS := ${LINKFLAGS} -fsanitize=address
+CXXFLAGS := ${CXXFLAGS} -fsanitize=address
+endif
+
+ifdef BOBA_ASAN
+CXXFLAGS := ${CXXFLAGS} -fno-omit-frame-pointer
+else ifdef BOBA_UBSAN
+CXXFLAGS := ${CXXFLAGS} -fno-omit-frame-pointer
+endif
+
+######################################################
+#  Compiler warnings
+######################################################
+# Warnings fail in CI
+ifdef BOBA_CI
+CXXFLAGS := ${CXXFLAGS} ${OPT} -Werror
+CXX_DEFINES := ${CXX_DEFINES} -DBOBA_CI
+endif
+
+# Warnings
+#CXXFLAGS := ${CXXFLAGS} ${OPT} -Wall
+CXXFLAGS := ${CXXFLAGS} ${OPT} -Wdisabled-optimization
+CXXFLAGS := ${CXXFLAGS} ${OPT} -Winit-self
+CXXFLAGS := ${CXXFLAGS} ${OPT} -Wmissing-include-dirs
+CXXFLAGS := ${CXXFLAGS} ${OPT} -Woverloaded-virtual
+CXXFLAGS := ${CXXFLAGS} ${OPT} -Wno-unused
+CXXFLAGS := ${CXXFLAGS} ${OPT} -Wsign-compare
+CXXFLAGS := ${CXXFLAGS} ${OPT} -Wformat-security
+CXXFLAGS := ${CXXFLAGS} ${OPT} -Wswitch-default
+#CXXFLAGS := ${CXXFLAGS} ${OPT} -Wmissing-declarations
+CXXFLAGS := ${CXXFLAGS} ${OPT} -Wformat=2
+ifndef BOBA_ENABLE_MPI
+CXXFLAGS := ${CXXFLAGS} ${OPT} -Wcast-qual
+CXXFLAGS := ${CXXFLAGS} ${OPT} -Wsign-conversion
+CXXFLAGS := ${CXXFLAGS} ${OPT} -Wcast-align
+CXXFLAGS := ${CXXFLAGS} ${OPT} -Wdouble-promotion
+#CXXFLAGS := ${CXXFLAGS} ${OPT} -Wnull-dereference  too many issues with Eigen when we bulid with gcc/13.3.1
+endif
+
+# Flags that don't work with cuda
+ifndef BOBA_CUDA
+CXXFLAGS := ${CXXFLAGS} ${OPT} -Wsign-promo
+CXXFLAGS := ${CXXFLAGS} ${OPT} -Wshadow
+CXXFLAGS := ${CXXFLAGS} ${OPT} -Wfloat-equal
+CXXFLAGS := ${CXXFLAGS} ${OPT} -pedantic
+CXXFLAGS := ${CXXFLAGS} ${OPT} -pedantic-errors
+CXXFLAGS := ${CXXFLAGS} ${OPT} -Wundef
+ifndef BOBA_ENABLE_MPI
+CXXFLAGS := ${CXXFLAGS} ${OPT} -Wzero-as-null-pointer-constant
+CXXFLAGS := ${CXXFLAGS} ${OPT} -Wredundant-decls
+CXXFLAGS := ${CXXFLAGS} ${OPT} -Wsuggest-override
+CXXFLAGS := ${CXXFLAGS} ${OPT} -Wextra-semi
+endif
+endif
+
+# TODO CXXFLAGS := ${CXXFLAGS} ${OPT} -Wold-style-cast
+# TODO CXXFLAGS := ${CXXFLAGS} ${OPT} -Wnon-virtual-dtor
+# TODO CXXFLAGS := ${CXXFLAGS} ${OPT} -Wctor-dtor-privacy
+# TODO CXXFLAGS := ${CXXFLAGS} ${OPT} -Wextra
+
+ifeq ($(IS_CLANG), clang)
+	CXXFLAGS := ${CXXFLAGS} ${OPT} -Wbraced-scalar-init
+#	CXXFLAGS := ${CXXFLAGS} ${OPT} -Weverything
+
+else ifeq ($(IS_GCC), GCC)
+	CXXFLAGS := ${CXXFLAGS} ${OPT} -Wlogical-op
+	CXXFLAGS := ${CXXFLAGS} ${OPT} -Wnoexcept
+	CXXFLAGS := ${CXXFLAGS} ${OPT} -Wstrict-null-sentinel
+	CXXFLAGS := ${CXXFLAGS} ${OPT} -Wimplicit-fallthrough=5
+	CXXFLAGS := ${CXXFLAGS} ${OPT} -Wduplicated-branches
+	CXXFLAGS := ${CXXFLAGS} ${OPT} -Wformat-overflow
+	CXXFLAGS := ${CXXFLAGS} ${OPT} -Wformat-signedness
+	CXXFLAGS := ${CXXFLAGS} ${OPT} -Wsuggest-final-types
+	CXXFLAGS := ${CXXFLAGS} ${OPT} -Wsuggest-final-methods
+
+	# TODO CXXFLAGS := ${CXXFLAGS} ${OPT} -Wstrict-overflow=5
+	# TODO I don't think we want this/may want to change index types later
+	# CXXFLAGS := ${CXXFLAGS} ${OPT} -Wuseless-cast
+endif
+
+# Needed for "#pragma warning"
+CXXFLAGS := ${CXXFLAGS} ${OPT} -Wno-unknown-pragmas
+
+######################################################
+#  CPU tpls
+######################################################
+
+ifdef BOBA_CPU
+NAME_FLAG := ${NAME_FLAG}_cpu
+RAJA_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/RAJA_cpu
+CAMP_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/camp_cpu
+FMT_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/fmt_cpu
+UMPIRE_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/umpire_cpu
+CALIPER_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/Caliper_cpu
+EIGEN_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/eigen_cpu
+HDF5_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/hdf5_cpu
+CXX_DEFINES := ${CXX_DEFINES} -DBOBA_CPU
+endif
+
+ifdef BOBA_ENABLE_METAL
+METAL_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/metal_cpp_compute
+endif
+
+######################################################
+#  CUDA and related
+######################################################
+ifdef BOBA_CUDA
+BOBA_RAJA=1
+IS_MATRIX := $(findstring matrix, ${HOSTNAME})
+
+ifeq ($(IS_MATRIX), matrix)
+	NAME_FLAG := ${NAME_FLAG}_cuda_h100
+	RAJA_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/RAJA_cuda_h100
+	CAMP_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/camp_cuda_h100
+	FMT_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/fmt_cuda_h100
+	UMPIRE_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/umpire_cuda_h100
+	CALIPER_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/Caliper_cuda_h100
+	EIGEN_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/eigen_cuda_h100
+	HDF5_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/hdf5_cuda_h100
+else
+	NAME_FLAG := ${NAME_FLAG}_cuda
+	RAJA_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/RAJA_cuda
+	CAMP_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/camp_cuda
+	FMT_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/fmt_cuda
+	UMPIRE_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/umpire_cuda
+	CALIPER_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/Caliper_cuda
+	EIGEN_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/eigen_cuda
+	HDF5_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/hdf5_cuda
+endif
+
+ifeq ($(IS_MATRIX), matrix) # LC H100s
+	COMP_ARCH=sm_90
+endif
+ifeq ($(HOSTNAME), dev-amd20) # MSU v100s
+	COMP_ARCH=sm_70
+	CUTENSOR_INSTALL_DIR=" "
+endif
+ifeq ($(HOSTNAME), dev-amd24-h200) # MSU h200s
+	COMP_ARCH=sm_90
+endif
+
+ifeq ($(IS_MATRIX), matrix) # CZ H100s, matrix
+	CUDA_COMPILER=/usr/tce/packages/cuda/cuda-12.6.0/bin/nvcc -ccbin /usr/tce/packages/gcc/gcc-13.3.1/bin/g++
+endif
+ifeq ($(HOSTNAME), dev-amd20-v100) # MSU v100s
+	CUDA_COMPILER=/opt/software/CUDA/11.8.0/bin/nvcc -ccbin /opt/software/GCCcore/10.2.0/bin/g++
+endif
+ifeq ($(HOSTNAME), dev-amd24-h200) # MSU h200s
+	CUDA_COMPILER=/opt/software-current/2023.06/x86_64/amd/zen4/software/NVHPC/23.7-CUDA-12.1.1/Linux_x86_64/23.7/compilers/bin/nvcc -ccbin /opt/software-current/2023.06/x86_64/amd/zen4/software/GCCcore/12.3.0/bin/g++
+endif
+
+CXX=${CUDA_COMPILER}
+CXX_DEFINES := ${CXX_DEFINES} -DBOBA_CUDA -DBOBA_CUDA_LIBS
+LINKFLAGS= -std=c++20 -restrict -arch ${COMP_ARCH} --expt-extended-lambda --expt-relaxed-constexpr
+CXXFLAGS := ${CXXFLAGS} -x cu -std=c++20 -restrict -arch ${COMP_ARCH} --expt-extended-lambda --expt-relaxed-constexpr
+CXXFLAGS := ${CXXFLAGS} -Xcudafe "--diag_suppress=declared_but_not_referenced"
+CXXFLAGS := ${CXXFLAGS} -Xcudafe "--diag_suppress=unsigned_compare_with_zero"
+ifeq ($(HOSTNAME), dev-amd24-h200) # MSU h200s
+CXXFLAGS := ${CXXFLAGS} -isystem /opt/software-current/2023.06/x86_64/amd/zen4/software/NVHPC/23.7-CUDA-12.1.1/Linux_x86_64/23.7/compilers/include
+CXXFLAGS := ${CXXFLAGS} -isystem /opt/software-current/2023.06/x86_64/generic/software/cuTENSOR/2.0.1.2-CUDA-12.1.1/include
+endif
+ifeq ($(IS_MATRIX), matrix) # CZMatrix H100s
+CXXFLAGS := ${CXXFLAGS} -isystem /collab/usr/global/tools/nvidia/nvhpc/toss_4_x86_64_ib/nvhpc-25.1/Linux_x86_64/25.1/math_libs/11.8/targets/x86_64-linux/lib
+LINKFLAGS := ${LINKFLAGS} -Xlinker -rpath=/collab/usr/global/tools/nvidia/nvhpc/toss_4_x86_64_ib/nvhpc-25.1/Linux_x86_64/25.1/math_libs/12.6/targets/x86_64-linux/lib
+LINKFLAGS := ${LINKFLAGS} -Xlinker -rpath=/collab/usr/global/tools/nvidia/nvhpc/toss_4_x86_64_ib/nvhpc-25.1/Linux_x86_64/25.1/cuda/12.6/targets/x86_64-linux/lib
+LINKFLAGS := ${LINKFLAGS} -Xlinker -rpath=/usr/tce/packages/cuda/cuda-12.6.0/lib64
+CXXFLAGS := ${CXXFLAGS} --diag-suppress=20014   #warnings caused by eigen
+CXXFLAGS := ${CXXFLAGS} --diag-suppress=20011   #warnings caused by eigen
+endif
+ifdef BOBA_DEBUG
+LINKFLAGS := ${LINKFLAGS} -O1 -g -G
+CXXFLAGS := ${CXXFLAGS} -O1 -g -G
+else
+LINKFLAGS := ${LINKFLAGS} -O3 -g -lineinfo
+CXXFLAGS := ${CXXFLAGS} -O3 -g -lineinfo
+endif
+
+ifeq ($(IS_MATRIX), matrix) # matrix
+CUDA_LIBS := ${CUDA_LIBS} -lcuda -lcusolver -lcudart -lmetis_static -lcublas -lcublasLt -lcusparse -lculibos -lcufft -lnvJitLink
+CUTENSOR_INSTALL_DIR=/collab/usr/global/tools/nvidia/nvhpc/toss_4_x86_64_ib/nvhpc-25.1/Linux_x86_64/25.1/math_libs/12.6/targets/x86_64-linux
+endif
+ifeq ($(HOSTNAME), dev-amd24-h200) # MSU h200s
+CUDA_LIBS := ${CUDA_LIBS} -L/opt/software-current/2023.06/x86_64/generic/software/cuTENSOR/2.0.1.2-CUDA-12.1.1/lib
+CUDA_LIBS := ${CUDA_LIBS} -lcuda -lcusolver -lcudart_static -lmetis_static -lcublas_static -lcublasLt_static -lcusparse_static -lculibos -lcufft -lnvToolsExt
+CUTENSOR_INSTALL_DIR=/opt/software-current/2023.06/x86_64/generic/software/cuTENSOR/2.0.1.2-CUDA-12.1.1
+endif
+
+ifdef BOBA_CUTENSOR
+INCLUDES := ${INCLUDES} -I${CUTENSOR_INSTALL_DIR}/include
+CXX_DEFINES := ${CXX_DEFINES} -DBOBA_CUTENSOR
+
+ifeq ($(IS_MATRIX), matrix) # matrix
+CUTENSOR_LIBS = -L${CUTENSOR_INSTALL_DIR}/lib -Xlinker -rpath=${CUTENSOR_INSTALL_DIR} -lcutensor
+endif
+
+CUDA_LIBS := ${CUDA_LIBS} ${CUTENSOR_LIBS}
+endif
+LIBS := ${LIBS} ${CUDA_LIBS}
+
+endif
+
+######################################################
+#  HIP and related
+######################################################
+ifdef BOBA_HIP
+BOBA_RAJA=1
+
+NAME_FLAG := ${NAME_FLAG}_hip
+RAJA_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/RAJA_hip
+CAMP_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/camp_hip
+FMT_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/fmt_hip
+UMPIRE_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/umpire_hip
+CALIPER_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/Caliper_hip
+EIGEN_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/eigen_hip
+HDF5_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/hdf5_hip
+COMP_ARCH=gfx942
+
+ROCM_COMPILER=/usr/tce/packages/rocmcc/rocmcc-7.0.0-magic/bin/hipcc
+CXX=${ROCM_COMPILER}
+CXX_DEFINES := ${CXX_DEFINES} -DBOBA_HIP -DBOBA_HIP_LIBS
+LINKFLAGS := ${LINKFLAGS} -std=c++20 -fgpu-rdc --offload-arch=${COMP_ARCH} -munsafe-fp-atomics
+CXXFLAGS := ${CXXFLAGS} -std=c++20 -fgpu-rdc --offload-arch=${COMP_ARCH} -munsafe-fp-atomics
+
+ifdef BOBA_DEBUG
+	LINKFLAGS := ${LINKFLAGS} -Og -g -ggdb
+	CXXFLAGS := ${CXXFLAGS} -Og -g -ggdb
+else
+	LINKFLAGS := ${LINKFLAGS} -O3 -g
+	CXXFLAGS := ${CXXFLAGS} -O3 -g
+endif
+
+ROCM_LIBS = -lhipsolver -lrocblas -lrocsolver -lhipblas -lhipsparse -lhipfft -lroctracer64 -lroctx64
+ifdef BOBA_HIPTENSOR
+HIP_INSTALL_DIR=/usr/tce/packages/rocmcc/rocmcc-7.0.0-magic
+CXXFLAGS := ${CXXFLAGS} -isystem ${HIP_INSTALL_DIR}/include -DBOBA_HIPTENSOR
+HIPTENSOR_LIBS = -L${HIP_INSTALL_DIR} -lhiptensor
+ROCM_LIBS := ${ROCM_LIBS} ${HIPTENSOR_LIBS}
+endif
+LIBS := ${LIBS} ${ROCM_LIBS}
+endif
+
+######################################################
+#  BoBa headers
+######################################################
+INCLUDES := ${INCLUDES} -I${BOBA_TOP_DIR}/include
+BOBA_SRC_DIR = ${BOBA_TOP_DIR}/source
+BOBA_INC_DIR = ${BOBA_TOP_DIR}/include/BOBA
+BOBA_INC = $(sort $(shell find ${BOBA_INC_DIR} -type f \( -name '*.hpp' -o -name '*.h' \)))
+
+######################################################
+#  Third party
+######################################################
+
+EIGEN_INC_DIR =${EIGEN_INSTALL_DIR}/include/eigen3
+INCLUDES := ${INCLUDES} -isystem ${EIGEN_INC_DIR}
+# use eigen tensor (unsupported) by default, because we are bold
+CXX_DEFINES := ${CXX_DEFINES} -DBOBA_EIGEN_TENSOR
+
+#--------------------------------------------------
+
+ifdef BOBA_RAJA
+	BOBA_ENABLE_CAMP=1
+	RAJA_INC_DIR =${RAJA_INSTALL_DIR}/include
+	RAJA_LIB_DIR =${RAJA_INSTALL_DIR}/lib
+	LIBS := ${LIBS} -L${RAJA_LIB_DIR} -lRAJA
+	INCLUDES := ${INCLUDES} -isystem ${RAJA_INC_DIR}
+	CXX_DEFINES := ${CXX_DEFINES} -DBOBA_RAJA
+endif
+
+#--------------------------------------------------
+
+ifdef BOBA_HDF5
+	HDF5_INC_DIR =${HDF5_INSTALL_DIR}/include
+	HDF5_LIB_DIR =${HDF5_INSTALL_DIR}/lib
+	LIBS := ${LIBS} -L${HDF5_LIB_DIR} -lhdf5
+	INCLUDES := ${INCLUDES} -isystem ${HDF5_INC_DIR}
+	CXX_DEFINES := ${CXX_DEFINES} -DBOBA_HDF5
+endif
+
+#--------------------------------------------------
+
+ifdef BOBA_UMPIRE
+	BOBA_ENABLE_CAMP=1
+	BOBA_ENABLE_FMT=1
+	UMPIRE_INC_DIR =${UMPIRE_INSTALL_DIR}/include
+	UMPIRE_LIB_DIR =${UMPIRE_INSTALL_DIR}/lib
+	LIBS := ${LIBS} -L${UMPIRE_LIB_DIR} -lumpire
+	INCLUDES := ${INCLUDES} -isystem ${UMPIRE_INC_DIR}
+	CXX_DEFINES := ${CXX_DEFINES} -DBOBA_UMPIRE
+	NAME_FLAG := ${NAME_FLAG}_ump
+
+endif
+
+#--------------------------------------------------
+
+ifdef BOBA_CAMP
+	BOBA_ENABLE_CAMP=1
+endif
+
+ifdef BOBA_ENABLE_CAMP
+	CAMP_INC_DIR =${CAMP_INSTALL_DIR}/include
+	CAMP_LIB_DIR =${CAMP_INSTALL_DIR}/lib
+	LIBS := ${LIBS} -L${CAMP_LIB_DIR} -lcamp
+	INCLUDES := ${INCLUDES} -isystem ${CAMP_INC_DIR}
+	CXX_DEFINES := ${CXX_DEFINES} -DBOBA_ENABLE_CAMP
+endif
+
+#--------------------------------------------------
+
+ifdef BOBA_ENABLE_FMT
+	FMT_INC_DIR =${FMT_INSTALL_DIR}/include
+	FMT_LIB_DIR =${FMT_INSTALL_DIR}/lib
+	LIBS := ${LIBS} -L${FMT_LIB_DIR} -lfmt
+	INCLUDES := ${INCLUDES} -isystem ${FMT_INC_DIR}
+endif
+
+#--------------------------------------------------
+
+ifdef BOBA_APPLE
+	LINKFLAGS := ${LINKFLAGS} -framework Accelerate
+	CXX_DEFINES := ${CXX_DEFINES} -DBOBA_ENABLE_APPLE -DACCELERATE_NEW_LAPACK
+	CXX_DEFINES := ${CXX_DEFINES} -DBOBA_APPLE
+endif
+
+#--------------------------------------------------
+
+# Metal GPU backend
+ifdef BOBA_ENABLE_METAL
+	METAL_INC_DIR=${METAL_INSTALL_DIR}/include
+	METAL_FRAMEWORK_INC_DIR=${METAL_INSTALL_DIR}/Frameworks/include
+	INCLUDES := ${INCLUDES} -isystem ${METAL_INC_DIR} -isystem ${METAL_FRAMEWORK_INC_DIR}
+	LINKFLAGS := ${LINKFLAGS} -framework Metal -framework Foundation -framework QuartzCore
+	CXX_DEFINES := ${CXX_DEFINES} -DBOBA_ENABLE_METAL -DBOBA_METAL
+endif
+
+#--------------------------------------------------
+
+ifdef BOBA_MATLAB
+#   At runtime, load your MATLAB library path -
+#   You can try modifying MATLAB_PATH below, or exporting DYLD_LIBRARY_PATH for your system
+#	export DYLD_LIBRARY_PATH=/Applications/MATLAB_R2025a.app/bin/maca64:$DYLD_LIBRARY_PATH
+	ifndef MATLAB_PATH
+	MATLAB_PATH := /Applications/MATLAB_R2025a.app
+	endif
+	INCLUDES := ${INCLUDES} -I${MATLAB_PATH}/extern/include
+	LIBS := ${LIBS} -L${MATLAB_PATH}/bin/maca64 -lmat -lmx
+	CXX_DEFINES := ${CXX_DEFINES} -DBOBA_MATLAB
+endif
+#--------------------------------------------------
+
+ifdef BOBA_PROFILING
+	CXX_DEFINES := ${CXX_DEFINES} -DBOBA_PROFILING
+	BOBA_ENABLE_CALIPER=1
+	NAME_FLAG := ${NAME_FLAG}_prof
+endif
+
+ifdef BOBA_ENABLE_CALIPER_OBJECTS
+	CXX_DEFINES := ${CXX_DEFINES} -DBOBA_ENABLE_CALIPER_OBJECTS
+	BOBA_ENABLE_CALIPER=1
+endif
+
+ifdef BOBA_ENABLE_CALIPER_EXTERNAL
+	CXX_DEFINES := ${CXX_DEFINES} -DBOBA_ENABLE_CALIPER_EXTERNAL
+	BOBA_ENABLE_CALIPER=1
+endif
+
+ifdef BOBA_ENABLE_CALIPER
+	CXX_DEFINES := ${CXX_DEFINES} -DBOBA_ENABLE_CALIPER
+endif
+
+ifdef BOBA_ENABLE_CALIPER
+	CALIPER_INC_DIR=${CALIPER_INSTALL_DIR}/include
+	CALIPER_LIB_DIR=${CALIPER_INSTALL_DIR}/lib
+	LIBS := ${LIBS} -L${CALIPER_LIB_DIR} -L${CALIPER_LIB_DIR}64 -lcaliper
+	INCLUDES := ${INCLUDES} -isystem ${CALIPER_INC_DIR}
+	NAME_FLAG := ${NAME_FLAG}_cali
+endif
+
+######################################################
+#  BoBa Compile time options
+######################################################
+
+ifdef BOBA_CHECKPOINTS
+	CXX_DEFINES := ${CXX_DEFINES} -DBOBA_CHECKPOINTS
+endif
+
+ifdef BOBA_CHECKPOINTS_OBJECTS
+	CXX_DEFINES := ${CXX_DEFINES} -DBOBA_CHECKPOINTS_OBJECTS
+endif
+
+ifdef BOBA_DEBUG
+	CXX_DEFINES := ${CXX_DEFINES} -DBOBA_DEBUG
+	NAME_FLAG := ${NAME_FLAG}_debug
+endif
+
+######################################################
+#  Compilation targets
+######################################################
+
+LIBS := ${LIBS} -ldl
+
+LINK = ${CXX} ${LINKFLAGS} ${CXX_DEFINES}
+DEPFLAGS = -MMD -MP -MT $@ -MF $(@:.o=.d)
+
+COMPILE = ${CXX} ${CXXFLAGS} ${DEPFLAGS} ${CXX_DEFINES} ${INCLUDES}
+
+#Default prefix, should be changed by project including BoBa
+PREFIX ?= ./boba_lib/
+
+boba${NAME_FLAG}.o: ${BOBA_SRC_DIR}/boba.cpp ${BOBA_INC_DIR}/boba.hpp
+	${COMPILE} ${OPTS} -c $< -o boba${NAME_FLAG}.o

@@ -1,0 +1,218 @@
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+#=== Usage ===================================================================
+# This file allows BOBA to be automatically detected by other libraries
+# using CMake.  To build with BOBA, you can do one of two things:
+#
+#   1. Set the BOBA_DIR environment variable to the BOBA package config
+#      directory. If you loaded BOBA through a dotkit, this may already be set,
+#      and BOBA will be autodetected by CMake.
+#
+#   2. Configure your project with this option:
+#      -DBOBA_DIR=<BOBA install prefix>/share/boba/cmake
+#
+# If you have done either of these things, then CMake should automatically find
+# and include this file when you call find_package(BOBA) from your
+# CMakeLists.txt file.
+#
+#=== Components ==============================================================
+#
+# To link against these, just do, for example:
+#
+#   find_package(BOBA REQUIRED)
+#   add_executable(foo foo.c)
+#   target_link_libraries(foo BOBA::BOBA)
+#
+#
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# Install layout
+set(BOBA_INSTALL_PREFIX @CMAKE_INSTALL_PREFIX@)
+set(BOBA_INCLUDE_DIR "${BOBA_INSTALL_PREFIX}/include")
+set(BOBA_LIB_DIR "${BOBA_INSTALL_PREFIX}/lib")
+
+# variables that can be used in addition to or in lieu of INTERFACE
+set(BOBA_INCLUDE_PATH "${BOBA_INCLUDE_DIR}")
+set(BOBA_LIB_PATH "${BOBA_LIB_DIR}")
+set(BOBA_PREFIX_PATH "${BOBA_INSTALL_PREFIX}/..")
+
+message(STATUS "BOBA_INCLUDE_PATH: ${BOBA_INCLUDE_PATH}")
+message(STATUS "BOBA_LIB_PATH: ${BOBA_LIB_PATH}")
+
+if (@BOBA_NEEDS_BLT_TPLS@)
+  if (@BOBA_ENABLE_CUDA@)
+    find_dependency(Threads)
+  endif ()
+endif()
+
+#------------------------------------------------------------------------------
+# Camp
+#------------------------------------------------------------------------------
+#Camp performs a check on the BLT target
+set(BLT_TGTS "${CMAKE_CURRENT_LIST_DIR}/bltTargets.cmake")
+if(EXISTS "${BLT_TGTS}")
+include("${BLT_TGTS}")
+endif()
+unset(BLT_TGTS)
+
+if (NOT TARGET camp AND "@CAMP_FOUND@")
+  set(BOBA_CAMP_DIR "@camp_DIR@")
+  if(NOT camp_DIR)
+    set(camp_DIR ${BOBA_CAMP_DIR})
+  endif()
+
+  find_dependency(camp CONFIG NO_DEFAULT_PATH PATHS
+    ${camp_DIR}
+    ${camp_DIR}/lib/cmake/camp
+    ${BOBA_PREFIX_PATH}
+  )
+endif ()
+#------------------------------------------------------------------------------
+# RAJA
+#------------------------------------------------------------------------------
+if (NOT TARGET RAJA AND "@RAJA_FOUND@")
+  set(BOBA_RAJA_DIR "@RAJA_DIR@")
+  if(NOT raja_DIR)
+    set(raja_DIR ${BOBA_RAJA_DIR})
+  endif()
+
+  find_dependency(RAJA CONFIG NO_DEFAULT_PATH PATHS
+    ${raja_DIR}
+    ${raja_DIR}/lib/cmake/raja
+    ${BOBA_PREFIX_PATH}
+  )
+endif ()
+#------------------------------------------------------------------------------
+# Umpire
+#------------------------------------------------------------------------------
+if (NOT TARGET umpire AND "@UMPIRE_FOUND@")
+  set(BOBA_UMPIRE_DIR "@UMPIRE_DIR@")
+  if(NOT umpire_DIR)
+    set(umpire_DIR ${BOBA_UMPIRE_DIR})
+  endif()
+
+  find_dependency(umpire CONFIG NO_DEFAULT_PATH PATHS
+    ${umpire_DIR}
+    ${umpire_DIR}/lib/cmake/umpire
+    ${BOBA_PREFIX_PATH}
+  )
+endif ()
+#------------------------------------------------------------------------------
+# FMT
+#------------------------------------------------------------------------------
+if (NOT TARGET fmt::fmt AND "@FMT_FOUND@")
+  set(BOBA_FMT_DIR "@FMT_DIR@")
+  if(NOT fmt_DIR)
+    set(fmt_DIR ${BOBA_FMT_DIR})
+  endif()
+
+  find_dependency(fmt CONFIG NO_DEFAULT_PATH PATHS
+    ${fmt_DIR}
+    ${fmt_DIR}/lib/cmake/fmt
+    ${BOBA_PREFIX_PATH}
+  )
+endif ()
+#------------------------------------------------------------------------------
+# Eigen
+#------------------------------------------------------------------------------
+if (NOT TARGET Eigen3::Eigen AND "@EIGEN_FOUND@")
+  set(BOBA_EIGEN_DIR "@EIGEN_DIR@")
+  if(NOT eigen3_DIR)
+    set(eigen3_DIR ${BOBA_EIGEN_DIR})
+  endif()
+
+  find_dependency(Eigen3 CONFIG NO_DEFAULT_PATH PATHS
+    ${eigen3_DIR}
+    ${eigen3_DIR}/share/eigen3/cmake
+    ${BOBA_PREFIX_PATH}
+  )
+endif ()
+#------------------------------------------------------------------------------
+# Caliper
+#------------------------------------------------------------------------------
+if (NOT TARGET caliper AND "@CALIPER_FOUND@")
+  set(BOBA_CALIPER_DIR "@CALIPER_DIR@")
+  if(NOT CALIPER_DIR)
+    set(CALIPER_DIR ${BOBA_CALIPER_DIR})
+  endif()
+
+  find_dependency(Caliper CONFIG NO_DEFAULT_PATH PATHS
+    ${CALIPER_DIR}
+    ${CALIPER_DIR}/lib/cmake/caliper
+    ${BOBA_PREFIX_PATH}
+  )
+endif ()
+#------------------------------------------------------------------------------
+# HDF5
+#------------------------------------------------------------------------------
+if (NOT TARGET hdf5-static AND "@HDF5_FOUND@")
+  set(BOBA_HDF5_DIR "@HDF5_DIR@")
+  if(NOT HDF5_DIR)
+    set(HDF5_DIR ${BOBA_HDF5_DIR})
+  endif()
+
+  find_dependency(hdf5 CONFIG NO_DEFAULT_PATH PATHS
+    ${HDF5_DIR}
+    ${HDF5_DIR}/cmake
+    ${BOBA_PREFIX_PATH}
+  )
+endif ()
+
+if (ENABLE_CUDA OR ENABLE_HIP)
+#------------------------------------------------------------------------------
+# HIP and ROCM libraries
+#------------------------------------------------------------------------------
+
+  if(ENABLE_HIP)
+    if(@BOBA_HIP_LIBS@)
+      # we need hipblas and hipsolver for rocblas,rocsolver
+      if (NOT TARGET roc::hipblas)
+        set(BOBA_HIPBLAS_DIR "@HIPBLAS_DIR@")
+        if(NOT hipblas_DIR)
+          set(hipblas_DIR ${BOBA_HIPBLAS_DIR})
+        endif()
+        find_dependency(hipblas PATHS ${hipblas_DIR} )
+      endif()
+
+      if (NOT TARGET roc::hipsolver)
+        set(BOBA_HIPSOLVER_DIR "@HIPSOLVER_DIR@")
+        if(NOT hipsolver_DIR)
+          set(hipsolver_DIR ${BOBA_HIPSOLVER_DIR})
+        endif()
+        find_dependency(hipsolver PATHS ${hipsolver_DIR} )
+      endif()
+
+      if (NOT TARGET roc::rocsolver)
+        set(BOBA_ROCSOLVER_DIR "@ROCSOLVER_DIR@")
+        if(NOT rocsolver_DIR)
+          set(rocsolver_DIR ${BOBA_ROCSOLVER_DIR})
+        endif()
+        find_dependency(rocsolver PATHS ${rocsolver_DIR} )
+      endif()
+
+      if (NOT TARGET roc::rocblas)
+        set(BOBA_ROCBLAS_DIR "@ROCBLAS_DIR@")
+        if(NOT rocblas_DIR)
+          set(rocblas_DIR ${BOBA_ROCBLAS_DIR})
+        endif()
+        find_dependency(rocblas PATHS ${rocblas_DIR} )
+      endif()
+    endif()
+
+  endif(ENABLE_HIP)
+
+endif(ENABLE_CUDA OR ENABLE_HIP)
+
+include("${CMAKE_CURRENT_LIST_DIR}/BOBATargets.cmake")
+get_target_property(_flags BOBA::BOBA INTERFACE_LINK_LIBRARIES)
+get_target_property(_includes BOBA::BOBA INTERFACE_INCLUDE_DIRECTORIES)
+
+list(REMOVE_ITEM _flags "openmp")
+if(_flags)
+  set_target_properties( BOBA::BOBA PROPERTIES INTERFACE_LINK_LIBRARIES "${_flags}" )
+endif()
+message(STATUS "BOBA::BOBA INTERFACE_INCLUDE_DIRECTORIES ${_includes}")
+message(STATUS "BOBA::BOBA INTERFACE_LINK_LIBRARIES ${_flags}")
+check_required_components("@PROJECT_NAME@")

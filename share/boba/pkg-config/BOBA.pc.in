@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+libdir=@CMAKE_INSTALL_PREFIX@/lib
+includedir=@CMAKE_INSTALL_PREFIX@/include
+
+Name: @CMAKE_PROJECT_NAME@
+Description: BOBA Tensor library
+Version: @BOBA_VERSION_MAJOR@.@BOBA_VERSION_MINOR@
+Libs: -rdynamic ${libdir}/libBOBA.a  @PRIVATE_LIBS@
+Cflags: @PC_C_FLAGS@ -I${includedir}
