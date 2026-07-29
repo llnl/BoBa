@@ -1,0 +1,172 @@
+{
+  "libraries": {
+    "BOBA": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/opt/rocm-7.2.1/llvm/bin/amdclang",
+        "CMAKE_CXX_COMPILER": "/opt/rocm-7.2.1/llvm/bin/amdclang++",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "BOBA_CHECKPOINTS": "Off",
+        "BOBA_DEBUG": "Off",
+        "BOBA_ENABLE_EXAMPLES": "On",
+        "BOBA_ENABLE_TESTS": "On",
+        "ENABLE_OPENMP": "Off",
+        "BLT_SOURCE_DIR": "",
+        "fmt_DIR": "",
+        "ENABLE_HIP": "On",
+        "BOBA_HIP_LIBS": "On",
+        "CMAKE_CXX_FLAGS": "--offload-arch=gfx942",
+        "ROCM_ROOT_DIR": "/opt/rocm-7.2.1",
+        "CMAKE_HIP_ARCHITECTURES": "gfx942",
+        "CMAKE_EXE_LINKER_FLAGS": "--offload-arch=gfx942",
+        "HIPBLAS_DIR": "/opt/rocm-7.2.1/lib/cmake/hipblas",
+        "HIPSOLVER_DIR": "/opt/rocm-7.2.1/lib/cmake/hipsolver",
+        "ROCBLAS_DIR": "/opt/rocm-7.2.1/lib/cmake/rocblas",
+        "ROCSOLVER_DIR": "/opt/rocm-7.2.1/lib/cmake/rocsolver"
+      }
+    },
+    "blt": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/usr/tce/packages/gcc/gcc-13.3.1/bin/gcc",
+        "CMAKE_CXX_COMPILER": "/usr/tce/packages/gcc/gcc-13.3.1/bin/g++",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "ENABLE_OPENMP": "Off"
+      }
+    },
+    "fmt": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/usr/tce/packages/gcc/gcc-13.3.1/bin/gcc",
+        "CMAKE_CXX_COMPILER": "/usr/tce/packages/gcc/gcc-13.3.1/bin/g++",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "ENABLE_OPENMP": "Off",
+        "CMAKE_POSITION_INDEPENDENT_CODE": "On",
+        "FMT_TEST": "Off",
+        "fmt_DIR": ""
+      }
+    },
+    "camp": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/opt/rocm-7.2.1/llvm/bin/amdclang",
+        "CMAKE_CXX_COMPILER": "/opt/rocm-7.2.1/llvm/bin/amdclang++",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "ROCM_ROOT_DIR": "/opt/rocm-7.2.1",
+        "HIP_PATH": "/opt/rocm-7.2.1/llvm/bin",
+        "CMAKE_HIP_ARCHITECTURES": "gfx942",
+        "ENABLE_HIP": "On",
+        "BLT_SOURCE_DIR": "",
+        "ENABLE_OPENMP": "Off",
+        "ENABLE_TESTS": "Off",
+        "ENABLE_EXAMPLES": "Off"
+      }
+    },
+    "RAJA": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/opt/rocm-7.2.1/llvm/bin/amdclang",
+        "CMAKE_CXX_COMPILER": "/opt/rocm-7.2.1/llvm/bin/amdclang++",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "ROCM_ROOT_DIR": "/opt/rocm-7.2.1",
+        "RAJA_ENABLE_EXTERNAL_ROCPRIM": "On",
+        "rocPRIM_INCLUDE_DIR": "/opt/rocm-7.2.1/include/rocprim",
+        "HIP_PATH": "/opt/rocm-7.2.1/llvm/bin",
+        "CMAKE_HIP_ARCHITECTURES": "gfx942",
+        "ENABLE_HIP": "On",
+        "BLT_SOURCE_DIR": "",
+        "camp_DIR": "",
+        "ENABLE_OPENMP": "Off",
+        "ENABLE_TESTS": "Off",
+        "ENABLE_EXAMPLES": "Off",
+        "RAJA_ENABLE_EXERCISES": "Off",
+        "GPU_TARGETS": "gfx942",
+        "AMDGPU_TARGETS": "gfx942"
+      },
+      "configure": "./tpl/RAJA/host-configs/lc-builds/toss4/hip_3_x.cmake"
+    },
+    "umpire": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/opt/rocm-7.2.1/llvm/bin/amdclang",
+        "CMAKE_CXX_COMPILER": "/opt/rocm-7.2.1/llvm/bin/amdclang++",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "ROCM_ROOT_DIR": "/opt/rocm-7.2.1",
+        "HIP_PATH": "/opt/rocm-7.2.1/llvm/bin",
+        "CMAKE_HIP_ARCHITECTURES": "gfx942",
+        "ENABLE_HIP": "On",
+        "UMPIRE_ENABLE_DEVELOPER_BENCHMARKS": "On",
+        "BLT_SOURCE_DIR": "",
+        "fmt_DIR": "",
+        "camp_DIR": "",
+        "UMPIRE_ENABLE_TOOLS": "On",
+        "UMPIRE_ENABLE_LOGGING": "On",
+        "ENABLE_OPENMP": "Off",
+        "ENABLE_TESTS": "Off",
+        "ENABLE_EXAMPLES": "Off",
+        "RAJA_ENABLE_EXERCISES": "Off",
+        "CMAKE_CXX_FLAGS": "-g"
+      }
+    },
+    "eigen": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/opt/rocm-7.2.1/llvm/bin/amdclang",
+        "CMAKE_CXX_COMPILER": "/opt/rocm-7.2.1/llvm/bin/amdclang++",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "ENABLE_OPENMP": "Off",
+        "BUILD_TESTING": "Off",
+        "EIGEN_BUILD_DEMOS": "Off",
+        "EIGEN_BUILD_DOC": "Off",
+        "EIGEN_BUILD_TESTING": "Off"
+      }
+    },
+    "Caliper": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/opt/rocm-7.2.1/llvm/bin/amdclang",
+        "CMAKE_CXX_COMPILER": "/opt/rocm-7.2.1/llvm/bin/amdclang++",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "ENABLE_HIP": "On",
+        "CMAKE_HIP_ARCHITECTURES": "gfx942",
+        "HIP_PATH": "/opt/rocm-7.2.1/llvm/bin",
+        "ROCM_ROOT_DIR": "/opt/rocm-7.2.1",
+        "BLT_SOURCE_DIR": "",
+        "ENABLE_OPENMP": "Off"
+      }
+    },
+    "hdf5": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/opt/rocm-7.2.1/llvm/bin/amdclang",
+        "CMAKE_CXX_COMPILER": "/opt/rocm-7.2.1/llvm/bin/amdclang++",
+        "BUILD_TESTING": "Off",
+        "HDF5_BUILD_TOOLS": "Off",
+        "HDF5_BUILD_DOC": "Off",
+        "HDF5_BUILD_HL_LIB": "Off",
+        "HDF5_BUILD_EXAMPLES": "Off",
+        "BUILD_SHARED_LIBS": "Off",
+        "HDF5_ENABLE_Z_LIB_SUPPORT": "Off",
+        "HDF5_ENABLE_SZIP_SUPPORT": "Off"
+      }
+    }
+  },
+  "cmake_path": "/usr/tce/packages/cmake/cmake-3.29.2/bin/cmake"
+}

@@ -1,0 +1,77 @@
+{
+  "libraries": {
+    "hdf5": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/usr/bin/gcc",
+        "CMAKE_CXX_COMPILER": "/usr/bin/g++",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "BUILD_TESTING": "Off",
+        "HDF5_BUILD_TOOLS": "Off",
+        "HDF5_BUILD_DOC": "Off",
+        "HDF5_BUILD_HL_LIB": "Off",
+        "HDF5_BUILD_EXAMPLES": "Off",
+        "BUILD_SHARED_LIBS": "Off",  
+        "HDF5_ENABLE_Z_LIB_SUPPORT": "Off",
+        "HDF5_ENABLE_SZIP_SUPPORT": "Off"
+     }
+    },
+    "eigen": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/usr/bin/gcc",
+        "CMAKE_CXX_COMPILER": "/usr/bin/g++",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "ENABLE_OPENMP": "Off",
+        "BUILD_TESTING": "Off",
+        "EIGEN_BUILD_DEMOS": "Off",
+        "EIGEN_BUILD_DOC": "Off",
+        "EIGEN_BUILD_TESTING": "Off"
+      }
+    },
+    "blt": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/usr/bin/gcc",
+        "CMAKE_CXX_COMPILER": "/usr/bin/g++",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "ENABLE_OPENMP": "Off"
+      }
+    },
+    "Caliper": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "BLT_SOURCE_DIR": "",
+        "ENABLE_OPENMP": "Off"
+      }
+    },
+    "BOBA": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/usr/bin/gcc",
+        "CMAKE_CXX_COMPILER": "/usr/bin/g++",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "BOBA_CHECKPOINTS": "Off",
+        "BOBA_DEBUG": "Off",
+        "BOBA_ENABLE_EXAMPLES": "On",
+        "BOBA_ENABLE_TESTS": "On",
+        "ENABLE_OPENMP": "Off",
+        "BLT_SOURCE_DIR": "",
+        "Eigen3_ROOT": ""
+      }
+    }
+  },
+  "cmake_path": "cmake"
+}

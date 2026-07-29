@@ -1,0 +1,125 @@
+{
+  "libraries": {
+    "hdf5": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/usr/tce/packages/gcc/gcc-13.3.1/bin/gcc",
+        "CMAKE_CXX_COMPILER": "/usr/tce/packages/gcc/gcc-13.3.1/bin/g++",
+        "BUILD_TESTING": "Off",
+        "HDF5_BUILD_TOOLS": "Off",
+        "HDF5_BUILD_DOC": "Off",
+        "HDF5_BUILD_HL_LIB": "Off",
+        "HDF5_BUILD_EXAMPLES": "Off",
+        "BUILD_SHARED_LIBS": "Off",
+        "HDF5_ENABLE_Z_LIB_SUPPORT": "Off",
+        "HDF5_ENABLE_SZIP_SUPPORT": "Off"
+      }
+    },
+    "fmt": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/usr/tce/packages/gcc/gcc-13.3.1/bin/gcc",
+        "CMAKE_CXX_COMPILER": "/usr/tce/packages/gcc/gcc-13.3.1/bin/g++",
+        "BUILD_TESTING": "Off",
+        "CMAKE_POSITION_INDEPENDENT_CODE": "On",
+        "FMT_USE_CONSTEXPR": "Off",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "ENABLE_OPENMP": "Off",
+        "FMT_TEST": "Off",
+        "fmt_DIR": ""
+      }
+    },
+    "blt": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/usr/tce/packages/gcc/gcc-13.3.1/bin/gcc",
+        "CMAKE_CXX_COMPILER": "/usr/tce/packages/gcc/gcc-13.3.1/bin/g++",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "ENABLE_OPENMP": "Off"
+      }
+    },
+    "eigen": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/usr/tce/packages/gcc/gcc-13.3.1/bin/gcc",
+        "CMAKE_CXX_COMPILER": "/usr/tce/packages/gcc/gcc-13.3.1/bin/g++",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "ENABLE_OPENMP": "Off",
+        "BUILD_TESTING": "Off",
+        "EIGEN_BUILD_DEMOS": "Off",
+        "EIGEN_BUILD_DOC": "Off",
+        "EIGEN_BUILD_TESTING": "Off"
+      }
+    },
+    "Caliper": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/usr/tce/packages/gcc/gcc-13.3.1/bin/gcc",
+        "CMAKE_CXX_COMPILER": "/usr/tce/packages/gcc/gcc-13.3.1/bin/g++",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "BLT_SOURCE_DIR": "",
+        "ENABLE_OPENMP": "Off"
+      }
+    },
+    "camp": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/usr/tce/packages/gcc/gcc-13.3.1/bin/gcc",
+        "CMAKE_CXX_COMPILER": "/usr/tce/packages/gcc/gcc-13.3.1/bin/g++",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "BLT_SOURCE_DIR": "",
+        "ENABLE_OPENMP": "Off",
+        "ENABLE_TESTS": "Off",
+        "ENABLE_EXAMPLES": "Off"
+      }
+    },
+    "umpire": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/usr/tce/packages/gcc/gcc-13.3.1/bin/gcc",
+        "CMAKE_CXX_COMPILER": "/usr/tce/packages/gcc/gcc-13.3.1/bin/g++",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "UMPIRE_ENABLE_DEVELOPER_BENCHMARKS": "On",
+        "BLT_SOURCE_DIR": "",
+        "fmt_DIR": "",
+        "camp_DIR": "",
+        "UMPIRE_ENABLE_TOOLS": "On",
+        "UMPIRE_ENABLE_LOGGING": "On",
+        "ENABLE_OPENMP": "Off",
+        "ENABLE_TESTS": "Off",
+        "ENABLE_EXAMPLES": "Off",
+        "CMAKE_CXX_FLAGS": "-g"
+      }
+    },
+    "BOBA": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/usr/tce/packages/gcc/gcc-13.3.1/bin/gcc",
+        "CMAKE_CXX_COMPILER": "/usr/tce/packages/gcc/gcc-13.3.1/bin/g++",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "BOBA_CHECKPOINTS": "Off",
+        "BOBA_DEBUG": "Off",
+        "BOBA_ENABLE_EXAMPLES": "On",
+        "BOBA_ENABLE_TESTS": "On",
+        "ENABLE_OPENMP": "Off",
+        "BLT_SOURCE_DIR": ""
+      }
+    }
+  },
+  "cmake_path": "/usr/tce/packages/cmake/cmake-3.23.1/bin/cmake"
+}

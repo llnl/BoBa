@@ -1,0 +1,158 @@
+{
+  "libraries": {
+    "blt": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/opt/software-current/2023.06/x86_64/amd/zen4/software/GCCcore/12.3.0/bin/gcc",
+        "CMAKE_CXX_COMPILER": "/opt/software-current/2023.06/x86_64/amd/zen4/software/GCCcore/12.3.0/bin/g++",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "ENABLE_OPENMP": "Off"
+      }
+    },
+    "fmt": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/opt/software-current/2023.06/x86_64/amd/zen4/software/GCCcore/12.3.0/bin/gcc",
+        "CMAKE_CXX_COMPILER": "/opt/software-current/2023.06/x86_64/amd/zen4/software/GCCcore/12.3.0/bin/g++",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20"
+      }
+    },
+    "camp": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/opt/software-current/2023.06/x86_64/amd/zen4/software/GCCcore/12.3.0/bin/gcc",
+        "CMAKE_CXX_COMPILER": "/opt/software-current/2023.06/x86_64/amd/zen4/software/GCCcore/12.3.0/bin/g++",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "ENABLE_CUDA": "On",
+        "CMAKE_CUDA_ARCHITECTURES": "90",
+        "CUDA_TOOLKIT_ROOT_DIR": "/opt/software-current/2023.06/x86_64/amd/zen4/software/NVHPC/23.7-CUDA-12.1.1/Linux_x86_64/23.7/compilers",
+        "CMAKE_CUDA_COMPILER": "/opt/software-current/2023.06/x86_64/amd/zen4/software/NVHPC/23.7-CUDA-12.1.1/Linux_x86_64/23.7/compilers/bin/nvcc",
+        "CUDA_ARCH": "sm_90",
+        "BLT_SOURCE_DIR": "",
+        "ENABLE_OPENMP": "Off",
+        "ENABLE_TESTS": "Off",
+        "ENABLE_EXAMPLES": "Off"
+      }
+    },
+    "RAJA": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/opt/software-current/2023.06/x86_64/amd/zen4/software/GCCcore/12.3.0/bin/gcc",
+        "CMAKE_CXX_COMPILER": "/opt/software-current/2023.06/x86_64/amd/zen4/software/GCCcore/12.3.0/bin/g++",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "ENABLE_CUDA": "On",
+        "CUDA_TOOLKIT_ROOT_DIR": "/opt/software-current/2023.06/x86_64/amd/zen4/software/NVHPC/23.7-CUDA-12.1.1/Linux_x86_64/23.7/compilers",
+        "CMAKE_CUDA_COMPILER":   "/opt/software-current/2023.06/x86_64/amd/zen4/software/NVHPC/23.7-CUDA-12.1.1/Linux_x86_64/23.7/compilers/bin/nvcc",
+        "CUDA_ARCH": "sm_90",
+        "BLT_SOURCE_DIR": "",
+        "camp_DIR": "",
+        "ENABLE_OPENMP": "Off",
+        "ENABLE_TESTS": "Off",
+        "ENABLE_EXAMPLES": "Off",
+        "RAJA_ENABLE_EXERCISES": "Off",
+        "CMAKE_CUDA_ARCHITECTURES": "90",
+        "ENABLE_BENCHMARKS": "OFF",
+        "RAJA_COMPILER": "RAJA_COMPILER_GCC",
+        "CMAKE_CXX_FLAGS_RELEASE": "'-Xcompiler -O3 -Xcompiler -march=native -Xcompiler -funroll-loops -Xcompiler -finline-functions'",
+        "HOST_OPT_FLAGS": "'-Xcompiler -O3'",
+        "RAJA_DATA_ALIGN": "64",
+        "ENABLE_FORTRAN": "OFF",
+        "CMAKE_CUDA_HOST_COMPILER": "/opt/software-current/2023.06/x86_64/amd/zen4/software/GCCcore/12.3.0/bin/g++",
+        "CMAKE_CUDA_FLAGS": "'-restrict --expt-extended-lambda'",
+        "CMAKE_CUDA_FLAGS_RELEASE": "'-Xcompiler -O3'",
+        "CUDA_SEPARABLE_COMPILATION": "ON",
+        "gtest_disable_pthreads": "ON"
+      },
+      "configure": "./patch/nvcc_gcc_X.cmake"
+    },
+    "umpire": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/opt/software-current/2023.06/x86_64/amd/zen4/software/GCCcore/12.3.0/bin/gcc",
+        "CMAKE_CXX_COMPILER": "/opt/software-current/2023.06/x86_64/amd/zen4/software/GCCcore/12.3.0/bin/g++",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "ENABLE_CUDA": "On",
+        "CUDA_TOOLKIT_ROOT_DIR": "/opt/software-current/2023.06/x86_64/amd/zen4/software/NVHPC/23.7-CUDA-12.1.1/Linux_x86_64/23.7/compilers",
+        "CMAKE_CUDA_COMPILER":   "/opt/software-current/2023.06/x86_64/amd/zen4/software/NVHPC/23.7-CUDA-12.1.1/Linux_x86_64/23.7/compilers/bin/nvcc",
+        "CUDA_ARCH": "sm_90",
+        "CMAKE_CUDA_ARCHITECTURES": "90",
+        "BLT_SOURCE_DIR": "",
+        "fmt_DIR": "",
+        "camp_DIR": "",
+        "UMPIRE_ENABLE_TOOLS": "On",
+        "UMPIRE_ENABLE_LOGGING": "On",
+        "ENABLE_OPENMP": "Off",
+        "ENABLE_TESTS": "Off",
+        "ENABLE_EXAMPLES": "Off",
+        "RAJA_ENABLE_EXERCISES": "Off",
+        "CMAKE_CXX_FLAGS": "-g"
+      }
+    },
+    "eigen": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/opt/software-current/2023.06/x86_64/amd/zen4/software/GCCcore/12.3.0/bin/gcc",
+        "CMAKE_CXX_COMPILER": "/opt/software-current/2023.06/x86_64/amd/zen4/software/GCCcore/12.3.0/bin/g++",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "EIGEN_CUDA_ARCH": "70",
+        "ENABLE_OPENMP": "Off",
+        "BUILD_TESTING": "Off",
+        "EIGEN_BUILD_DEMOS": "Off",
+        "EIGEN_BUILD_DOC": "Off",
+        "EIGEN_BUILD_TESTING": "Off"
+      }
+    },
+    "hdf5": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER": "/opt/software-current/2023.06/x86_64/amd/zen4/software/GCCcore/12.3.0/bin/gcc",
+        "CMAKE_CXX_COMPILER": "/opt/software-current/2023.06/x86_64/amd/zen4/software/GCCcore/12.3.0/bin/g++",
+        "BUILD_TESTING": "Off",
+        "HDF5_BUILD_TOOLS": "Off",
+        "HDF5_BUILD_DOC": "Off",
+        "HDF5_BUILD_HL_LIB": "Off",
+        "HDF5_BUILD_EXAMPLES": "Off",
+        "BUILD_SHARED_LIBS": "Off",
+        "HDF5_ENABLE_Z_LIB_SUPPORT": "Off",
+        "HDF5_ENABLE_SZIP_SUPPORT": "Off"
+      }
+    },
+    "BOBA": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_VERBOSE_MAKEFILE": "On",
+        "CMAKE_C_COMPILER":   "/opt/software-current/2023.06/x86_64/amd/zen4/software/GCCcore/12.3.0/bin/gcc",
+        "CMAKE_CXX_COMPILER": "/opt/software-current/2023.06/x86_64/amd/zen4/software/GCCcore/12.3.0/bin/g++",
+        "CUDA_TOOLKIT_ROOT_DIR": "/opt/software-current/2023.06/x86_64/amd/zen4/software/NVHPC/23.7-CUDA-12.1.1/Linux_x86_64/23.7/compilers",
+        "CMAKE_CUDA_COMPILER":   "/opt/software-current/2023.06/x86_64/amd/zen4/software/NVHPC/23.7-CUDA-12.1.1/Linux_x86_64/23.7/compilers/bin/nvcc",
+        "BLT_CXX_STD": "c++20",
+        "CXX_STANDARD": "20",
+        "BOBA_CHECKPOINTS": "Off",
+        "BOBA_DEBUG": "Off",
+        "BOBA_ENABLE_EXAMPLES": "On",
+        "BOBA_ENABLE_TESTS": "On",
+        "ENABLE_OPENMP": "Off",
+        "BOBA_ENABLE_CUDA": "On",
+        "ENABLE_CUDA": "On",
+        "BLT_SOURCE_DIR": "",
+        "fmt_DIR": "",
+        "CUDA_ARCH": "sm_90",
+        "CMAKE_CUDA_HOST_COMPILER": "/opt/software-current/2023.06/x86_64/amd/zen4/software/GCCcore/12.3.0/bin/g++"
+      }
+    }
+  },
+  "cmake_path": "/opt/software-current/2023.06/x86_64/amd/zen4/software/CMake/3.26.3-GCCcore-12.3.0/bin/cmake"
+}
