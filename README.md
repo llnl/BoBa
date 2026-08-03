@@ -1,5 +1,7 @@
 # BoBa Tensor Decomposition Library
 
+[![GitHub release](https://img.shields.io/github/release/llnl/BoBa.svg)](https://github.com/llnl/BoBa/releases/latest)
+
 Huge datasets and tables, as well as high-dimensional structured problems, are challenging to work with due to their large memory requirements, even by today's standards. This motivates the development of data compression techniques that allow us to work directly with data in its compressed format. The **BoBa library** aims to provide performance-portable abstractions that enable tensor methods that are low-memory, controllably accurate, and efficient across heterogeneous hardware.
 
 BoBa is a (mostly) header-only C++ library containing algorithms for matrices, tensors, and tensor decompositions designed for next-generation heterogeneous architectures. It enables the creation of matrix, tensor, and tensor algorithms that achieve high performance on both laptops and HPC clusters.
