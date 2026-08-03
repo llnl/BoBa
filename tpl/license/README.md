@@ -1,18 +1,14 @@
 # Third-Party Notices
 
 BoBa vendors several upstream third-party libraries under `tpl/`.
-The authoritative license texts remain in each package directory; this folder
-is the BoBa-side index used by the source tree and release packaging.
 
-Detailed per-package notes live in the files next to this README. Use the
-upstream files referenced there as the source of truth when preparing source or
-binary redistributions.
+- BLT (BSD-3-Clause)
+- Caliper (BSD-3-Clause)
+- camp (BSD-3-Clause)
+- Eigen (MPL-2.0 with additional bundled notices)
+- fmt (MIT)
+- HDF5 (HDF5 license)
+- RAJA (BSD-3-Clause)
+- Umpire (MIT)
 
-- [blt](blt)
-- [caliper](caliper)
-- [camp](camp)
-- [eigen](eigen)
-- [fmt](fmt)
-- [hdf5](hdf5)
-- [raja](raja)
-- [umpire](umpire)
+In case of a conflict, the authoritative license texts remain in each package directory.

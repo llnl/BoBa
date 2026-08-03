@@ -1,6 +1,6 @@
 ## Contributions
 
-BoBa is an open source project. We welcome contributions via pull requests as well as questions, feature requests, or bug reports via issues. Contact guthrey1@llnl.gov with any questions. Contributions must be made under same license at BoBa itself - see the LICENSE file.
+BoBa is an open source project. We welcome contributions via pull requests as well as questions, feature requests, or bug reports via issues. Contact the team with any questions. Contributions must be made under same license at BoBa itself - see the LICENSE file.
 
 If you aren't a BoBa developer at LLNL, you won't have permission to push new branches to the repository. First, you should create a fork. This will create your own copy of the BoBa repository and ensure you can push your changes up to GitHub and create pull requests.
 
@@ -16,6 +16,7 @@ Please review the PR checklist below when you are ready for review.
 
 ## PR Checklist
 
+- Please run the CI suite to ensure your changes maintain the functionality of all supported features.
 - Note that in CI, we treat many warnings as errors in order to improve long term code quality. This may lead to compilation working locally but failing in CI. If you'd like to replicate this behavior locally, use `BOBA_CI=1`. However, we cannot guarantee that the behavior will be completely consistent between your local compiler and the compilers used in CI.
 - Was there an issue related to this PR? If so, tag the issue in the description
 - Are you adding a new example/test?
