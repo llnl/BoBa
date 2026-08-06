@@ -18,13 +18,18 @@
 namespace boba
 {
 
+template <execution_space space, typename _data_t>
+struct Vector;
+
 /**
  * \brief
  * Command-line options argument parser. Inspired by some of the concept's mfem's OptionsParser \n
  * \details
  * The class is initialized with a list of argument strings, and new options are added with
  * the add_optional_argument and add_required_argument methods. Currently supports bool, int,
- * size_t, double, and string options.
+ * size_t, double, string, `std::vector<int>`, `std::vector<size_t>`,
+ * `::boba::Array<size_t, K>`, and `::boba::Vector<::boba::host_space, size_t>` options.
+ * List options accept either repeated tokens or comma-delimited literals such as `[4,8,16]`.
  */
 
 class argparser
@@ -43,6 +48,7 @@ public:
 
 private:
   using option_value_type = std::variant<
+    std::monostate,
     std::reference_wrapper<bool>,
     std::reference_wrapper<int>,
     std::reference_wrapper<double>,
@@ -93,6 +99,8 @@ private:
     std::string short_name;
     std::string long_name;
     std::string description;
+    std::function<ParseResult(argparser&, size_t, size_t&)> custom_parse;
+    std::function<void(std::ostream&)> custom_write;
     bool required;
 
     Option() = delete;
@@ -119,6 +127,23 @@ private:
     {
     }
 
+    Option(
+      std::string_view short_name_,
+      std::string_view long_name_,
+      std::string_view description_,
+      std::function<ParseResult(argparser&, size_t, size_t&)> custom_parse_,
+      std::function<void(std::ostream&)> custom_write_,
+      bool req)
+        : value(std::monostate{}),
+          short_name(short_name_),
+          long_name(long_name_),
+          description(description_),
+          custom_parse(std::move(custom_parse_)),
+          custom_write(std::move(custom_write_)),
+          required(req)
+    {
+    }
+
     [[nodiscard]]
     bool matches(std::string_view arg) const noexcept
     {
@@ -135,7 +160,7 @@ private:
     [[nodiscard]]
     bool takes_argument() const noexcept
     {
-      return !std::holds_alternative<std::reference_wrapper<bool>>(value);
+      return static_cast<bool>(custom_parse) || !std::holds_alternative<std::reference_wrapper<bool>>(value);
     }
   };
 
@@ -152,6 +177,24 @@ private:
         short_name,
         long_name,
         description,
+        required));
+  }
+
+  void add_custom_argument(
+    std::string_view short_name,
+    std::string_view long_name,
+    std::string_view description,
+    std::function<ParseResult(argparser&, size_t, size_t&)> custom_parse,
+    std::function<void(std::ostream&)> custom_write,
+    bool required)
+  {
+    options.push_back(
+      Option(
+        short_name,
+        long_name,
+        description,
+        std::move(custom_parse),
+        std::move(custom_write),
         required));
   }
 
@@ -183,6 +226,170 @@ private:
     last_result.error_type = new_error_type;
     last_result.error_idx = new_error_idx;
     return last_result;
+  }
+
+  [[nodiscard]]
+  bool is_help_option(std::string_view arg) const noexcept
+  {
+    return arg == "-h" || arg == "--help";
+  }
+
+  [[nodiscard]]
+  size_t find_option_index(std::string_view arg) const noexcept
+  {
+    for (size_t i = 0; i < options.size(); ++i)
+    {
+      if (options[i].matches(arg))
+      {
+        return i;
+      }
+    }
+    return options.size();
+  }
+
+  [[nodiscard]]
+  bool is_registered_option(std::string_view arg) const noexcept
+  {
+    return is_help_option(arg) || find_option_index(arg) != options.size();
+  }
+
+  [[nodiscard]]
+  static std::string_view trim_whitespace(std::string_view value) noexcept
+  {
+    size_t begin = 0;
+    while (begin < value.size() && std::isspace(static_cast<unsigned char>(value[begin])))
+    {
+      ++begin;
+    }
+
+    size_t end = value.size();
+    while (end > begin && std::isspace(static_cast<unsigned char>(value[end - 1])))
+    {
+      --end;
+    }
+
+    return value.substr(begin, end - begin);
+  }
+
+  template <typename T, typename ParseElement>
+  ParseResult parse_list_token(
+    std::string_view token,
+    size_t token_idx,
+    std::vector<T>& values,
+    ParseElement parse_element)
+  {
+    token = trim_whitespace(token);
+    if (token.empty())
+    {
+      return make_result(ErrorType::invalid_argument, token_idx);
+    }
+
+    const bool starts_with_bracket = token.front() == '[';
+    const bool ends_with_bracket = token.back() == ']';
+    if (starts_with_bracket != ends_with_bracket)
+    {
+      return make_result(ErrorType::invalid_argument, token_idx);
+    }
+
+    if (starts_with_bracket)
+    {
+      token = trim_whitespace(token.substr(1, token.size() - 2));
+      if (token.empty())
+      {
+        return make_result(ErrorType::invalid_argument, token_idx);
+      }
+    }
+
+    size_t start = 0;
+    while (start <= token.size())
+    {
+      const size_t comma = token.find(',', start);
+      const size_t stop = (comma == std::string_view::npos) ? token.size() : comma;
+      const std::string_view piece = trim_whitespace(token.substr(start, stop - start));
+      if (piece.empty())
+      {
+        return make_result(ErrorType::invalid_argument, token_idx);
+      }
+
+      T parsed_value{};
+      if (!parse_element(piece, parsed_value))
+      {
+        return make_result(ErrorType::invalid_argument, token_idx);
+      }
+      values.push_back(parsed_value);
+
+      if (comma == std::string_view::npos)
+      {
+        break;
+      }
+      start = comma + 1;
+    }
+
+    return {};
+  }
+
+  template <typename T, typename ParseElement, typename AssignValues>
+  ParseResult parse_list_argument(
+    size_t option_idx,
+    size_t& i,
+    ParseElement parse_element,
+    AssignValues assign_values,
+    size_t expected_length = static_cast<size_t>(-1))
+  {
+    if (i >= arguments.size())
+    {
+      return make_result(ErrorType::missing_argument, option_idx);
+    }
+
+    const size_t first_value_idx = i;
+    if (is_registered_option(arguments[i]))
+    {
+      return make_result(ErrorType::missing_argument, option_idx);
+    }
+
+    std::vector<T> parsed_values;
+    for (; i < arguments.size(); ++i)
+    {
+      const std::string_view token = arguments[i];
+      if (is_registered_option(token))
+      {
+        break;
+      }
+
+      const ParseResult token_result = parse_list_token(token, i, parsed_values, parse_element);
+      if (!token_result.ok())
+      {
+        return token_result;
+      }
+    }
+
+    if (parsed_values.empty())
+    {
+      return make_result(ErrorType::missing_argument, option_idx);
+    }
+
+    if (expected_length != static_cast<size_t>(-1) && parsed_values.size() != expected_length)
+    {
+      return make_result(ErrorType::invalid_argument, first_value_idx);
+    }
+
+    assign_values(parsed_values);
+    return {};
+  }
+
+  template <typename T>
+  void write_vector_value(const std::vector<T>& values, std::ostream& os) const
+  {
+    os << '[';
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+      if (i > 0)
+      {
+        os << ", ";
+      }
+      os << values[i];
+    }
+    os << ']';
   }
 
   std::vector<std::string> arguments;
@@ -353,6 +560,392 @@ public:
 
   /**
    * \brief
+   * Add an optional integer vector option and set `var` to receive the parsed values.
+   * When present on the command line, the option consumes one or more integer tokens until
+   * the next registered option is encountered.
+   */
+  void add_optional_argument(
+    std::vector<int>& var,
+    std::string_view short_name,
+    std::string_view long_name,
+    std::string_view description)
+  {
+    add_custom_argument(
+      short_name,
+      long_name,
+      description,
+      [&var](argparser& parser, size_t option_idx, size_t& i)
+    {
+      return parser.parse_list_argument<int>(
+        option_idx,
+        i,
+        [&parser](std::string_view value, int& parsed_value)
+      {
+        return parser.parse_int(value, parsed_value);
+      },
+        [&var](const std::vector<int>& values)
+      {
+        var = values;
+      });
+    },
+      [&var](std::ostream& os)
+    {
+      os << '[';
+      for (size_t i = 0; i < var.size(); ++i)
+      {
+        if (i > 0)
+        {
+          os << ", ";
+        }
+        os << var[i];
+      }
+      os << ']';
+    },
+      false);
+  }
+
+  /**
+   * \brief
+   * Add a required integer vector option and set `var` to receive the parsed values.
+   * When present on the command line, the option consumes one or more integer tokens until
+   * the next registered option is encountered.
+   */
+  void add_required_argument(
+    std::vector<int>& var,
+    std::string_view short_name,
+    std::string_view long_name,
+    std::string_view description)
+  {
+    add_custom_argument(
+      short_name,
+      long_name,
+      description,
+      [&var](argparser& parser, size_t option_idx, size_t& i)
+    {
+      return parser.parse_list_argument<int>(
+        option_idx,
+        i,
+        [&parser](std::string_view value, int& parsed_value)
+      {
+        return parser.parse_int(value, parsed_value);
+      },
+        [&var](const std::vector<int>& values)
+      {
+        var = values;
+      });
+    },
+      [&var](std::ostream& os)
+    {
+      os << '[';
+      for (size_t i = 0; i < var.size(); ++i)
+      {
+        if (i > 0)
+        {
+          os << ", ";
+        }
+        os << var[i];
+      }
+      os << ']';
+    },
+      true);
+  }
+
+  /**
+   * \brief
+   * Add an optional size_t vector option and set `var` to receive the parsed values.
+   * When present on the command line, the option consumes one or more size_t tokens until
+   * the next registered option is encountered.
+   */
+  void add_optional_argument(
+    std::vector<size_t>& var,
+    std::string_view short_name,
+    std::string_view long_name,
+    std::string_view description)
+  {
+    add_custom_argument(
+      short_name,
+      long_name,
+      description,
+      [&var](argparser& parser, size_t option_idx, size_t& i)
+    {
+      return parser.parse_list_argument<size_t>(
+        option_idx,
+        i,
+        [&parser](std::string_view value, size_t& parsed_value)
+      {
+        return parser.parse_size_t(value, parsed_value);
+      },
+        [&var](const std::vector<size_t>& values)
+      {
+        var = values;
+      });
+    },
+      [&var](std::ostream& os)
+    {
+      os << '[';
+      for (size_t i = 0; i < var.size(); ++i)
+      {
+        if (i > 0)
+        {
+          os << ", ";
+        }
+        os << var[i];
+      }
+      os << ']';
+    },
+      false);
+  }
+
+  /**
+   * \brief
+   * Add a required size_t vector option and set `var` to receive the parsed values.
+   * When present on the command line, the option consumes one or more size_t tokens until
+   * the next registered option is encountered.
+   */
+  void add_required_argument(
+    std::vector<size_t>& var,
+    std::string_view short_name,
+    std::string_view long_name,
+    std::string_view description)
+  {
+    add_custom_argument(
+      short_name,
+      long_name,
+      description,
+      [&var](argparser& parser, size_t option_idx, size_t& i)
+    {
+      return parser.parse_list_argument<size_t>(
+        option_idx,
+        i,
+        [&parser](std::string_view value, size_t& parsed_value)
+      {
+        return parser.parse_size_t(value, parsed_value);
+      },
+        [&var](const std::vector<size_t>& values)
+      {
+        var = values;
+      });
+    },
+      [&var](std::ostream& os)
+    {
+      os << '[';
+      for (size_t i = 0; i < var.size(); ++i)
+      {
+        if (i > 0)
+        {
+          os << ", ";
+        }
+        os << var[i];
+      }
+      os << ']';
+    },
+      true);
+  }
+
+  /**
+   * \brief
+   * Add an optional fixed-size size_t array option and set `var` to receive the parsed values.
+   * The option accepts exactly `K` entries, either as repeated tokens or a list literal.
+   */
+  template <size_t K>
+  void add_optional_argument(
+    ::boba::Array<size_t, K>& var,
+    std::string_view short_name,
+    std::string_view long_name,
+    std::string_view description)
+  {
+    add_custom_argument(
+      short_name,
+      long_name,
+      description,
+      [&var](argparser& parser, size_t option_idx, size_t& i)
+    {
+      return parser.parse_list_argument<size_t>(
+        option_idx,
+        i,
+        [&parser](std::string_view value, size_t& parsed_value)
+      {
+        return parser.parse_size_t(value, parsed_value);
+      },
+        [&var](const std::vector<size_t>& values)
+      {
+        for (size_t idx = 0; idx < K; ++idx)
+        {
+          var[idx] = values[idx];
+        }
+      },
+        K);
+    },
+      [&var](std::ostream& os)
+    {
+      os << '[';
+      for (size_t i = 0; i < K; ++i)
+      {
+        if (i > 0)
+        {
+          os << ", ";
+        }
+        os << var[i];
+      }
+      os << ']';
+    },
+      false);
+  }
+
+  /**
+   * \brief
+   * Add a required fixed-size size_t array option and set `var` to receive the parsed values.
+   * The option accepts exactly `K` entries, either as repeated tokens or a list literal.
+   */
+  template <size_t K>
+  void add_required_argument(
+    ::boba::Array<size_t, K>& var,
+    std::string_view short_name,
+    std::string_view long_name,
+    std::string_view description)
+  {
+    add_custom_argument(
+      short_name,
+      long_name,
+      description,
+      [&var](argparser& parser, size_t option_idx, size_t& i)
+    {
+      return parser.parse_list_argument<size_t>(
+        option_idx,
+        i,
+        [&parser](std::string_view value, size_t& parsed_value)
+      {
+        return parser.parse_size_t(value, parsed_value);
+      },
+        [&var](const std::vector<size_t>& values)
+      {
+        for (size_t idx = 0; idx < K; ++idx)
+        {
+          var[idx] = values[idx];
+        }
+      },
+        K);
+    },
+      [&var](std::ostream& os)
+    {
+      os << '[';
+      for (size_t i = 0; i < K; ++i)
+      {
+        if (i > 0)
+        {
+          os << ", ";
+        }
+        os << var[i];
+      }
+      os << ']';
+    },
+      true);
+  }
+
+  /**
+   * \brief
+   * Add an optional host Vector option and set `var` to receive the parsed values.
+   * The option accepts one or more entries, either as repeated tokens or a list literal.
+   */
+  void add_optional_argument(
+    ::boba::Vector<::boba::host_space, size_t>& var,
+    std::string_view short_name,
+    std::string_view long_name,
+    std::string_view description)
+  {
+    add_custom_argument(
+      short_name,
+      long_name,
+      description,
+      [&var](argparser& parser, size_t option_idx, size_t& i)
+    {
+      return parser.parse_list_argument<size_t>(
+        option_idx,
+        i,
+        [&parser](std::string_view value, size_t& parsed_value)
+      {
+        return parser.parse_size_t(value, parsed_value);
+      },
+        [&var](const std::vector<size_t>& values)
+      {
+        var.resize(static_cast<::boba::index_t>(values.size()));
+        auto view = var.view();
+        for (size_t idx = 0; idx < values.size(); ++idx)
+        {
+          view(static_cast<::boba::index_t>(idx)) = values[idx];
+        }
+      });
+    },
+      [&var](std::ostream& os)
+    {
+      auto view = var.const_view();
+      os << '[';
+      for (size_t i = 0; i < var.size(); ++i)
+      {
+        if (i > 0)
+        {
+          os << ", ";
+        }
+        os << view(static_cast<::boba::index_t>(i));
+      }
+      os << ']';
+    },
+      false);
+  }
+
+  /**
+   * \brief
+   * Add a required host Vector option and set `var` to receive the parsed values.
+   * The option accepts one or more entries, either as repeated tokens or a list literal.
+   */
+  void add_required_argument(
+    ::boba::Vector<::boba::host_space, size_t>& var,
+    std::string_view short_name,
+    std::string_view long_name,
+    std::string_view description)
+  {
+    add_custom_argument(
+      short_name,
+      long_name,
+      description,
+      [&var](argparser& parser, size_t option_idx, size_t& i)
+    {
+      return parser.parse_list_argument<size_t>(
+        option_idx,
+        i,
+        [&parser](std::string_view value, size_t& parsed_value)
+      {
+        return parser.parse_size_t(value, parsed_value);
+      },
+        [&var](const std::vector<size_t>& values)
+      {
+        var.resize(static_cast<::boba::index_t>(values.size()));
+        auto view = var.view();
+        for (size_t idx = 0; idx < values.size(); ++idx)
+        {
+          view(static_cast<::boba::index_t>(idx)) = values[idx];
+        }
+      });
+    },
+      [&var](std::ostream& os)
+    {
+      auto view = var.const_view();
+      os << '[';
+      for (size_t i = 0; i < var.size(); ++i)
+      {
+        if (i > 0)
+        {
+          os << ", ";
+        }
+        os << view(static_cast<::boba::index_t>(i));
+      }
+      os << ']';
+    },
+      true);
+  }
+
+  /**
+   * \brief
    * Return true if the command line options were parsed successfully.
    * @return `true` when no parsing error was recorded.
    */
@@ -452,21 +1045,13 @@ public:
     {
       const std::string_view arg = arguments[i];
 
-      if (arg == "-h" || arg == "--help")
+      if (is_help_option(arg))
       {
         // print help message
         return make_result(ErrorType::help);
       }
 
-      size_t j = 0;
-      for (; j < options.size(); j++)
-      {
-        if (options[j].matches(arg))
-        {
-          break;
-        }
-      }
-
+      const size_t j = find_option_index(arg);
       if (j >= options.size())
       {
         // unrecognized option
@@ -493,6 +1078,16 @@ public:
       {
         // missing argument
         return make_result(ErrorType::missing_argument, j);
+      }
+
+      if (option.custom_parse)
+      {
+        const ParseResult result = option.custom_parse(*this, j, i);
+        if (!result.ok())
+        {
+          return result;
+        }
+        continue;
       }
 
       bool is_valid = true;
@@ -557,7 +1152,11 @@ public:
    */
   void write_value(const Option& opt, std::ostream& os) const
   {
-    if (const auto* bool_ref = std::get_if<std::reference_wrapper<bool>>(&opt.value))
+    if (opt.custom_write)
+    {
+      opt.custom_write(os);
+    }
+    else if (const auto* bool_ref = std::get_if<std::reference_wrapper<bool>>(&opt.value))
     {
       os << (bool_ref->get() ? std::string_view(opt.long_name) : std::string_view("disabled"));
     }

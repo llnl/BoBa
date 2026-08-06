@@ -34,7 +34,6 @@
 #include "BOBA/abstractions/atomics.hpp"
 #include "BOBA/abstractions/loops.hpp"
 #include "BOBA/abstractions/reductions.hpp"
-#include "BOBA/abstractions/argparser.hpp"
 #include "BOBA/abstractions/tictoc.hpp"
 
 // Dynamic objects
@@ -45,6 +44,7 @@
 #include "BOBA/backends/boba_hdf5.hpp"
 #include "BOBA/tensors/Tensor_io.hpp"
 #include "BOBA/tensors/Vector.hpp"
+#include "BOBA/abstractions/argparser.hpp"
 #include "BOBA/tensors/Matrix.hpp"
 #include "BOBA/tensors/PermutationMatrix.hpp"
 

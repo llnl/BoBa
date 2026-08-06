@@ -100,6 +100,21 @@
     test_argparse_bool_default:
       inputs: "--case bool_default --required"
       skip: []
+    test_argparse_array_size_t_tokens:
+      inputs: "--case array_size_t_tokens --required --shape-array 2 4 6"
+      skip: []
+    test_argparse_array_size_t_literal:
+      inputs: "--case array_size_t_literal --required --shape-array [3,5,8]"
+      skip: []
+    test_argparse_array_size_t_wrong_length:
+      inputs: "--case array_size_t_wrong_length --required --shape-array 1 2"
+      skip: []
+    test_argparse_vector_boba_tokens:
+      inputs: "--case vector_boba_tokens --required --shape-vector 7 9 11"
+      skip: []
+    test_argparse_vector_boba_literal:
+      inputs: "--case vector_boba_literal --required --shape-vector [1,3,5,7]"
+      skip: []
     test_argparse_bool_duplicate:
       inputs: "--case bool_duplicate --required -v -v"
       skip: []
