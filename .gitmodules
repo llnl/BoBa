@@ -1,0 +1,39 @@
+[submodule "RAJA"]
+	path = tpl/RAJA
+	url = https://github.com/LLNL/RAJA.git
+[submodule "Caliper"]
+	path = tpl/Caliper
+	url = https://github.com/LLNL/Caliper.git
+[submodule "eigen"]
+	path = tpl/eigen
+	url = https://gitlab.com/libeigen/eigen.git
+[submodule "umpire"]
+	path = tpl/umpire
+	url = https://github.com/LLNL/Umpire.git
+[submodule "camp"]
+	path = tpl/camp
+	url = https://github.com/LLNL/camp.git
+[submodule "tpl/blt"]
+	path = tpl/blt
+	url = https://github.com/LLNL/blt.git
+[submodule "tpl/fmt"]
+	path = tpl/fmt
+	url = https://github.com/fmtlib/fmt.git
+[submodule "tpl/hdf5"]
+	path = tpl/hdf5
+	url = https://github.com/HDFGroup/hdf5.git
+[submodule "tpl/RAJA"]
+	path = tpl/RAJA
+	url = https://github.com/LLNL/RAJA.git
+[submodule "tpl/Caliper"]
+	path = tpl/Caliper
+	url = https://github.com/LLNL/Caliper.git
+[submodule "tpl/eigen"]
+	path = tpl/eigen
+	url = https://gitlab.com/libeigen/eigen.git
+[submodule "tpl/umpire"]
+	path = tpl/umpire
+	url = https://github.com/LLNL/Umpire.git
+[submodule "tpl/camp"]
+	path = tpl/camp
+	url = https://github.com/LLNL/camp.git
