@@ -935,6 +935,17 @@
        inputs: "--dimension 6 --size_base 1"
        skip: [cuda, hip]
 
+  test_tensor_completion:
+    test_tensor_completion_3d:
+      inputs: "--samples 800 --rank 5 --bin-width 0.5 --dims 20 20 20"
+      skip: [cuda, hip]
+    test_tensor_completion_4d:
+      inputs: "--samples 800 --rank 5 --bin-width 0.5 --dims 12 12 12 12"
+      skip: [cuda, hip, debug, ubsan, asan]
+    test_tensor_completion_5d:
+      inputs: "--samples 800 --rank 5 --bin-width 0.5 --dims 8 8 8 8 8"
+      skip: [cuda, hip, debug, ubsan, asan]
+
   test_static_views:
     test_static_views_tt:
       inputs: "--which 1"

@@ -81,6 +81,7 @@ all: \
 	test_tensors \
 	test_subtensorviews \
 	test_cp \
+	test_tensor_completion \
 	test_cross \
 	test_cur \
 	test_block_operator \
@@ -473,6 +474,16 @@ test_cp${NAME_FLAG}.out: test_cp${NAME_FLAG}.o boba${NAME_FLAG}.o
 
 test_cp${NAME_FLAG}.o: ${TESTS_DIR}/test_cp.cpp ${BOBA_INC} boba${NAME_FLAG}.o
 	${COMPILE} ${OPTS} -c ${TESTS_DIR}/test_cp.cpp -o test_cp${NAME_FLAG}.o
+
+###############################
+test_tensor_completion: test_tensor_completion${NAME_FLAG}.out
+	echo "Done making $@${NAME_FLAG}.out"
+
+test_tensor_completion${NAME_FLAG}.out: test_tensor_completion${NAME_FLAG}.o boba${NAME_FLAG}.o
+	${LINK} -o $@ $^ ${LIBS}
+
+test_tensor_completion${NAME_FLAG}.o: ${TESTS_DIR}/test_tensor_completion.cpp ${BOBA_INC} boba${NAME_FLAG}.o
+	${COMPILE} ${OPTS} -c ${TESTS_DIR}/test_tensor_completion.cpp -o test_tensor_completion${NAME_FLAG}.o
 
 ###############################
 test_orthogonalize: test_orthogonalize${NAME_FLAG}.out
