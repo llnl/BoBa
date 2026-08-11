@@ -52,6 +52,12 @@
       skip: [cuda, hip]
 
   test_argparse:
+    test_argparse_help_short:
+      inputs: "-h"
+      skip: []
+    test_argparse_help_long:
+      inputs: "--help"
+      skip: []
     test_argparse_int_0010:
       inputs: "--case int_0010 --required -n 0010"
       skip: []
@@ -114,6 +120,9 @@
       skip: []
     test_argparse_vector_boba_literal:
       inputs: "--case vector_boba_literal --required --shape-vector [1,3,5,7]"
+      skip: []
+    test_argparse_vector_invalid_mid:
+      inputs: "--case vector_invalid_mid --required --dims 9 10 nope"
       skip: []
     test_argparse_bool_duplicate:
       inputs: "--case bool_duplicate --required -v -v"

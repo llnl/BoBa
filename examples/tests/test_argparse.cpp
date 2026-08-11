@@ -68,6 +68,21 @@ void expect_error_contains(
   pass_or_fail_bool(check, !result.ok());
   pass_or_fail_bool(check, os.str().find(expected) != std::string::npos);
 }
+
+void expect_help(
+  bool& check,
+  const ::boba::argparser& args,
+  const ::boba::argparser::ParseResult& result)
+{
+  std::ostringstream os;
+  args.print_help(os);
+  const std::string text = os.str();
+
+  pass_or_fail_bool(check, result.help_requested());
+  pass_or_fail_bool(check, text.find("Usage:") != std::string::npos);
+  pass_or_fail_bool(check, text.find("-h, --help") != std::string::npos);
+  pass_or_fail_bool(check, text.find("--case") != std::string::npos);
+}
 } // namespace
 
 int main(int argc, char* argv[])
@@ -106,6 +121,12 @@ int main(int argc, char* argv[])
   args.add_optional_argument(fixed_extents, "", "--shape-array", "Fixed-rank shape.");
   args.add_optional_argument(shape_vector, "", "--shape-vector", "Dynamic shape.");
   const auto result = args.parse();
+
+  if (result.help_requested())
+  {
+    expect_help(check, args, result);
+    return final_check(check);
+  }
 
   if (scenario == "int_0010")
   {
@@ -234,6 +255,11 @@ int main(int argc, char* argv[])
   else if (scenario == "vector_invalid")
   {
     expect_error_contains(check, args, result, "Wrong option format: --dims nope");
+  }
+  else if (scenario == "vector_invalid_mid")
+  {
+    expect_error_contains(check, args, result, "Wrong option format: --dims nope");
+    expect_error_contains(check, args, result, "argv[");
   }
   else if (scenario == "vector_missing_argument")
   {

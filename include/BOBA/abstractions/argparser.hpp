@@ -8,6 +8,7 @@
 #include <cerrno>
 #include <charconv>
 #include <cstdlib>
+#include <iomanip>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -58,8 +59,13 @@ private:
 public:
   struct ParseResult
   {
+    static constexpr size_t npos = static_cast<size_t>(-1);
+
     ErrorType error_type = ErrorType::none;
     size_t error_idx = 0;
+    size_t option_idx = npos;
+    size_t arg_idx = npos;
+    size_t arg_idx2 = npos;
 
     [[nodiscard]]
     bool ok() const noexcept
@@ -221,11 +227,73 @@ private:
     }
   }
 
-  ParseResult make_result(ErrorType new_error_type, size_t new_error_idx = 0) noexcept
+  ParseResult make_result(
+    ErrorType new_error_type,
+    size_t new_error_idx = 0,
+    size_t new_option_idx = ParseResult::npos,
+    size_t new_arg_idx = ParseResult::npos,
+    size_t new_arg_idx2 = ParseResult::npos) noexcept
   {
     last_result.error_type = new_error_type;
     last_result.error_idx = new_error_idx;
+    last_result.option_idx = new_option_idx;
+    last_result.arg_idx = new_arg_idx;
+    last_result.arg_idx2 = new_arg_idx2;
     return last_result;
+  }
+
+  [[nodiscard]]
+  std::string option_value_placeholder(const Option& opt) const
+  {
+    if (!opt.takes_argument())
+    {
+      return {};
+    }
+
+    if (opt.custom_parse)
+    {
+      return " <value>";
+    }
+
+    if (std::holds_alternative<std::reference_wrapper<int>>(opt.value))
+    {
+      return " <int>";
+    }
+    if (std::holds_alternative<std::reference_wrapper<size_t>>(opt.value))
+    {
+      return " <size_t>";
+    }
+    if (std::holds_alternative<std::reference_wrapper<double>>(opt.value))
+    {
+      return " <double>";
+    }
+    if (std::holds_alternative<std::reference_wrapper<std::string>>(opt.value))
+    {
+      return " <string>";
+    }
+
+    return " <value>";
+  }
+
+  [[nodiscard]]
+  std::string option_spelling(const Option& opt) const
+  {
+    std::string spelling;
+    if (!opt.short_name.empty() && !opt.long_name.empty())
+    {
+      spelling = opt.short_name + ", " + opt.long_name;
+    }
+    else if (!opt.long_name.empty())
+    {
+      spelling = opt.long_name;
+    }
+    else
+    {
+      spelling = opt.short_name;
+    }
+
+    spelling += option_value_placeholder(opt);
+    return spelling;
   }
 
   [[nodiscard]]
@@ -281,14 +349,14 @@ private:
     token = trim_whitespace(token);
     if (token.empty())
     {
-      return make_result(ErrorType::invalid_argument, token_idx);
+      return make_result(ErrorType::invalid_argument, token_idx, ParseResult::npos, token_idx);
     }
 
     const bool starts_with_bracket = token.front() == '[';
     const bool ends_with_bracket = token.back() == ']';
     if (starts_with_bracket != ends_with_bracket)
     {
-      return make_result(ErrorType::invalid_argument, token_idx);
+      return make_result(ErrorType::invalid_argument, token_idx, ParseResult::npos, token_idx);
     }
 
     if (starts_with_bracket)
@@ -296,7 +364,7 @@ private:
       token = trim_whitespace(token.substr(1, token.size() - 2));
       if (token.empty())
       {
-        return make_result(ErrorType::invalid_argument, token_idx);
+        return make_result(ErrorType::invalid_argument, token_idx, ParseResult::npos, token_idx);
       }
     }
 
@@ -308,13 +376,13 @@ private:
       const std::string_view piece = trim_whitespace(token.substr(start, stop - start));
       if (piece.empty())
       {
-        return make_result(ErrorType::invalid_argument, token_idx);
+        return make_result(ErrorType::invalid_argument, token_idx, ParseResult::npos, token_idx);
       }
 
       T parsed_value{};
       if (!parse_element(piece, parsed_value))
       {
-        return make_result(ErrorType::invalid_argument, token_idx);
+        return make_result(ErrorType::invalid_argument, token_idx, ParseResult::npos, token_idx);
       }
       values.push_back(parsed_value);
 
@@ -336,15 +404,17 @@ private:
     AssignValues assign_values,
     size_t expected_length = static_cast<size_t>(-1))
   {
+    const size_t option_arg_idx = (i > 0) ? (i - 1) : ParseResult::npos;
+
     if (i >= arguments.size())
     {
-      return make_result(ErrorType::missing_argument, option_idx);
+      return make_result(ErrorType::missing_argument, option_idx, option_idx, option_arg_idx);
     }
 
     const size_t first_value_idx = i;
     if (is_registered_option(arguments[i]))
     {
-      return make_result(ErrorType::missing_argument, option_idx);
+      return make_result(ErrorType::missing_argument, option_idx, option_idx, option_arg_idx, i);
     }
 
     std::vector<T> parsed_values;
@@ -359,18 +429,19 @@ private:
       const ParseResult token_result = parse_list_token(token, i, parsed_values, parse_element);
       if (!token_result.ok())
       {
-        return token_result;
+        return make_result(token_result.error_type, token_result.error_idx, option_idx, token_result.error_idx, option_arg_idx);
       }
     }
 
     if (parsed_values.empty())
     {
-      return make_result(ErrorType::missing_argument, option_idx);
+      const size_t next_token_idx = (i < arguments.size()) ? i : ParseResult::npos;
+      return make_result(ErrorType::missing_argument, option_idx, option_idx, option_arg_idx, next_token_idx);
     }
 
     if (expected_length != static_cast<size_t>(-1) && parsed_values.size() != expected_length)
     {
-      return make_result(ErrorType::invalid_argument, first_value_idx);
+      return make_result(ErrorType::invalid_argument, first_value_idx, option_idx, first_value_idx, option_arg_idx);
     }
 
     assign_values(parsed_values);
@@ -394,7 +465,7 @@ private:
 
   std::vector<std::string> arguments;
   std::vector<Option> options;
-  std::vector<char> option_check;
+  std::vector<size_t> option_check;
   ParseResult last_result;
 
 public:
@@ -1039,7 +1110,7 @@ public:
       }
     }
 
-    option_check.assign(options.size(), 0);
+    option_check.assign(options.size(), ParseResult::npos);
 
     for (size_t i = 1; i < arguments.size();)
     {
@@ -1055,16 +1126,16 @@ public:
       if (j >= options.size())
       {
         // unrecognized option
-        return make_result(ErrorType::unrecognized_option, i);
+        return make_result(ErrorType::unrecognized_option, i, ParseResult::npos, i);
       }
 
       const Option& option = options[j];
 
-      if (option_check[j])
+      if (option_check[j] != ParseResult::npos)
       {
-        return make_result(ErrorType::duplicate_option, j);
+        return make_result(ErrorType::duplicate_option, j, j, i, option_check[j]);
       }
-      option_check[j] = 1;
+      option_check[j] = i;
 
       if (!option.takes_argument())
       {
@@ -1077,7 +1148,7 @@ public:
       if (i >= arguments.size())
       {
         // missing argument
-        return make_result(ErrorType::missing_argument, j);
+        return make_result(ErrorType::missing_argument, j, j, i - 1);
       }
 
       if (option.custom_parse)
@@ -1115,7 +1186,7 @@ public:
 
       if (!is_valid)
       {
-        return make_result(ErrorType::invalid_argument, i);
+        return make_result(ErrorType::invalid_argument, i, j, i, i - 1);
       }
 
       i++;
@@ -1124,9 +1195,9 @@ public:
     // check for missing required options
     for (size_t i = 0; i < options.size(); i++)
     {
-      if (options[i].required && option_check[i] == 0)
+      if (options[i].required && option_check[i] == ParseResult::npos)
       {
-        return make_result(ErrorType::missing_required, i);
+        return make_result(ErrorType::missing_required, i, i);
       }
     }
 
@@ -1134,14 +1205,29 @@ public:
   }
 
   /**
-   * @brief Parses options, asserts success, and prints the final option values.
+   * @brief Parses options and prints the final option values.
+   *
+   * If `-h` / `--help` is provided, this prints a help message and exits with code 0.
+   * If parsing fails, this prints a parse error and exits with code 1.
    * @param os Output stream used for reporting.
    */
   ParseResult parse_check(std::ostream& os = std::cout)
   {
     const ParseResult result = parse();
-    boba_always_assert(result.ok(), "One or more parameters failed to be read.")
-      print_options(os);
+
+    if (result.help_requested())
+    {
+      print_help(os);
+      std::exit(0);
+    }
+
+    if (!result.ok())
+    {
+      print_error(std::cerr);
+      std::exit(1);
+    }
+
+    print_options(os);
     return result;
   }
 
@@ -1204,6 +1290,59 @@ public:
   }
 
   /**
+   * @brief Prints a help message describing available options.
+   * The help option itself (-h/--help) is always supported.
+   * @param os Output stream.
+   */
+  void print_help(std::ostream& os) const
+  {
+    const std::string_view program_name =
+      (!arguments.empty() && !arguments[0].empty()) ? std::string_view(arguments[0]) : std::string_view("program");
+
+    os << "Usage:\n"
+       << "  " << program_name << " [options]\n\n"
+       << "Options:\n";
+
+    // Compute alignment width for option spellings.
+    size_t max_width = std::string_view("-h, --help").size();
+    for (const auto& opt : options)
+    {
+      const size_t w = option_spelling(opt).size();
+      if (w > max_width)
+      {
+        max_width = w;
+      }
+    }
+    max_width += 2;
+
+    os << "  " << std::left << std::setw(static_cast<int>(max_width)) << "-h, --help"
+       << "Print this help message.\n";
+
+    for (const auto& opt : options)
+    {
+      const std::string spelling = option_spelling(opt);
+      os << "  " << std::left << std::setw(static_cast<int>(max_width)) << spelling
+         << opt.description;
+
+      if (opt.required)
+      {
+        os << " (required)";
+      }
+
+      const bool can_write_default =
+        opt.custom_write || !std::holds_alternative<std::monostate>(opt.value);
+      if (can_write_default)
+      {
+        os << " (default: ";
+        write_value(opt, os);
+        os << ")";
+      }
+
+      os << '\n';
+    }
+  }
+
+  /**
    * @brief Prints the current parse error.
    * @param os Output stream.
    */
@@ -1211,34 +1350,84 @@ public:
   {
     static constexpr std::string_view line_sep = "";
     const ParseResult& result = last_result;
+    const auto arg_at = [this](size_t idx) -> std::string_view
+    {
+      if (idx == ParseResult::npos || idx >= arguments.size())
+      {
+        return "<unknown>";
+      }
+      return arguments[idx];
+    };
 
     os << line_sep;
     switch (result.error_type)
     {
     case ErrorType::unrecognized_option:
       os << '[' << error_code_name(result.error_type) << "] "
-         << "Unrecognized option: " << arguments[result.error_idx] << '\n'
+         << "Unrecognized option: " << arg_at(result.error_idx);
+      if (result.arg_idx != ParseResult::npos)
+      {
+        os << " (argv[" << result.arg_idx << "])";
+      }
+      os << '\n'
          << line_sep;
       break;
 
     case ErrorType::missing_argument:
       os << '[' << error_code_name(result.error_type) << "] "
-         << "Missing argument for the last option: " << arguments.back()
-         << '\n'
+         << "Missing argument for the last option: " << arg_at(result.arg_idx);
+      if (result.arg_idx != ParseResult::npos)
+      {
+        os << " (argv[" << result.arg_idx << "])";
+      }
+      if (result.arg_idx2 != ParseResult::npos)
+      {
+        os << " (next token: argv[" << result.arg_idx2 << "] " << arg_at(result.arg_idx2) << ")";
+      }
+      os << '\n'
          << line_sep;
       break;
 
     case ErrorType::duplicate_option:
       os << '[' << error_code_name(result.error_type) << "] "
          << "Option " << options[result.error_idx].long_name
-         << " provided multiple times\n"
+         << " provided multiple times";
+      if (result.arg_idx2 != ParseResult::npos && result.arg_idx != ParseResult::npos)
+      {
+        os << " (first at argv[" << result.arg_idx2 << "], again at argv[" << result.arg_idx << "])";
+      }
+      os << '\n'
          << line_sep;
       break;
 
     case ErrorType::invalid_argument:
       os << '[' << error_code_name(result.error_type) << "] "
-         << "Wrong option format: " << arguments[result.error_idx - 1] << " "
-         << arguments[result.error_idx] << '\n'
+         << "Wrong option format: ";
+      if (result.arg_idx2 != ParseResult::npos && result.arg_idx != ParseResult::npos)
+      {
+        os << arg_at(result.arg_idx2) << " " << arg_at(result.arg_idx);
+        os << " (argv[" << result.arg_idx2 << ".." << result.arg_idx << "])";
+      }
+      else if (result.error_idx > 0 && result.error_idx < arguments.size())
+      {
+        os << arguments[result.error_idx - 1] << " " << arguments[result.error_idx];
+        os << " (argv[" << (result.error_idx - 1) << ".." << result.error_idx << "])";
+      }
+      else if (result.error_idx < arguments.size())
+      {
+        os << arguments[result.error_idx] << " (argv[" << result.error_idx << "])";
+      }
+      else
+      {
+        os << "<unknown>";
+      }
+
+      if (result.option_idx != ParseResult::npos && result.option_idx < options.size())
+      {
+        os << " (expected" << option_value_placeholder(options[result.option_idx]) << ")";
+      }
+
+      os << '\n'
          << line_sep;
       break;
 
