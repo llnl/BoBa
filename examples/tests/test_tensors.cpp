@@ -147,7 +147,7 @@ void test_tensor_reduction_einsum(
   });
 
   ::boba::TicToc<tictoc_units> timer;
-  auto tensor_C = ::boba::tensor_reduction_double_index<space, dimension_A, data_t, force_naive>(indices, tensor_A, permutation);
+  auto tensor_C = ::boba::tensor_reduction<2, space, dimension_A, data_t, force_naive>(indices, tensor_A, permutation);
   checkpoint();
   timer.end();
 
@@ -306,9 +306,9 @@ void test_tensor_reduction_single(
   });
 
   ::boba::TicToc<tictoc_units> timer;
-  auto tensor_C = ::boba::tensor_reduction<space, dimension_A, data_t, force_naive>(
+  auto tensor_C = ::boba::tensor_reduction<1, space, dimension_A, data_t, force_naive>(
     tensor_A,
-    contraction_index_A);
+    {contraction_index_A});
   checkpoint();
   timer.end();
 
@@ -373,10 +373,9 @@ void test_tensor_reduction_double(
   });
 
   ::boba::TicToc<tictoc_units> timer;
-  auto tensor_C = ::boba::tensor_reduction<space, dimension_A, data_t, force_naive>(
+  auto tensor_C = ::boba::tensor_reduction<2, space, dimension_A, data_t, force_naive>(
     tensor_A,
-    contraction_index_A,
-    contraction_index_B);
+    {contraction_index_A, contraction_index_B});
   checkpoint();
   timer.end();
 

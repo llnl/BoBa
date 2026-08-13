@@ -644,7 +644,7 @@ struct QuantizedTensorTrainMatrix
       }
 
       auto new_core =
-        tensor_reduction_double_index(
+        tensor_reduction<2>(
           {"l", "row", "col", "r"},
           this->cores[0_z],
           {"row", "col"});
@@ -712,7 +712,7 @@ struct QuantizedTensorTrainMatrix
       }
 
       auto new_core =
-        tensor_reduction_double_index(
+        tensor_reduction<2>(
           {"l", "row", "col", "r"},
           this->cores[0_z],
           {"row", "col"});

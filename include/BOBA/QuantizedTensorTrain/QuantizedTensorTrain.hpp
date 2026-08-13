@@ -624,7 +624,7 @@ struct QuantizedTensorTrain
         return;
       }
 
-      auto new_core = tensor_reduction_double_index({"l", "i", "r"}, this->cores[0], {"i"});
+      auto new_core = tensor_reduction<2>({"l", "i", "r"}, this->cores[0], {"i"});
       this->cores[0] = reshape<3>(new_core, {1_z, sizes(0), 1_z});
     }
     boba::Matrix<space, data_t> unfold_right;
@@ -734,7 +734,7 @@ struct QuantizedTensorTrain
         return;
       }
 
-      auto new_core = tensor_reduction_double_index({"l", "i", "r"}, this->cores[0], {"i"});
+      auto new_core = tensor_reduction<2>({"l", "i", "r"}, this->cores[0], {"i"});
       this->cores[0] = reshape<3>(new_core, {1_z, sizes(0), 1_z});
     }
 

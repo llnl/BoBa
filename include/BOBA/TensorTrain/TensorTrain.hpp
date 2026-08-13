@@ -919,7 +919,7 @@ struct TensorTrain
         return;
       }
 
-      auto new_core = tensor_reduction_double_index({"l", "i", "r"}, this->cores[0], {"i"});
+      auto new_core = tensor_reduction<2>({"l", "i", "r"}, this->cores[0], {"i"});
       this->cores[0] = reshape<3>(new_core, {1, sizes(0), 1});
       return;
     }
@@ -978,7 +978,7 @@ struct TensorTrain
         return;
       }
 
-      auto new_core = tensor_reduction_double_index({"l", "i", "r"}, this->cores[0], {"i"});
+      auto new_core = tensor_reduction<2>({"l", "i", "r"}, this->cores[0], {"i"});
       this->cores[0] = reshape<3>(new_core, {1, sizes(0), 1});
       return;
     }
