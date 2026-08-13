@@ -225,7 +225,7 @@ void test_tensor_contraction_einsum(
   });
 
   ::boba::TicToc<tictoc_units> timer;
-  auto tensor_C = ::boba::tensor_contraction_double_index<space, dimension_A, dimension_B, data_t, force_naive>(indices_A, tensor_A, indices_B, tensor_B, permutation);
+  auto tensor_C = ::boba::tensor_contraction<2, space, dimension_A, dimension_B, data_t, force_naive>(indices_A, tensor_A, indices_B, tensor_B, permutation);
   checkpoint();
   timer.end();
 
@@ -464,8 +464,11 @@ void test_tensor_contraction_single_index_two_tensors(
   });
 
   ::boba::TicToc<tictoc_units> timer;
-  auto tensor_C = ::boba::tensor_contraction_single_index<space, dimension_A, dimension_B, data_t, force_naive>(
-    tensor_A, tensor_B, contraction_index_A, contraction_index_B);
+  auto tensor_C = ::boba::tensor_contraction<1, space, dimension_A, dimension_B, data_t, force_naive>(
+    tensor_A,
+    tensor_B,
+    {contraction_index_A},
+    {contraction_index_B});
   checkpoint();
   timer.end();
 
@@ -590,8 +593,11 @@ void test_tensor_contraction_double_index_two_tensors(
   });
 
   ::boba::TicToc<tictoc_units> timer;
-  auto tensor_C = ::boba::tensor_contraction_double_index<space, dimension_A, dimension_B, data_t, force_naive>(
-    tensor_A, tensor_B, contraction_1_index_A, contraction_2_index_A, contraction_1_index_B, contraction_2_index_B);
+  auto tensor_C = ::boba::tensor_contraction<2, space, dimension_A, dimension_B, data_t, force_naive>(
+    tensor_A,
+    tensor_B,
+    {contraction_1_index_A, contraction_2_index_A},
+    {contraction_1_index_B, contraction_2_index_B});
   checkpoint();
   timer.end();
 
@@ -707,8 +713,11 @@ void test_tensor_contraction_triple_index_two_tensors(
   });
 
   ::boba::TicToc<tictoc_units> timer;
-  auto tensor_C = ::boba::tensor_contraction_triple_index<space, dimension_A, dimension_B, data_t, force_naive>(
-    tensor_A, tensor_B, contraction_1_index_A, contraction_2_index_A, contraction_3_index_A, contraction_1_index_B, contraction_2_index_B, contraction_3_index_B);
+  auto tensor_C = ::boba::tensor_contraction<3, space, dimension_A, dimension_B, data_t, force_naive>(
+    tensor_A,
+    tensor_B,
+    {contraction_1_index_A, contraction_2_index_A, contraction_3_index_A},
+    {contraction_1_index_B, contraction_2_index_B, contraction_3_index_B});
   checkpoint();
   timer.end();
 
@@ -815,7 +824,7 @@ void test_cases(bool& check, size_t size_factor, size_t which)
   size_t max_size_factor = 6;
 
   //
-  // Test tensor_contraction_single_index_two_tensors
+  // Test permutation
   //
   checkpoint();
   if ((which == 0) or (which == 1))
@@ -996,7 +1005,7 @@ void test_cases(bool& check, size_t size_factor, size_t which)
   }
 
   //
-  // Test tensor_contraction_single_index_two_tensors
+  // Test tensor_contraction_double_index_two_tensors
   //
   checkpoint();
   if ((which == 0) or (which == 11))

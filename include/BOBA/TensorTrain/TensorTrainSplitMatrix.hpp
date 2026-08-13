@@ -292,7 +292,7 @@ struct TensorTrainSplitMatrix
       checkpoint();
       boba_always_assert_equal(get_ranks_right(2 * d), get_ranks_left(2 * d + 1), "Incompatible ranks");
       checkpoint();
-      ttm.cores[d] = tensor_contraction_single_index(
+      ttm.cores[d] = tensor_contraction<1>(
         {"row_l", "row", "common"}, cores[2 * d], {"common", "col", "col_r"}, cores[2 * d + 1], {"row_l", "row", "col", "col_r"});
     }
     return ttm;

@@ -1021,7 +1021,7 @@ public:
       boba_assert(transfer_tensors[parent_node].has_value(),
                   "Missing transfer tensor at node " + std::to_string(parent_node) + " during orthogonalize().");
 
-      auto updated_parent_tensor = ::boba::tensor_contraction_single_index(R_index_labels, qr.R, transfer_tensor_index_labels, transfer_tensors[parent_node].value(), {"i", "j", "k"});
+      auto updated_parent_tensor = ::boba::tensor_contraction<1>(R_index_labels, qr.R, transfer_tensor_index_labels, transfer_tensors[parent_node].value(), {"i", "j", "k"});
 
       transfer_tensors[parent_node] = std::move(updated_parent_tensor);
     }
@@ -1096,9 +1096,9 @@ public:
           std::vector<size_t>{0, 1},
           std::vector<size_t>{2});
 
-        auto left_contracted_tensor = ::boba::tensor_contraction_single_index({"l", "i"}, ::boba::get_conj(left_child_basis), {"l", "j", "k"}, node_basis_tensor, {"i", "j", "k"});
+        auto left_contracted_tensor = ::boba::tensor_contraction<1>({"l", "i"}, ::boba::get_conj(left_child_basis), {"l", "j", "k"}, node_basis_tensor, {"i", "j", "k"});
 
-        auto node_transfer_tensor = ::boba::tensor_contraction_single_index({"l", "j"}, ::boba::get_conj(right_child_basis), {"i", "l", "k"}, left_contracted_tensor, {"i", "j", "k"});
+        auto node_transfer_tensor = ::boba::tensor_contraction<1>({"l", "j"}, ::boba::get_conj(right_child_basis), {"i", "l", "k"}, left_contracted_tensor, {"i", "j", "k"});
         transfer_tensors[node] = std::move(node_transfer_tensor);
 
         // We no longer need the bases from the non-leaf children, so we can clear them to save some memory
@@ -1155,11 +1155,11 @@ public:
 
         auto node_transfer_tensor_conj = ::boba::get_conj(node_transfer_tensor);
 
-        auto B_contracted = ::boba::tensor_contraction_single_index({"i", "j", "l"}, node_transfer_tensor_conj, {"k", "l"}, node_gramian, {"i", "j", "k"});
+        auto B_contracted = ::boba::tensor_contraction<1>({"i", "j", "l"}, node_transfer_tensor_conj, {"k", "l"}, node_gramian, {"i", "j", "k"});
 
-        auto left_gramian = ::boba::tensor_contraction_double_index({"m", "j", "k"}, node_transfer_tensor_conj, {"i", "j", "k"}, B_contracted, {"m", "i"});
+        auto left_gramian = ::boba::tensor_contraction<2>({"m", "j", "k"}, node_transfer_tensor_conj, {"i", "j", "k"}, B_contracted, {"m", "i"});
 
-        auto right_gramian = ::boba::tensor_contraction_double_index({"i", "n", "k"}, node_transfer_tensor_conj, {"i", "j", "k"}, B_contracted, {"n", "j"});
+        auto right_gramian = ::boba::tensor_contraction<2>({"i", "n", "k"}, node_transfer_tensor_conj, {"i", "j", "k"}, B_contracted, {"n", "j"});
 
         gramians[children[0]].emplace(std::move(left_gramian));
         gramians[children[1]].emplace(std::move(right_gramian));
@@ -1223,7 +1223,7 @@ public:
 
         auto& node_transfer_tensor = transfer_tensors[node].value();
 
-        auto truncated_transfer_tensor = ::boba::tensor_contraction_single_index({"i", "j", "l"}, node_transfer_tensor, {"l", "k"}, gramian_basis, {"i", "j", "k"});
+        auto truncated_transfer_tensor = ::boba::tensor_contraction<1>({"i", "j", "l"}, node_transfer_tensor, {"l", "k"}, gramian_basis, {"i", "j", "k"});
 
         transfer_tensors[node] = std::move(truncated_transfer_tensor);
         ranks[node] = transfer_tensors[node]->sizes(2);
@@ -1241,7 +1241,7 @@ public:
 
       auto& parent_transfer_tensor = transfer_tensors[parent_node].value();
 
-      auto updated_parent_transfer_tensor = ::boba::tensor_contraction_single_index(gramian_index_labels, ::boba::get_conj(gramian_basis), transfer_tensor_index_labels, parent_transfer_tensor, {"i", "j", "k"});
+      auto updated_parent_transfer_tensor = ::boba::tensor_contraction<1>(gramian_index_labels, ::boba::get_conj(gramian_basis), transfer_tensor_index_labels, parent_transfer_tensor, {"i", "j", "k"});
 
       transfer_tensors[parent_node] = std::move(updated_parent_transfer_tensor);
       ranks[parent_node] = transfer_tensors[parent_node]->sizes(2);
@@ -1287,9 +1287,9 @@ public:
         const auto& left_child_basis = local_basis_matrices[children[0]].value();
         const auto& right_child_basis = local_basis_matrices[children[1]].value();
 
-        auto left_contracted_basis = ::boba::tensor_contraction_single_index({"i", "l"}, left_child_basis, {"l", "j", "k"}, node_transfer_tensor, {"i", "j", "k"});
+        auto left_contracted_basis = ::boba::tensor_contraction<1>({"i", "l"}, left_child_basis, {"l", "j", "k"}, node_transfer_tensor, {"i", "j", "k"});
 
-        auto node_basis = ::boba::tensor_contraction_single_index({"j", "l"}, right_child_basis, {"i", "l", "k"}, left_contracted_basis, {"i", "j", "k"});
+        auto node_basis = ::boba::tensor_contraction<1>({"j", "l"}, right_child_basis, {"i", "l", "k"}, left_contracted_basis, {"i", "j", "k"});
 
         // Convert the tensor U^{(t)} into a matrix and store the basis
         local_basis_matrices[node].emplace(::boba::unfold(node_basis, std::vector<size_t>{0, 1}, std::vector<size_t>{2}));

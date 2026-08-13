@@ -535,7 +535,7 @@ struct TuckerMatrix
         return output;
       }
 
-      auto temporary = tensor_contraction_single_index(
+      auto temporary = tensor_contraction<1>(
         {"new_row", "col", "r1"}, this->cores[d], {"col", "r2"}, input.cores[d], {"new_row", "r1", "r2"});
 
       checkpoint();

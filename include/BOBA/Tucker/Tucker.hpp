@@ -348,7 +348,7 @@ struct Tucker
 
     for (size_t d = 0; d < dimension; d++)
     {
-      auto this_decompressed = tensor_contraction_single_index(decompressed, this->cores[d], 0, 1);
+      auto this_decompressed = tensor_contraction<1>(decompressed, this->cores[d], {0}, {1});
       decompressed = this_decompressed;
     }
 
@@ -592,7 +592,7 @@ struct Tucker
       QR<space, data_t> qr;
       qr(cores[d]);
       cores[d] = qr.Q;
-      auto contract_R = tensor_contraction_single_index(qr.R, R_core, 1, dimension - 1);
+      auto contract_R = tensor_contraction<1>(qr.R, R_core, {1}, {dimension - 1});
       R_core = contract_R;
     }
   }
@@ -634,7 +634,7 @@ struct Tucker
     for (size_t d = dimension; d > 0; d--)
     {
       auto temp = R_core;
-      R_core = tensor_contraction_single_index(U_matrices[d - 1], temp, 0, dimension - 1);
+      R_core = tensor_contraction<1>(U_matrices[d - 1], temp, {0}, {dimension - 1});
     }
   }
 
@@ -695,7 +695,7 @@ struct Tucker
     static_assert(dimension == 1, "Inconsistent dimensions between this and input.");
     auto R_core_expansion = tensor_product(this->R_core, input.R_core);
     auto mode_expansion = mode_n_tensor_product(this->cores[0], input.cores[0], 1);
-    auto R_core_reduce = tensor_contraction_single_index(mode_expansion, R_core_expansion, 1, 0);
+    auto R_core_reduce = tensor_contraction<1>(mode_expansion, R_core_expansion, {1}, {0});
     auto result = R_core_reduce.sum_reduce();
     return result;
   }
@@ -715,7 +715,7 @@ struct Tucker
       auto d = dp1 - 1;
       checkpoint();
 
-      auto mode_ip = tensor_contraction_single_index(
+      auto mode_ip = tensor_contraction<1>(
         {"r", "i"}, this->cores[d], {"r", "j"}, input.cores[d], {"i", "j"});
 
       checkpoint();
@@ -724,7 +724,7 @@ struct Tucker
 
       checkpoint();
       // D[i + Rj] * R_core_expansion(..., i + Rj , ...)
-      auto R_core_reduce = tensor_contraction_single_index(mode_ip_flat, R_core_expansion, 0, d);
+      auto R_core_reduce = tensor_contraction<1>(mode_ip_flat, R_core_expansion, {0}, {d});
 
       auto R_core_expansion_sizes = R_core_expansion.sizes();
       checkpoint();

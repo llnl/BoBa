@@ -734,7 +734,7 @@ Array<DimLabel_t, (dimension_A + dimension_B) - 2 * num_contractions> get_uncont
 
 /**
  * @brief Contracts two tensors using einsum notation
- * This version of this function supports contractions along a single index
+ * This version supports one or more contracted index pairs.
  *
  * @param [in] labels_A Array of einsum labels for the left tensor
  * @param [in] tensor_A the left tensor
@@ -745,112 +745,26 @@ Array<DimLabel_t, (dimension_A + dimension_B) - 2 * num_contractions> get_uncont
  * @returns the output of the contraction, permuted according to labels_C
  */
 
-template <execution_space space, size_t dimension_A, size_t dimension_B, typename data_t, bool force_naive = false, typename DimLabel_t = std::string>
+template <size_t contractions, execution_space space, size_t dimension_A, size_t dimension_B, typename data_t, bool force_naive = false, typename DimLabel_t = std::string>
   requires((dimension_A > 1) or (dimension_B > 1))
-Tensor<(dimension_A + dimension_B) - 2, space, data_t> tensor_contraction_single_index(
+Tensor<(dimension_A + dimension_B) - 2*contractions, space, data_t> tensor_contraction(
   const Array<DimLabel_t, dimension_A>& labels_A,
   const Tensor<dimension_A, space, data_t>& tensor_A,
   const Array<DimLabel_t, dimension_B>& labels_B,
   const Tensor<dimension_B, space, data_t>& tensor_B,
-  const Array<DimLabel_t, (dimension_A + dimension_B) - 2>& labels_C)
+  const Array<DimLabel_t, (dimension_A + dimension_B) - 2*contractions>& labels_C)
 {
   BOBA_CALI_MARK
   checkpoint();
-  constexpr size_t number_of_contractions = 1;
-  auto common_labels = get_common_labels<number_of_contractions>(labels_A, labels_B);
+  auto common_labels = get_common_labels<contractions>(labels_A, labels_B);
   auto contraction_indices_A = get_label_indices(labels_A, common_labels);
   auto contraction_indices_B = get_label_indices(labels_B, common_labels);
   auto uncontracted_labels = get_uncontracted_labels(labels_A, contraction_indices_A, labels_B, contraction_indices_B);
-  auto output = tensor_contraction_single_index(
+  auto output = tensor_contraction<contractions, space, dimension_A, dimension_B, data_t, force_naive>(
     tensor_A,
     tensor_B,
-    contraction_indices_A[0],
-    contraction_indices_B[0]);
-  checkpoint();
-  permute(uncontracted_labels, output, labels_C);
-  return output;
-}
-
-/**
- * @brief Contracts two tensors using einsum notation
- * This version of this function supports contractions along two indices
- *
- * @param [in] labels_A Array of einsum labels for the left tensor
- * @param [in] tensor_A the left tensor
- * @param [in] labels_B Array of einsum labels for the right tensor
- * @param [in] tensor_B the right tensor
- * @param [in] labels_C Array of einsum labels expressing the desired order of the uncontracted dimensions
- *
- * @returns the output of the contraction, permuted according to labels_C
- */
-
-template <execution_space space, size_t dimension_A, size_t dimension_B, typename data_t, bool force_naive = false, typename DimLabel_t = std::string>
-  requires((dimension_A > 1) or (dimension_B > 1))
-Tensor<(dimension_A + dimension_B) - 4, space, data_t> tensor_contraction_double_index(
-  const Array<DimLabel_t, dimension_A>& labels_A,
-  const Tensor<dimension_A, space, data_t>& tensor_A,
-  const Array<DimLabel_t, dimension_B>& labels_B,
-  const Tensor<dimension_B, space, data_t>& tensor_B,
-  const Array<DimLabel_t, (dimension_A + dimension_B) - 4>& labels_C)
-{
-  BOBA_CALI_MARK
-  checkpoint();
-  constexpr size_t number_of_contractions = 2;
-  auto common_labels = get_common_labels<number_of_contractions>(labels_A, labels_B);
-  auto contraction_indices_A = get_label_indices(labels_A, common_labels);
-  auto contraction_indices_B = get_label_indices(labels_B, common_labels);
-  auto uncontracted_labels = get_uncontracted_labels(labels_A, contraction_indices_A, labels_B, contraction_indices_B);
-  auto output = tensor_contraction_double_index(
-    tensor_A,
-    tensor_B,
-    contraction_indices_A[0],
-    contraction_indices_A[1],
-    contraction_indices_B[0],
-    contraction_indices_B[1]);
-  checkpoint();
-  permute(uncontracted_labels, output, labels_C);
-  return output;
-}
-
-/**
- * @brief Contracts two tensors using einsum notation
- * This version of this function supports contractions along three indices
- *
- * @param [in] labels_A Array of einsum labels for the left tensor
- * @param [in] tensor_A the left tensor
- * @param [in] labels_B Array of einsum labels for the right tensor
- * @param [in] tensor_B the right tensor
- * @param [in] labels_C Array of einsum labels expressing the desired order of the uncontracted dimensions
- *
- * @returns the output of the contraction, permuted according to labels_C
- */
-
-template <execution_space space, size_t dimension_A, size_t dimension_B, typename data_t, bool force_naive = false, typename DimLabel_t = std::string>
-  requires((dimension_A > 1) or (dimension_B > 1))
-Tensor<(dimension_A + dimension_B) - 6, space, data_t> tensor_contraction_triple_index(
-  const Array<DimLabel_t, dimension_A>& labels_A,
-  const Tensor<dimension_A, space, data_t>& tensor_A,
-  const Array<DimLabel_t, dimension_B>& labels_B,
-  const Tensor<dimension_B, space, data_t>& tensor_B,
-  const Array<DimLabel_t, (dimension_A + dimension_B) - 6>& labels_C)
-{
-  BOBA_CALI_MARK
-  checkpoint();
-  constexpr size_t number_of_contractions = 3;
-  auto common_labels = get_common_labels<number_of_contractions>(labels_A, labels_B);
-  auto contraction_indices_A = get_label_indices(labels_A, common_labels);
-  auto contraction_indices_B = get_label_indices(labels_B, common_labels);
-  auto uncontracted_labels = get_uncontracted_labels(labels_A, contraction_indices_A, labels_B, contraction_indices_B);
-  auto output = tensor_contraction_triple_index(
-    tensor_A,
-    tensor_B,
-    contraction_indices_A[0],
-    contraction_indices_A[1],
-    contraction_indices_A[2],
-    contraction_indices_B[0],
-    contraction_indices_B[1],
-    contraction_indices_B[2]);
-
+    contraction_indices_A,
+    contraction_indices_B);
   checkpoint();
   permute(uncontracted_labels, output, labels_C);
   return output;
@@ -948,60 +862,60 @@ __boba_host_device__ ::boba::Array<index_t, contracted_dimensions + contractions
  * computes C({i, j, ..., l, p, ...}) = \sum_k A({..., k, ...}) * B({..., k, ...})
  */
 
-template <execution_space space, size_t dimension_A, size_t dimension_B, typename data_t, bool force_naive = false>
-  requires((dimension_A == 1) and (dimension_B == 1))
-Tensor<1, space, data_t> tensor_contraction_single_index(
+template <size_t contractions, execution_space space, size_t dimension_A, size_t dimension_B, typename data_t, bool force_naive = false>
+  requires((contractions == 1) and (dimension_A == 1) and (dimension_B == 1))
+Tensor<1, space, data_t> tensor_contraction(
   const Tensor<dimension_A, space, data_t>& tensor_A,
   const Tensor<dimension_B, space, data_t>& tensor_B,
-  size_t contraction_dimension_A,
-  size_t contraction_dimension_B)
+  const boba::Array<size_t, contractions> contraction_dimensions_A,
+  const boba::Array<size_t, contractions> contraction_dimensions_B)
 {
-  ::boba::detail::ignore(contraction_dimension_A);
-  ::boba::detail::ignore(contraction_dimension_B);
+  ::boba::detail::ignore(contraction_dimensions_A);
+  ::boba::detail::ignore(contraction_dimensions_B);
   Tensor<1, space, data_t> out({1});
   out.fill_with(inner_product(tensor_A, tensor_B));
   return out;
 }
 
-template <execution_space space, size_t dimension_A, size_t dimension_B, typename data_t, bool force_naive = false>
+template <size_t contractions, execution_space space, size_t dimension_A, size_t dimension_B, typename data_t, bool force_naive = false>
   requires((dimension_A > 1) or (dimension_B > 1))
-Tensor<(dimension_A + dimension_B) - 2, space, data_t> tensor_contraction_single_index(
+Tensor<(dimension_A + dimension_B) - 2*contractions, space, data_t> tensor_contraction(
   const Tensor<dimension_A, space, data_t>& tensor_A,
   const Tensor<dimension_B, space, data_t>& tensor_B,
-  size_t contraction_dimension_A,
-  size_t contraction_dimension_B)
+  const boba::Array<size_t, contractions> contraction_dimensions_A,
+  const boba::Array<size_t, contractions> contraction_dimensions_B)
 {
-  return tensor_contraction_single_index<space, dimension_A, dimension_B, data_t, force_naive>(tensor_A.const_view(), tensor_B.const_view(), contraction_dimension_A, contraction_dimension_B);
+  return tensor_contraction<contractions, space, dimension_A, dimension_B, data_t, force_naive>(tensor_A.const_view(), tensor_B.const_view(), contraction_dimensions_A, contraction_dimensions_B);
 }
 
-template <execution_space space, size_t dimension_A, size_t dimension_B, typename data_t, bool force_naive = false>
-Tensor<(dimension_A + dimension_B) - 2, space, data_t> tensor_contraction_single_index(
+template <size_t contractions, execution_space space, size_t dimension_A, size_t dimension_B, typename data_t, bool force_naive = false>
+Tensor<(dimension_A + dimension_B) - 2*contractions, space, data_t> tensor_contraction(
   const TensorView<DefaultAccessor<data_t const>, dimension_A>& tensor_A_view,
   const TensorView<DefaultAccessor<data_t const>, dimension_B>& tensor_B_view,
-  size_t contraction_dimension_A,
-  size_t contraction_dimension_B)
+  const boba::Array<size_t, contractions> contraction_dimensions_A,
+  const boba::Array<size_t, contractions> contraction_dimensions_B)
 {
   BOBA_CALI_MARK
   checkpoint();
-  constexpr size_t new_dimension = (dimension_A + dimension_B) - 2;
+  constexpr size_t new_dimension = (dimension_A + dimension_B) - 2*contractions;
   auto sizes_A = tensor_A_view.sizes();
   auto sizes_B = tensor_B_view.sizes();
-  index_t contraction_length = sizes_A[contraction_dimension_A];
-  index_t contraction_length_check = sizes_B[contraction_dimension_B];
-  boba_always_assert_equal(contraction_length, contraction_length_check, "Invalid contraction.");
+  for(size_t c = 0; c < contractions; c++)
+  {
+    boba_always_assert_equal(sizes_A[contraction_dimensions_A[c]], sizes_B[contraction_dimensions_B[c]], "Invalid contraction.");
+  }
 
   //
   // Sizes of A/B less the contracted dimension
   //
-  auto contracted_A_mider = make_contracted_dimensions<1>(sizes_A, {contraction_dimension_A});
-  auto contracted_B_mider = make_contracted_dimensions<1>(sizes_B, {contraction_dimension_B});
+  auto contracted_A_mider = make_contracted_dimensions<contractions>(sizes_A, contraction_dimensions_A);
+  auto contracted_B_mider = make_contracted_dimensions<contractions>(sizes_B, contraction_dimensions_B);
 
   //
   // Sizes of new tensor
   //
   Array<index_t, new_dimension> new_sizes = concatenate(contracted_A_mider.sizes(), contracted_B_mider.sizes());
   Tensor<new_dimension, space, data_t> tensor_C(new_sizes);
-  tensor_C.fill_with_zeros();
 
   if (tensor_C.size() == 0)
   {
@@ -1017,8 +931,22 @@ Tensor<(dimension_A + dimension_B) - 2, space, data_t> tensor_contraction_single
     ::boba::boba_hiptensor_enabled() and
     not(force_naive))
   {
-    ::boba::detail::hiptensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimension_A, contraction_dimension_B);
-    return tensor_C;
+    tensor_C.fill_with_zeros();
+    if constexpr (contractions == 1)
+    {
+      ::boba::detail::hiptensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A[0], contraction_dimensions_B[0]);
+      return tensor_C;
+    }
+    else if constexpr (contractions == 2)
+    {
+      ::boba::detail::hiptensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A[0], contraction_dimensions_A[1], contraction_dimensions_B[0], contraction_dimensions_B[1]);
+      return tensor_C;
+    }
+    else if constexpr (contractions == 3)
+    {
+      ::boba::detail::hiptensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A[0], contraction_dimensions_A[1], contraction_dimensions_A[2], contraction_dimensions_B[0], contraction_dimensions_B[1], contraction_dimensions_B[2]);
+      return tensor_C;
+    }
   }
   else if constexpr (
     (space == ::boba::execution_space::CUDA) and
@@ -1026,8 +954,22 @@ Tensor<(dimension_A + dimension_B) - 2, space, data_t> tensor_contraction_single
     ::boba::boba_cutensor_enabled() and
     not(force_naive))
   {
-    ::boba::detail::cutensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimension_A, contraction_dimension_B);
-    return tensor_C;
+    tensor_C.fill_with_zeros();
+    if constexpr (contractions == 1)
+    {
+      ::boba::detail::cutensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A[0], contraction_dimensions_B[0]);
+      return tensor_C;
+    }
+    else if constexpr (contractions == 2)
+    {
+      ::boba::detail::cutensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A[0], contraction_dimensions_A[1], contraction_dimensions_B[0], contraction_dimensions_B[1]);
+      return tensor_C;
+    }
+    else if constexpr (contractions == 3)
+    {
+      ::boba::detail::cutensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A[0], contraction_dimensions_A[1], contraction_dimensions_A[2], contraction_dimensions_B[0], contraction_dimensions_B[1], contraction_dimensions_B[2]);
+      return tensor_C;
+    }
   }
   else if constexpr (
     (space == ::boba::execution_space::CPU) and
@@ -1035,8 +977,17 @@ Tensor<(dimension_A + dimension_B) - 2, space, data_t> tensor_contraction_single
     ::boba::boba_metal_enabled() and
     not(force_naive))
   {
-    ::boba::detail::metal_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimension_A, contraction_dimension_B);
-    return tensor_C;
+    tensor_C.fill_with_zeros();
+    if constexpr (contractions == 1)
+    {
+      ::boba::detail::metal_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A[0], contraction_dimensions_B[0]);
+      return tensor_C;
+    }
+    else if constexpr (contractions == 2)
+    {
+      ::boba::detail::metal_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A[0], contraction_dimensions_A[1], contraction_dimensions_B[0], contraction_dimensions_B[1]);
+      return tensor_C;
+    }
   }
   else if constexpr (
     (space == ::boba::execution_space::CPU) and
@@ -1044,75 +995,71 @@ Tensor<(dimension_A + dimension_B) - 2, space, data_t> tensor_contraction_single
     ::boba::boba_eigen_tensor_enabled() and
     not(force_naive))
   {
-    ::boba::detail::eigen_tensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimension_A, contraction_dimension_B);
-    return tensor_C;
+    if constexpr (contractions == 1)
+    {
+      ::boba::detail::eigen_tensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A[0], contraction_dimensions_B[0]);
+      return tensor_C;
+    }
+    else if constexpr (contractions == 2)
+    {
+      ::boba::detail::eigen_tensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A[0], contraction_dimensions_A[1], contraction_dimensions_B[0], contraction_dimensions_B[1]);
+      return tensor_C;
+    }
+    else if constexpr (contractions == 3)
+    {
+      ::boba::detail::eigen_tensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A[0], contraction_dimensions_A[1], contraction_dimensions_A[2], contraction_dimensions_B[0], contraction_dimensions_B[1], contraction_dimensions_B[2]);
+      return tensor_C;
+    }
   }
 
   //
   // Fallback scheme
   //
+  BOBA_CALI_BEGIN("reference_implementation");
+
+  tensor_C.fill_with_zeros();
   auto tensor_C_view = tensor_C.atomic_view();
+  auto cA_size = contracted_A_mider.empty() ? 1_z : contracted_A_mider.size();
+  auto cB_size = contracted_B_mider.empty() ? 1_z : contracted_B_mider.size();
+  auto multiindex_contracted_AB = ::boba::Multiindexer<2>({cA_size, cB_size});
 
-  bool is_A_B_swapped = contracted_B_mider.size() > contracted_A_mider.size();
-
-  auto size_one = is_A_B_swapped ? contracted_B_mider.size() : contracted_A_mider.size();
-  auto size_two = is_A_B_swapped ? contracted_A_mider.size() : contracted_B_mider.size();
-
-  size_one = max(size_one, 1_z);
-  size_two = max(size_two, 1_z);
-
-  checkpoint();
-
-  ::boba::loop<space, 3>({size_one, size_two, contraction_length},
-                         [=] __boba_host_device__(Array<index_t, 3> indices)
+  ::boba::Array<size_t, contractions> contractions_lengths;
+  for(size_t c = 0; c < contractions; c++)
   {
-    auto [index_one, index_two, contraction_index] = indices;
-    auto index_A = is_A_B_swapped ? index_two : index_one;
-    auto index_B = is_A_B_swapped ? index_one : index_two;
+    contractions_lengths[c] = sizes_A[contraction_dimensions_A[c]];
+  }
+
+  auto multiindex_contraction = ::boba::Multiindexer<contractions>(contractions_lengths);
+
+  ::boba::loop<space, 2>(
+    {multiindex_contracted_AB.size(), multiindex_contraction.size()},
+    [=] __boba_host_device__(::boba::Array<size_t, 2> ijk)
+  {
+    auto [index_C, contract_mid] = ijk;
+    auto contraction_ids = multiindex_contraction.multiindex(contract_mid);
+
     //
     // Indexing logic
     //
-    data_t value_A, value_B;
-    auto _contraction_dimension_A = contraction_dimension_A;
-    auto _contraction_dimension_B = contraction_dimension_B;
-    auto _contracted_A_mider = contracted_A_mider;
-    auto _contracted_B_mider = contracted_B_mider;
-    auto _tensor_A_view = tensor_A_view;
-    auto _tensor_B_view = tensor_B_view;
+    auto cmid_AB = multiindex_contracted_AB.multiindex(index_C);
+    auto [cindex_A, cindex_B] = cmid_AB;
 
-    if constexpr (dimension_A > 1)
-    {
-      auto cmid_A = _contracted_A_mider.multiindex(index_A);
-      ::boba::Array<size_t, 1> contraction_ids{contraction_index};
-      ::boba::Array<size_t, 1> contraction_dims_A{_contraction_dimension_A};
-      auto mid_A = make_uncontracted_mid(cmid_A, contraction_ids, contraction_dims_A);
-      value_A = _tensor_A_view(mid_A);
-    }
-    else
-    {
-      value_A = _tensor_A_view({contraction_index});
-    }
-    if constexpr (dimension_B > 1)
-    {
-      auto cmid_B = _contracted_B_mider.multiindex(index_B);
-      ::boba::Array<size_t, 1> contraction_ids{contraction_index};
-      ::boba::Array<size_t, 1> contraction_dims_B{_contraction_dimension_B};
-      auto mid_B = make_uncontracted_mid(cmid_B, contraction_ids, contraction_dims_B);
-      value_B = _tensor_B_view(mid_B);
-    }
-    else
-    {
-      value_B = _tensor_B_view({contraction_index});
-    }
+    auto cmid_A = contracted_A_mider.multiindex(cindex_A);
+    auto cmid_B = contracted_B_mider.multiindex(cindex_B);
 
-    auto index_C = index_A + index_B * contracted_A_mider.size();
-    auto mid_C = tensor_C_view.multiindex(index_C);
+    auto mid_A = make_uncontracted_mid(cmid_A, contraction_ids, contraction_dimensions_A);
+    auto mid_B = make_uncontracted_mid(cmid_B, contraction_ids, contraction_dimensions_B);
+
+    auto value_A = tensor_A_view(mid_A);
+    auto value_B = tensor_B_view(mid_B);
 
     //
-    // Operation
+    // Contract
     //
-    tensor_C_view(mid_C) += value_A * value_B;
+    tensor_C_view(index_C) += value_A * value_B;
   });
+  BOBA_CALI_END("reference_implementation");
+
 
   checkpoint();
   return tensor_C;
@@ -1444,284 +1391,6 @@ Tensor<dimension_A - 2, space, data_t> tensor_reduction(
   });
 
   checkpoint();
-  return tensor_C;
-}
-
-/**
- * Contracts A and B along given dimensions
- * Given tensor A({..., j, ..., k, ...})
- *       tensor B({..., j, ..., k, ...})
- * computes C({...}) = \sum_{j} \sum_{k} A({..., j, ..., k, ...})*B({..., j, ..., k, ...})
- */
-
-template <execution_space space, size_t dimension_A, size_t dimension_B, typename data_t, bool force_naive = false>
-Tensor<(dimension_A + dimension_B) - 4, space, data_t> tensor_contraction_double_index(
-  const Tensor<dimension_A, space, data_t>& tensor_A,
-  const Tensor<dimension_B, space, data_t>& tensor_B,
-  size_t contraction_1_dimension_A,
-  size_t contraction_2_dimension_A,
-  size_t contraction_1_dimension_B,
-  size_t contraction_2_dimension_B)
-{
-  return tensor_contraction_double_index<space, dimension_A, dimension_B, data_t, force_naive>(tensor_A.const_view(), tensor_B.const_view(), contraction_1_dimension_A, contraction_2_dimension_A, contraction_1_dimension_B, contraction_2_dimension_B);
-}
-
-template <execution_space space, size_t dimension_A, size_t dimension_B, typename data_t, bool force_naive = false>
-Tensor<(dimension_A + dimension_B) - 4, space, data_t> tensor_contraction_double_index(
-  const TensorView<DefaultAccessor<data_t const>, dimension_A>& tensor_A_view,
-  const TensorView<DefaultAccessor<data_t const>, dimension_B>& tensor_B_view,
-  size_t contraction_1_dimension_A,
-  size_t contraction_2_dimension_A,
-  size_t contraction_1_dimension_B,
-  size_t contraction_2_dimension_B)
-{
-  BOBA_CALI_MARK
-  checkpoint();
-  constexpr size_t new_dimension = (dimension_A + dimension_B) - 4;
-  auto sizes_A = tensor_A_view.sizes();
-  auto sizes_B = tensor_B_view.sizes();
-  size_t contraction_1_length = sizes_A[contraction_1_dimension_A];
-  size_t contraction_1_length_check = sizes_B[contraction_1_dimension_B];
-  boba_always_assert_equal(contraction_1_length, contraction_1_length_check, "Invalid contraction.");
-
-  size_t contraction_2_length = sizes_A[contraction_2_dimension_A];
-  size_t contraction_2_length_check = sizes_B[contraction_2_dimension_B];
-  boba_always_assert_equal(contraction_2_length, contraction_2_length_check, "Invalid contraction.");
-
-  //
-  // Sizes of new tensor
-  //
-  auto contracted_A_mider = make_contracted_dimensions<2>(sizes_A, {contraction_1_dimension_A, contraction_2_dimension_A});
-  auto contracted_B_mider = make_contracted_dimensions<2>(sizes_B, {contraction_1_dimension_B, contraction_2_dimension_B});
-  auto new_sizes = concatenate(contracted_A_mider.sizes(), contracted_B_mider.sizes());
-
-  Tensor<new_dimension, space, data_t> tensor_C(new_sizes);
-  tensor_C.fill_with_zeros();
-
-  if (tensor_C.size() == 0)
-  {
-    return tensor_C;
-  }
-
-  //
-  // Perform Contraction
-  //
-  if constexpr (
-    (space == ::boba::execution_space::HIP) and
-    ::boba::boba_hip_enabled() and
-    ::boba::boba_hiptensor_enabled() and
-    not(force_naive))
-  {
-    ::boba::detail::hiptensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_1_dimension_A, contraction_2_dimension_A, contraction_1_dimension_B, contraction_2_dimension_B);
-    return tensor_C;
-  }
-  else if constexpr (
-    (space == ::boba::execution_space::CUDA) and
-    ::boba::boba_cuda_enabled() and
-    ::boba::boba_cutensor_enabled() and
-    not(force_naive))
-  {
-    ::boba::detail::cutensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_1_dimension_A, contraction_2_dimension_A, contraction_1_dimension_B, contraction_2_dimension_B);
-    return tensor_C;
-  }
-  else if constexpr (
-    (space == ::boba::execution_space::CPU) and
-    ::boba::is_cpu_enabled() and
-    ::boba::boba_metal_enabled() and
-    not(force_naive))
-  {
-    ::boba::detail::metal_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_1_dimension_A, contraction_2_dimension_A, contraction_1_dimension_B, contraction_2_dimension_B);
-    return tensor_C;
-  }
-  else if constexpr (
-    (space == ::boba::execution_space::CPU) and
-    ::boba::is_cpu_enabled() and
-    ::boba::boba_eigen_tensor_enabled() and
-    not(force_naive))
-  {
-    ::boba::detail::eigen_tensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_1_dimension_A, contraction_2_dimension_A, contraction_1_dimension_B, contraction_2_dimension_B);
-    return tensor_C;
-  }
-
-  BOBA_CALI_BEGIN("reference_implementation");
-
-  //
-  // Fallback scheme
-  //
-  auto tensor_C_view = tensor_C.atomic_view();
-  auto cA_size = contracted_A_mider.empty() ? 1_z : contracted_A_mider.size();
-  auto cB_size = contracted_B_mider.empty() ? 1_z : contracted_B_mider.size();
-  auto multiindex_contracted_AB = ::boba::Multiindexer<2>({cA_size, cB_size});
-
-  ::boba::loop<space, 3>(
-    {multiindex_contracted_AB.size(), contraction_1_length, contraction_2_length},
-    [=] __boba_host_device__(::boba::Array<size_t, 3> ijk)
-  {
-    auto [index_C, contract_id_1, contract_id_2] = ijk;
-
-    //
-    // Indexing logic
-    //
-    auto cmid_AB = multiindex_contracted_AB.multiindex(index_C);
-    auto cindex_A = cmid_AB[0];
-    auto cindex_B = cmid_AB[1];
-
-    auto cmid_A = contracted_A_mider.multiindex(cindex_A);
-    auto cmid_B = contracted_B_mider.multiindex(cindex_B);
-
-    ::boba::Array<size_t, 2> contraction_ids{contract_id_1, contract_id_2};
-    ::boba::Array<size_t, 2> contraction_dims_A{contraction_1_dimension_A, contraction_2_dimension_A};
-    auto mid_A = make_uncontracted_mid(cmid_A, contraction_ids, contraction_dims_A);
-
-    ::boba::Array<size_t, 2> contraction_dims_B{contraction_1_dimension_B, contraction_2_dimension_B};
-    auto mid_B = make_uncontracted_mid(cmid_B, contraction_ids, contraction_dims_B);
-
-    auto value_A = tensor_A_view(mid_A);
-    auto value_B = tensor_B_view(mid_B);
-
-    //
-    // Contract
-    //
-    tensor_C_view(index_C) += value_A * value_B;
-  });
-  BOBA_CALI_END("reference_implementation");
-
-  return tensor_C;
-}
-
-/**
- * Contracts A and B along given dimensions
- * Given tensor A({..., j, ..., k, ..., l, ...})
- *       tensor B({..., j, ..., k, ..., l, ...})
- * computes C({...}) = \sum_{j} \sum_{k} \sum_{l} A({..., j, ..., k, ..., l, ...})*B({..., j, ..., k, ..., l, ...})
- */
-
-template <execution_space space, size_t dimension_A, size_t dimension_B, typename data_t, bool force_naive = false>
-Tensor<(dimension_A + dimension_B) - 6, space, data_t> tensor_contraction_triple_index(
-  const Tensor<dimension_A, space, data_t>& tensor_A,
-  const Tensor<dimension_B, space, data_t>& tensor_B,
-  size_t contraction_1_dimension_A,
-  size_t contraction_2_dimension_A,
-  size_t contraction_3_dimension_A,
-  size_t contraction_1_dimension_B,
-  size_t contraction_2_dimension_B,
-  size_t contraction_3_dimension_B)
-{
-  return tensor_contraction_triple_index<space, dimension_A, dimension_B, data_t, force_naive>(tensor_A.const_view(), tensor_B.const_view(), contraction_1_dimension_A, contraction_2_dimension_A, contraction_3_dimension_A, contraction_1_dimension_B, contraction_2_dimension_B, contraction_3_dimension_B);
-}
-
-template <execution_space space, size_t dimension_A, size_t dimension_B, typename data_t, bool force_naive = false>
-Tensor<(dimension_A + dimension_B) - 6, space, data_t> tensor_contraction_triple_index(
-  const TensorView<DefaultAccessor<data_t const>, dimension_A>& tensor_A_view,
-  const TensorView<DefaultAccessor<data_t const>, dimension_B>& tensor_B_view,
-  size_t contraction_1_dimension_A,
-  size_t contraction_2_dimension_A,
-  size_t contraction_3_dimension_A,
-  size_t contraction_1_dimension_B,
-  size_t contraction_2_dimension_B,
-  size_t contraction_3_dimension_B)
-{
-  BOBA_CALI_MARK
-  checkpoint();
-  constexpr size_t new_dimension = (dimension_A + dimension_B) - 6;
-  auto sizes_A = tensor_A_view.sizes();
-  auto sizes_B = tensor_B_view.sizes();
-  size_t contraction_1_length = sizes_A[contraction_1_dimension_A];
-  size_t contraction_1_length_check = sizes_B[contraction_1_dimension_B];
-  boba_always_assert_equal(contraction_1_length, contraction_1_length_check, "Invalid contraction.");
-
-  size_t contraction_2_length = sizes_A[contraction_2_dimension_A];
-  size_t contraction_2_length_check = sizes_B[contraction_2_dimension_B];
-  boba_always_assert_equal(contraction_2_length, contraction_2_length_check, "Invalid contraction.");
-
-  size_t contraction_3_length = sizes_A[contraction_3_dimension_A];
-  size_t contraction_3_length_check = sizes_B[contraction_3_dimension_B];
-  boba_always_assert_equal(contraction_3_length, contraction_3_length_check, "Invalid contraction.");
-
-  auto contracted_A_mider = make_contracted_dimensions<3>(sizes_A, {contraction_1_dimension_A, contraction_2_dimension_A, contraction_3_dimension_A});
-  auto contracted_B_mider = make_contracted_dimensions<3>(sizes_B, {contraction_1_dimension_B, contraction_2_dimension_B, contraction_3_dimension_B});
-  auto new_sizes = concatenate(contracted_A_mider.sizes(), contracted_B_mider.sizes());
-
-  Tensor<new_dimension, space, data_t> tensor_C(new_sizes);
-  tensor_C.fill_with_zeros();
-
-  if (tensor_C.size() == 0)
-  {
-    return tensor_C;
-  }
-
-  //
-  // Perform Contraction
-  //
-  if constexpr (
-    (space == ::boba::execution_space::HIP) and
-    ::boba::boba_hip_enabled() and
-    ::boba::boba_hiptensor_enabled() and
-    not(force_naive))
-  {
-    ::boba::detail::hiptensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_1_dimension_A, contraction_2_dimension_A, contraction_3_dimension_A, contraction_1_dimension_B, contraction_2_dimension_B, contraction_3_dimension_B);
-    return tensor_C;
-  }
-  else if constexpr (
-    (space == ::boba::execution_space::CUDA) and
-    ::boba::boba_cuda_enabled() and
-    ::boba::boba_cutensor_enabled() and
-    not(force_naive))
-  {
-    ::boba::detail::cutensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_1_dimension_A, contraction_2_dimension_A, contraction_3_dimension_A, contraction_1_dimension_B, contraction_2_dimension_B, contraction_3_dimension_B);
-    return tensor_C;
-  }
-  else if constexpr (
-    (space == ::boba::execution_space::CPU) and
-    ::boba::is_cpu_enabled() and
-    ::boba::boba_eigen_tensor_enabled() and
-    not(force_naive))
-  {
-    ::boba::detail::eigen_tensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_1_dimension_A, contraction_2_dimension_A, contraction_3_dimension_A, contraction_1_dimension_B, contraction_2_dimension_B, contraction_3_dimension_B);
-    return tensor_C;
-  }
-
-  BOBA_CALI_BEGIN("reference_implementation");
-
-  auto tensor_C_view = tensor_C.atomic_view();
-  auto cA_size = contracted_A_mider.empty() ? 1_z : contracted_A_mider.size();
-  auto cB_size = contracted_B_mider.empty() ? 1_z : contracted_B_mider.size();
-  auto multiindex_contracted_AB = ::boba::Multiindexer<2>({cA_size, cB_size});
-
-  auto multiindex_contraction = ::boba::Multiindexer<3>({contraction_1_length, contraction_2_length, contraction_3_length});
-
-  ::boba::loop<space, 2>(
-    {multiindex_contracted_AB.size(), multiindex_contraction.size()},
-    [=] __boba_host_device__(::boba::Array<size_t, 2> ijk)
-  {
-    auto [index_C, contract_mid] = ijk;
-    auto contraction_ids = multiindex_contraction.multiindex(contract_mid);
-
-    //
-    // Indexing logic
-    //
-    auto cmid_AB = multiindex_contracted_AB.multiindex(index_C);
-    auto [cindex_A, cindex_B] = cmid_AB;
-
-    auto cmid_A = contracted_A_mider.multiindex(cindex_A);
-    auto cmid_B = contracted_B_mider.multiindex(cindex_B);
-
-    ::boba::Array<size_t, 3> contraction_dims_A{contraction_1_dimension_A, contraction_2_dimension_A, contraction_3_dimension_A};
-    auto mid_A = make_uncontracted_mid(cmid_A, contraction_ids, contraction_dims_A);
-
-    ::boba::Array<size_t, 3> contraction_dims_B{contraction_1_dimension_B, contraction_2_dimension_B, contraction_3_dimension_B};
-    auto mid_B = make_uncontracted_mid(cmid_B, contraction_ids, contraction_dims_B);
-
-    auto value_A = tensor_A_view(mid_A);
-    auto value_B = tensor_B_view(mid_B);
-
-    //
-    // Contract
-    //
-    tensor_C_view(index_C) += value_A * value_B;
-  });
-  BOBA_CALI_END("reference_implementation");
-
   return tensor_C;
 }
 
@@ -2391,74 +2060,6 @@ void apply_as_diagonal_left_in_place(
     output_view(rc) = vector_view({row}) * output_view(rc);
   });
   checkpoint();
-}
-
-// ---------------------------------------------------------------------------
-// Apply operator left
-// ---------------------------------------------------------------------------
-
-/**
- * \brief
- * Given matrices B_i, applies B_0*B_1*...*B_dimension-1 to the input, where * is the Kronecker product
- */
-
-template <size_t dimension, execution_space space, typename data_t>
-Tensor<dimension, space, data_t> apply_repeated_operator_left(
-  Array<Matrix<space, data_t>, dimension> const& linear_operators,
-  Tensor<dimension, space, data_t> input)
-{
-  BOBA_CALI_MARK
-  checkpoint();
-  Tensor<dimension, space, data_t> output;
-  for (size_t d = 0; d < dimension; d++)
-  {
-    output = tensor_contraction_single_index(linear_operators[d], input, 1, d);
-    if (d < dimension - 1)
-    {
-      input = output;
-    }
-  }
-
-  Array<size_t, dimension> reverse;
-  for (size_t d = 0; d < dimension; d++)
-  {
-    reverse[d] = dimension - 1 - d;
-  }
-
-  permute(output, reverse);
-  return output;
-}
-
-/**
- * \brief
- * Given matrix B, applies B*B*...*B to the input, where * is the Kronecker product
- */
-
-template <size_t dimension, execution_space space, typename data_t>
-Tensor<dimension, space, data_t> apply_repeated_operator_left_repeated(
-  Matrix<space, data_t> const& linear_operators,
-  Tensor<dimension, space, data_t> input)
-{
-  BOBA_CALI_MARK
-  checkpoint();
-  Tensor<dimension, space, data_t> output;
-  for (size_t d = 0; d < dimension; d++)
-  {
-    output = tensor_contraction_single_index(linear_operators, input, 1, d);
-    if (d < dimension - 1)
-    {
-      input = output;
-    }
-  }
-
-  Array<size_t, dimension> reverse;
-  for (size_t d = 0; d < dimension; d++)
-  {
-    reverse[d] = dimension - 1 - d;
-  }
-
-  permute(output, reverse);
-  return output;
 }
 
 // ---------------------------------------------------------------------------

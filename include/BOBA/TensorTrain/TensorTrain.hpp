@@ -423,7 +423,7 @@ struct TensorTrain
       });
 
       auto old_temp = temp;
-      temp = tensor_contraction_single_index(
+      temp = tensor_contraction<1>(
         {"ranks_left"}, old_temp, {"ranks_left", "ranks_right"}, slice, {"ranks_right"});
     }
 
@@ -944,7 +944,7 @@ struct TensorTrain
 
       // Absorb R into the next core via contraction
       checkpoint();
-      this->cores[d + 1] = boba::tensor_contraction_single_index(
+      this->cores[d + 1] = boba::tensor_contraction<1>(
         {"k", "l"}, qr.R, {"l", "i", "r"}, this->cores[d + 1], {"k", "i", "r"});
     }
     checkpoint();
@@ -1027,7 +1027,7 @@ struct TensorTrain
 
       checkpoint();
       this->cores[d - 1] =
-        boba::tensor_contraction_single_index(
+        boba::tensor_contraction<1>(
           {"l", "i", "k"}, this->cores[d - 1], {"k", "r"}, svd.U, {"l", "i", "r"});
     }
     checkpoint();
@@ -1086,7 +1086,7 @@ struct TensorTrain
 
     for (size_t d = dimension; d > 0; d--)
     {
-      auto contracted_cores = tensor_contraction_single_index(
+      auto contracted_cores = tensor_contraction<1>(
         {"l1", "i", "r1"}, this->cores[d - 1], {"l2", "i", "r2"}, input.cores[d - 1], {"l1", "l2", "r1", "r2"});
 
       const size_t this_ranks_left = this->get_ranks_left(d - 1);
@@ -1451,7 +1451,7 @@ Tensor<3, space, _data_t> partial_decompress_core(
   Array<size_t, 2> new_sizes{left_core.sizes(1), right_core.sizes(1)};
   boba_always_assert_equal(end_indices - start_indices, new_sizes, "Unroll subtensors not currently supported, see issue 238");
 
-  auto tensor_4 = tensor_contraction_single_index(
+  auto tensor_4 = tensor_contraction<1>(
     {"l1", "i", "r1"}, left_core, {"r1", "j", "r2"}, right_core, {"l1", "i", "j", "r2"});
 
   auto new_size = product(new_sizes);

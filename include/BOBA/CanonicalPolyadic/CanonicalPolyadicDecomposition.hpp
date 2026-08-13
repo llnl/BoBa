@@ -725,7 +725,7 @@ struct CanonicalPolyadicDecomposition
     checkpoint();
 
     // 3rd step. compute (KR^T).(KR)
-    auto gram = tensor_contraction_single_index({"r", "c"}, KR, {"r", "p"}, KR, {"c", "p"});
+    auto gram = tensor_contraction<1>({"r", "c"}, KR, {"r", "p"}, KR, {"c", "p"});
     checkpoint();
 
     // R is the desired CP rank
@@ -744,8 +744,8 @@ struct CanonicalPolyadicDecomposition
     checkpoint();
 
     // replace factors[skip] with the update
-    auto tensor_KR = tensor_contraction_single_index({"r", "c"}, tensor_unfold_right, {"c", "p"}, KR, {"r", "p"});
-    auto factor_update = tensor_contraction_single_index({"r", "p"}, tensor_KR, {"p", "c"}, gram_inv, {"r", "c"});
+    auto tensor_KR = tensor_contraction<1>({"r", "c"}, tensor_unfold_right, {"c", "p"}, KR, {"r", "p"});
+    auto factor_update = tensor_contraction<1>({"r", "p"}, tensor_KR, {"p", "c"}, gram_inv, {"r", "c"});
     checkpoint();
     m_cores[skip] = reshape_to_matrix(factor_update, factor_update.sizes());
   }

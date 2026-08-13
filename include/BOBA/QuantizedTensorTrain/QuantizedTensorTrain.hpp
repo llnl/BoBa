@@ -745,7 +745,7 @@ struct QuantizedTensorTrain
       boba::QR<space, data_t> qr;
       qr(unfold_left);
       this->cores[d] = write_to_core_from_left_fold(qr.Q, sizes(d));
-      auto temp = boba::tensor_contraction_single_index({"k", "l"}, qr.R, {"l", "i", "r"}, this->cores[d + 1], {"k", "i", "r"});
+      auto temp = boba::tensor_contraction<1>({"k", "l"}, qr.R, {"l", "i", "r"}, this->cores[d + 1], {"k", "i", "r"});
       this->cores[d + 1] = temp;
       checkpoint();
     }

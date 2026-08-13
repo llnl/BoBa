@@ -826,7 +826,7 @@ struct TensorTrainMatrix
         this->core_cols(d),
         "invalid size and cols for tensor-train mat-mat");
 
-      auto temporary = tensor_contraction_single_index(
+      auto temporary = tensor_contraction<1>(
         {"l1", "row", "col", "r1"}, this_copy, {"l2", "col", "new_col", "r2"}, input.cores[d], {"l1", "l2", "row", "new_col", "r1", "r2"});
 
       checkpoint();
@@ -1069,7 +1069,7 @@ struct TensorTrainMatrix
 
       checkpoint();
       this->cores[d + 1_z] =
-        boba::tensor_contraction_single_index(
+        boba::tensor_contraction<1>(
           {"k", "l"}, qr.R, {"l", "row", "col", "r"}, this->cores[d + 1_z], {"k", "row", "col", "r"});
     }
 
@@ -1153,7 +1153,7 @@ struct TensorTrainMatrix
 
       checkpoint();
       this->cores[d - 1_z] =
-        boba::tensor_contraction_single_index(
+        boba::tensor_contraction<1>(
           {"l", "row", "col", "k"}, this->cores[d - 1_z], {"k", "r"}, svd.U, {"l", "row", "col", "r"});
     }
 
@@ -1234,10 +1234,10 @@ struct TensorTrainMatrix
         "invalid size and cols for apply_quadratic right product");
 
       // variable^T*this*variable
-      auto intermediate_value = tensor_contraction_single_index(
+      auto intermediate_value = tensor_contraction<1>(
         {"vT_l", "row", "new_row", "vT_r"}, variable.cores[d], {"ml", "row", "col", "mr"}, this->cores[d], {"vT_l", "new_row", "vT_r", "ml", "col", "mr"});
 
-      auto output_temporary = tensor_contraction_single_index(
+      auto output_temporary = tensor_contraction<1>(
         {"vT_l", "new_row", "vT_r", "ml", "col", "mr"}, intermediate_value, {"v_l", "col", "new_col", "v_r"}, variable.cores[d], {"vT_l", "ml", "v_l", "new_row", "new_col", "vT_r", "mr", "v_r"});
 
       auto new_rows = variable.core_rows(d);
@@ -1590,7 +1590,7 @@ struct TensorTrainMatrix
     if constexpr (dimension == 1)
     {
       checkpoint();
-      auto output = tensor_contraction_single_index(
+      auto output = tensor_contraction<1>(
         {"l", "i", "j", "r"}, this->cores[0], {"j"}, input, {"l", "i", "r"});
 
       reshaped_output.reshape(output);
@@ -1614,13 +1614,11 @@ struct TensorTrainMatrix
       checkpoint();
       for (size_t d = dimension; d > 0; d--)
       {
-        auto new_output = tensor_contraction_double_index(
+        auto new_output = tensor_contraction<2>(
           this->cores[d - 1],
           output,
-          2,
-          3,
-          dimension,
-          0);
+          {2, 3},
+          {dimension, 0});
 
         checkpoint();
         output = new_output;
@@ -1705,7 +1703,7 @@ struct TensorTrainMatrix
       }
       else
       {
-        auto temporary = tensor_contraction_single_index(
+        auto temporary = tensor_contraction<1>(
           {"ml", "row", "col", "mr"}, this->cores[d], {"l", "col", "r"}, input.cores[d], {"ml", "l", "row", "mr", "r"});
 
         output.cores[d] = reshape<3>(temporary, {new_ranks_left, new_rows, new_ranks_right});

@@ -155,7 +155,7 @@ struct TensorTrainAMEN
           if ((swp == 0) && propagate_z_factor)
           {
             auto crz_prev = crz.cores[i - 1];
-            crz.cores[i - 1] = ::boba::tensor_contraction_single_index(
+            crz.cores[i - 1] = ::boba::tensor_contraction<1>(
               {"rzm1", "n", "rz"}, crz_prev, {"k", "rz"}, rv, {"rzm1", "n", "k"});
           }
           crz.cores[i] = boba::reshape_from_matrix<3>(crznew.transpose(), {rznew, cry.sizes(i), current_z_right_rank});
@@ -180,7 +180,7 @@ struct TensorTrainAMEN
         checkpoint();
         auto cr2 = crx.cores[i - 1];
 
-        auto new_cr2mat = ::boba::tensor_contraction_single_index(
+        auto new_cr2mat = ::boba::tensor_contraction<1>(
           {"rxm1", "n", "rx"}, cr2, {"k", "rx"}, rv, {"rxm1", "n", "k"});
 
         checkpoint();
@@ -252,7 +252,7 @@ struct TensorTrainAMEN
           auto phi1A1phi2 = project_operator_A(phia.cores[i], crA.cores[i], phia.cores[i + 1]);
 
           checkpoint();
-          auto Bsol_prev = boba::tensor_contraction_triple_index(
+          auto Bsol_prev = boba::tensor_contraction<3>(
             {"rx", "rx_", "n", "n_", "rxp1", "rxp1_"}, phi1A1phi2, {"rx_", "n_", "rxp1_"}, sol_prev, {"rx", "n", "rxp1"});
 
           res_prev = ::boba::norm_difference_frobenius(boba::flatten(Bsol_prev), rhs_flat);
@@ -466,14 +466,14 @@ struct TensorTrainAMEN
               zeros.fill_with_zeros();
               auto v_expand = boba::concatenate_columns(v, zeros);
 
-              auto v_temp = boba::tensor_contraction_single_index(
+              auto v_temp = boba::tensor_contraction<1>(
                 {"row", "k"}, v_expand, {"col^T", "k"}, rv, {"row", "col^T"});
               checkpoint();
               v = boba::reshape_to_matrix(v_temp, v_temp.sizes());
             }
             else
             {
-              auto v_temp = boba::tensor_contraction_single_index(
+              auto v_temp = boba::tensor_contraction<1>(
                 {"row", "k"}, v, {"col^T", "k"}, rv, {"row", "col^T"});
               v = boba::reshape_to_matrix(v_temp, v_temp.sizes());
             }
@@ -484,7 +484,7 @@ struct TensorTrainAMEN
           auto cr2 = crx.cores[i + 1];
 
           checkpoint();
-          auto v_new = boba::tensor_contraction_single_index(
+          auto v_new = boba::tensor_contraction<1>(
             {"rxp1", "?"}, v, {"rxp1", "np1", "rxp2"}, cr2, {"?", "np1", "rxp2"});
 
           v = boba::reshape_to_matrix(v_new, {v_new.sizes(0), v_new.sizes(1) * v_new.sizes(2)});
@@ -570,11 +570,11 @@ private:
   {
     BOBA_CALI_MARK
     checkpoint();
-    auto phi1A1 = ::boba::tensor_contraction_single_index(
+    auto phi1A1 = ::boba::tensor_contraction<1>(
       {"rx", "rx_", "ra"}, phia_i, {"ra", "row", "col", "rap1"}, A_core, {"rx", "rx_", "row", "col", "rap1"});
 
     checkpoint();
-    auto phi1A1phi2 = ::boba::tensor_contraction_single_index(
+    auto phi1A1phi2 = ::boba::tensor_contraction<1>(
       {"rx", "rx_", "row", "col", "rap1"}, phi1A1, {"rxp1", "rap1", "rxp1_"}, phia_ip1, {"rx", "rx_", "row", "col", "rxp1", "rxp1_"});
 
     return phi1A1phi2;
@@ -588,11 +588,11 @@ private:
   {
     BOBA_CALI_MARK
     checkpoint();
-    auto phizyy1 = boba::tensor_contraction_single_index(
+    auto phizyy1 = boba::tensor_contraction<1>(
       {"rz", "one", "ry"}, phizy_i, {"ry", "n", "ryp1"}, y1, {"rz", "one", "n", "ryp1"});
 
     checkpoint();
-    auto crzy = boba::tensor_contraction_single_index(
+    auto crzy = boba::tensor_contraction<1>(
       {"rz", "one", "n", "ryp1"}, phizyy1, {"ryp1", "one_", "rzp1"}, phizy_ip1, {"rz", "one", "n", "one_", "rzp1"});
 
     // crzy(rz, n, rzp1)

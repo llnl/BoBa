@@ -304,17 +304,17 @@ elementwise_product(HierarchicalTucker<dimension, space, data_t>& x,
       auto transfer_tensor_x = x.get_transfer_tensor(node);
       auto transfer_tensor_y = y.get_transfer_tensor(node);
 
-      auto tmp_x = ::boba::tensor_contraction_single_index({"l", "i"}, ::boba::get_conj(truncated_gramian_bases_x[children[0]].value()), {"l", "j", "k"}, transfer_tensor_x, {"i", "j", "k"});
+      auto tmp_x = ::boba::tensor_contraction<1>({"l", "i"}, ::boba::get_conj(truncated_gramian_bases_x[children[0]].value()), {"l", "j", "k"}, transfer_tensor_x, {"i", "j", "k"});
 
-      auto tmp2_x = ::boba::tensor_contraction_single_index({"l", "j"}, ::boba::get_conj(truncated_gramian_bases_x[children[1]].value()), {"i", "l", "k"}, tmp_x, {"i", "j", "k"});
+      auto tmp2_x = ::boba::tensor_contraction<1>({"l", "j"}, ::boba::get_conj(truncated_gramian_bases_x[children[1]].value()), {"i", "l", "k"}, tmp_x, {"i", "j", "k"});
 
-      auto truncated_transfer_tensor_x = ::boba::tensor_contraction_single_index({"i", "j", "l"}, tmp2_x, {"l", "k"}, truncated_gramian_bases_x[node].value(), {"i", "j", "k"});
+      auto truncated_transfer_tensor_x = ::boba::tensor_contraction<1>({"i", "j", "l"}, tmp2_x, {"l", "k"}, truncated_gramian_bases_x[node].value(), {"i", "j", "k"});
 
-      auto tmp_y = ::boba::tensor_contraction_single_index({"l", "i"}, ::boba::get_conj(truncated_gramian_bases_y[children[0]].value()), {"l", "j", "k"}, transfer_tensor_y, {"i", "j", "k"});
+      auto tmp_y = ::boba::tensor_contraction<1>({"l", "i"}, ::boba::get_conj(truncated_gramian_bases_y[children[0]].value()), {"l", "j", "k"}, transfer_tensor_y, {"i", "j", "k"});
 
-      auto tmp2_y = ::boba::tensor_contraction_single_index({"l", "j"}, ::boba::get_conj(truncated_gramian_bases_y[children[1]].value()), {"i", "l", "k"}, tmp_y, {"i", "j", "k"});
+      auto tmp2_y = ::boba::tensor_contraction<1>({"l", "j"}, ::boba::get_conj(truncated_gramian_bases_y[children[1]].value()), {"i", "l", "k"}, tmp_y, {"i", "j", "k"});
 
-      auto truncated_transfer_tensor_y = ::boba::tensor_contraction_single_index({"i", "j", "l"}, tmp2_y, {"l", "k"}, truncated_gramian_bases_y[node].value(), {"i", "j", "k"});
+      auto truncated_transfer_tensor_y = ::boba::tensor_contraction<1>({"i", "j", "l"}, tmp2_y, {"l", "k"}, truncated_gramian_bases_y[node].value(), {"i", "j", "k"});
 
       // Form the truncated Kronecker product of the transfer tensors (implicitly) using the element-wise product of the two tensors
       auto output_transfer_tensor = ::boba::elementwise_product(truncated_transfer_tensor_x, truncated_transfer_tensor_y);
@@ -328,13 +328,13 @@ elementwise_product(HierarchicalTucker<dimension, space, data_t>& x,
   auto transfer_tensor_y = y.get_transfer_tensor(0);
 
   // Truncate the root node transfer tensors for x and y using the previously computed truncated Gramian bases for the children of the root node
-  auto tmp_x = ::boba::tensor_contraction_single_index({"l", "i"}, ::boba::get_conj(truncated_gramian_bases_x[children[0]].value()), {"l", "j", "k"}, transfer_tensor_x, {"i", "j", "k"});
+  auto tmp_x = ::boba::tensor_contraction<1>({"l", "i"}, ::boba::get_conj(truncated_gramian_bases_x[children[0]].value()), {"l", "j", "k"}, transfer_tensor_x, {"i", "j", "k"});
 
-  auto truncated_transfer_tensor_x = ::boba::tensor_contraction_single_index({"l", "j"}, ::boba::get_conj(truncated_gramian_bases_x[children[1]].value()), {"i", "l", "k"}, tmp_x, {"i", "j", "k"});
+  auto truncated_transfer_tensor_x = ::boba::tensor_contraction<1>({"l", "j"}, ::boba::get_conj(truncated_gramian_bases_x[children[1]].value()), {"i", "l", "k"}, tmp_x, {"i", "j", "k"});
 
-  auto tmp_y = ::boba::tensor_contraction_single_index({"l", "i"}, ::boba::get_conj(truncated_gramian_bases_y[children[0]].value()), {"l", "j", "k"}, transfer_tensor_y, {"i", "j", "k"});
+  auto tmp_y = ::boba::tensor_contraction<1>({"l", "i"}, ::boba::get_conj(truncated_gramian_bases_y[children[0]].value()), {"l", "j", "k"}, transfer_tensor_y, {"i", "j", "k"});
 
-  auto truncated_transfer_tensor_y = ::boba::tensor_contraction_single_index({"l", "j"}, ::boba::get_conj(truncated_gramian_bases_y[children[1]].value()), {"i", "l", "k"}, tmp_y, {"i", "j", "k"});
+  auto truncated_transfer_tensor_y = ::boba::tensor_contraction<1>({"l", "j"}, ::boba::get_conj(truncated_gramian_bases_y[children[1]].value()), {"i", "l", "k"}, tmp_y, {"i", "j", "k"});
 
   // Form the truncated Kronecker product of the transfer tensors (implicitly) using the element-wise product of the two tensors
   auto output_transfer_tensor = ::boba::elementwise_product(truncated_transfer_tensor_x, truncated_transfer_tensor_y);
@@ -476,7 +476,7 @@ data_t inner_product(
       const auto& x_basis = x_basis_matrices[node].value();
       const auto& y_basis = y_basis_matrices[node].value();
 
-      auto local_partial = ::boba::tensor_contraction_single_index({"l", "i"}, ::boba::get_conj(x_basis), {"l", "j"}, y_basis, {"i", "j"});
+      auto local_partial = ::boba::tensor_contraction<1>({"l", "i"}, ::boba::get_conj(x_basis), {"l", "j"}, y_basis, {"i", "j"});
       partial_inner_products[node].emplace(std::move(local_partial));
     }
     else
@@ -500,9 +500,9 @@ data_t inner_product(
       const auto& y_transfer = y_transfer_tensors[node].value();
 
       // Propagate partials from children up to the current node for y, then merge with x
-      auto propagated_left = ::boba::tensor_contraction_single_index({"i", "l"}, partial_left, {"l", "j", "k"}, y_transfer, {"i", "j", "k"});
-      auto y_merged = ::boba::tensor_contraction_single_index({"j", "l"}, partial_right, {"i", "l", "k"}, propagated_left, {"i", "j", "k"});
-      auto local_partial = ::boba::tensor_contraction_double_index({"l", "m", "i"}, ::boba::get_conj(x_transfer), {"l", "m", "j"}, y_merged, {"i", "j"});
+      auto propagated_left = ::boba::tensor_contraction<1>({"i", "l"}, partial_left, {"l", "j", "k"}, y_transfer, {"i", "j", "k"});
+      auto y_merged = ::boba::tensor_contraction<1>({"j", "l"}, partial_right, {"i", "l", "k"}, propagated_left, {"i", "j", "k"});
+      auto local_partial = ::boba::tensor_contraction<2>({"l", "m", "i"}, ::boba::get_conj(x_transfer), {"l", "m", "j"}, y_merged, {"i", "j"});
       partial_inner_products[node].emplace(std::move(local_partial));
 
       // Free child data to save memory

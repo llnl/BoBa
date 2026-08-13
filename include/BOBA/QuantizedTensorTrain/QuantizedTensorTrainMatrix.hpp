@@ -678,7 +678,7 @@ struct QuantizedTensorTrainMatrix
 
       checkpoint();
       this->cores[d + 1_z] =
-        boba::tensor_contraction_single_index(
+        boba::tensor_contraction<1>(
           {"k", "l"}, qr.R, {"l", "row", "col", "r"}, this->cores[d + 1_z], {"k", "row", "col", "r"});
     }
 
@@ -762,7 +762,7 @@ struct QuantizedTensorTrainMatrix
 
       checkpoint();
       this->cores[d - 1_z] =
-        boba::tensor_contraction_single_index(
+        boba::tensor_contraction<1>(
           {"l", "row", "col", "k"}, this->cores[d - 1_z], {"k", "r"}, svd.U, {"l", "row", "col", "r"});
     }
 
@@ -845,7 +845,7 @@ struct QuantizedTensorTrainMatrix
         return output;
       }
 
-      auto temporary = tensor_contraction_single_index(
+      auto temporary = tensor_contraction<1>(
         {"ml", "row", "col", "mr"}, this->cores[d], {"l", "col", "r"}, input.cores[d], {"ml", "l", "row", "mr", "r"});
 
       output.cores[d] = reshape<3>(temporary, {new_ranks_left, new_rows, new_ranks_right});
