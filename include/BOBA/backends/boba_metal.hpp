@@ -556,13 +556,13 @@ void metal_permute(
 //
 // Contract
 //
-template <size_t dimension_A, size_t dimension_B, size_t dimension_C, typename accessor, typename const_accessor>
+template <size_t contractions, size_t dimension_A, size_t dimension_B, size_t dimension_C, typename accessor, typename const_accessor>
 void metal_contract(
   const TensorView<const_accessor, dimension_A>& tensor_A,
   const TensorView<const_accessor, dimension_B>& tensor_B,
   TensorView<accessor, dimension_C>& tensor_C,
-  size_t contraction_dimension_A,
-  size_t contraction_dimension_B)
+  const boba::Array<size_t, contractions> contraction_dimensions_A,
+  const boba::Array<size_t, contractions> contraction_dimensions_B)
 {
   //
   // Create algorithm
@@ -578,18 +578,19 @@ void metal_contract(
                       device atomic<float> * tensor_C,
                       uint compute_id [[thread_position_in_grid]]) {
 
-        // Use regex to replace these with tensor sizes
-
         x_sizes_C_x
         x_strides_A_x
         x_strides_B_x
         x_strides_C_x
+        x_contraction_dimensions_A_x
+        x_contraction_dimensions_B_x
+        x_contraction_lengths_x
 
         //
-        // Get C_multiindex
+        // Get C_multiindex and contraction ids
         //
         uint C_multiindex[dimension_C];
-        uint contraction_id_1;
+        uint contraction_ids[contractions + 1];
         {
           uint index = compute_id;
           for (uint d = 0; d < dimension_C - 1; d++) {
@@ -598,22 +599,25 @@ void metal_contract(
           }
           C_multiindex[dimension_C - 1] = index % sizes_C[dimension_C - 1];
           index /= sizes_C[dimension_C - 1];
-          contraction_id_1 = index;
+          for (uint c = 0; c < contractions; c++) {
+            contraction_ids[c] = index % contraction_lengths[c];
+            index /= contraction_lengths[c];
+          }
         }
 
         //
         // Get A_pre_multiindex and B_pre_multiindex
         //
         // add 1 to length of array to get around "zero-length arrays are not permitted in C++"
-        uint A_pre_multiindex[dimension_A - 1 + 1];
-        uint B_pre_multiindex[dimension_B - 1 + 1];
-        for (uint d = 0; d < dimension_A - 1; d++)
+        uint A_pre_multiindex[dimension_A - contractions + 1];
+        uint B_pre_multiindex[dimension_B - contractions + 1];
+        for (uint d = 0; d < dimension_A - contractions; d++)
         {
           A_pre_multiindex[d] = C_multiindex[d];
         }
-        for (uint d = 0; d < dimension_B - 1; d++)
+        for (uint d = 0; d < dimension_B - contractions; d++)
         {
-          B_pre_multiindex[d] = C_multiindex[(dimension_A - 1) + d];
+          B_pre_multiindex[d] = C_multiindex[(dimension_A - contractions) + d];
         }
 
         //
@@ -624,17 +628,22 @@ void metal_contract(
           uint A_multiindex[dimension_A];
           for (uint d = 0; d < dimension_A; d++)
           {
-            if(d == contraction_1_dimension_A)
+            bool is_contraction_dimension = false;
+            uint dprime = d;
+            for (uint c = 0; c < contractions; c++)
             {
-              A_multiindex[d] = contraction_id_1;
-            }
-            else
-            {
-              uint dprime = d;
-              if(d > contraction_1_dimension_A)
+              if(d == contraction_dimensions_A[c])
+              {
+                A_multiindex[d] = contraction_ids[c];
+                is_contraction_dimension = true;
+              }
+              else if(d > contraction_dimensions_A[c])
               {
                 dprime--;
               }
+            }
+            if(!is_contraction_dimension)
+            {
               A_multiindex[d] = A_pre_multiindex[dprime];
             }
           }
@@ -656,17 +665,22 @@ void metal_contract(
           uint B_multiindex[dimension_B];
           for (uint d = 0; d < dimension_B; d++)
           {
-            if(d == contraction_1_dimension_B)
+            bool is_contraction_dimension = false;
+            uint dprime = d;
+            for (uint c = 0; c < contractions; c++)
             {
-              B_multiindex[d] = contraction_id_1;
-            }
-            else
-            {
-              uint dprime = d;
-              if(d > contraction_1_dimension_B)
+              if(d == contraction_dimensions_B[c])
+              {
+                B_multiindex[d] = contraction_ids[c];
+                is_contraction_dimension = true;
+              }
+              else if(d > contraction_dimensions_B[c])
               {
                 dprime--;
               }
+            }
+            if(!is_contraction_dimension)
+            {
               B_multiindex[d] = B_pre_multiindex[dprime];
             }
           }
@@ -690,310 +704,30 @@ void metal_contract(
         atomic_fetch_add_explicit(tensor_C + id_C, value_C, memory_order_relaxed);
     })";
 
-  replace_all_string(shader, "contraction_1_dimension_A", std::to_string(contraction_dimension_A));
-  replace_all_string(shader, "contraction_1_dimension_B", std::to_string(contraction_dimension_B));
-
-  auto contraction_length_1 = tensor_A.sizes(contraction_dimension_A);
-  replace_all_string(shader, "contraction_length_1", std::to_string(contraction_length_1));
+  //
+  // Set contraction metadata
+  //
+  boba::Array<size_t, contractions> contraction_lengths;
+  size_t contraction_size = 1;
+  for (size_t c = 0; c < contractions; c++)
+  {
+    contraction_lengths[c] = tensor_A.sizes(contraction_dimensions_A[c]);
+    contraction_size *= contraction_lengths[c];
+  }
 
   replace_all_string(shader, "x_sizes_C_x", make_metal_string("sizes_C", tensor_C.sizes(), 8));
   replace_all_string(shader, "x_strides_A_x", make_metal_string("strides_A", tensor_A.strides(), 8));
   replace_all_string(shader, "x_strides_B_x", make_metal_string("strides_B", tensor_B.strides(), 8));
   replace_all_string(shader, "x_strides_C_x", make_metal_string("strides_C", tensor_C.strides(), 8));
+  replace_all_string(shader, "x_contraction_dimensions_A_x", make_metal_string("contraction_dimensions_A", contraction_dimensions_A, 8));
+  replace_all_string(shader, "x_contraction_dimensions_B_x", make_metal_string("contraction_dimensions_B", contraction_dimensions_B, 8));
+  replace_all_string(shader, "x_contraction_lengths_x", make_metal_string("contraction_lengths", contraction_lengths, 8));
 
   replace_all_string(shader, "dimension_A", std::to_string(dimension_A));
   replace_all_string(shader, "dimension_B", std::to_string(dimension_B));
   replace_all_string(shader, "dimension_C", std::to_string(dimension_C));
+  replace_all_string(shader, "contractions", std::to_string(contractions));
 
-  //
-  // Initialize pipeline
-  //
-  MTL::Device* pDevice = MTL::CreateSystemDefaultDevice();
-  NS::Error* pError = nullptr;
-
-  MTL::Library* pComputeLibrary = pDevice->newLibrary(NS::String::string(shader.c_str(), NS::UTF8StringEncoding), nullptr, &pError);
-  if (!pComputeLibrary)
-  {
-    printf("%s", pError->localizedDescription()->utf8String());
-    assert(false);
-  }
-
-  MTL::Function* mtl_fcn = pComputeLibrary->newFunction(NS::String::string("contract", NS::UTF8StringEncoding));
-
-  MTL::ComputePipelineState* mtl_pipe = pDevice->newComputePipelineState(mtl_fcn, &pError);
-  if (!mtl_pipe)
-  {
-    printf("%s", pError->localizedDescription()->utf8String());
-    assert(false);
-  }
-
-  //
-  // Data setup
-  //
-  MTL::Buffer* tensor_A_buffer = pDevice->newBuffer(tensor_A.size() * sizeof(float), MTL::ResourceStorageModeShared);
-  MTL::Buffer* tensor_B_buffer = pDevice->newBuffer(tensor_B.size() * sizeof(float), MTL::ResourceStorageModeShared);
-  MTL::Buffer* tensor_C_buffer = pDevice->newBuffer(tensor_C.size() * sizeof(float), MTL::ResourceStorageModeShared);
-
-  float* tensor_A_buffer_ptr = (float*)tensor_A_buffer->contents();
-  float* tensor_B_buffer_ptr = (float*)tensor_B_buffer->contents();
-  float* tensor_C_buffer_ptr = (float*)tensor_C_buffer->contents();
-
-  for (int i = 0; i < tensor_A.size(); i++)
-  {
-    tensor_A_buffer_ptr[i] = static_cast<float>(tensor_A(i));
-  }
-  for (int i = 0; i < tensor_B.size(); i++)
-  {
-    tensor_B_buffer_ptr[i] = static_cast<float>(tensor_B(i));
-  }
-  for (int i = 0; i < tensor_C.size(); i++)
-  {
-    tensor_C_buffer_ptr[i] = static_cast<float>(0.0);
-  }
-
-  auto kernel_size = tensor_C.size() * contraction_length_1;
-  MTL::Size grid(kernel_size, 1, 1);
-  MTL::Size threadgroup(std::min(128_z, kernel_size), 1, 1);
-
-  //
-  // Launch compute
-  //
-  MTL::CommandQueue* pQueue = pDevice->newCommandQueue();
-
-  MTL::CommandBuffer* pCommandBuffer = pQueue->commandBuffer();
-  if (!pCommandBuffer)
-  {
-    printf("%s", pError->localizedDescription()->utf8String());
-    assert(false);
-  }
-
-  MTL::ComputeCommandEncoder* pComputeEncoder = pCommandBuffer->computeCommandEncoder();
-  if (!pComputeEncoder)
-  {
-    printf("%s", pError->localizedDescription()->utf8String());
-    assert(false);
-  }
-
-  //
-  // Set buffer
-  //
-  pComputeEncoder->setComputePipelineState(mtl_pipe);
-  pComputeEncoder->setBuffer(tensor_A_buffer, 0, 0);
-  pComputeEncoder->setBuffer(tensor_B_buffer, 0, 1);
-  pComputeEncoder->setBuffer(tensor_C_buffer, 0, 2);
-  pComputeEncoder->dispatchThreads(grid, threadgroup);
-  pComputeEncoder->endEncoding();
-  pCommandBuffer->commit();
-
-  //
-  // Device snync
-  //
-  pCommandBuffer->waitUntilCompleted();
-
-  //
-  // Free memory
-  //
-  pDevice->release();
-  mtl_fcn->release();
-  mtl_pipe->release();
-  pComputeLibrary->release();
-
-  //
-  // Copy back to tensors
-  //
-  for (int i = 0; i < tensor_C.size(); i++)
-  {
-    tensor_C(i) = static_cast<double>(tensor_C_buffer_ptr[i]);
-  }
-}
-
-//
-// Contract
-//
-template <size_t dimension_A, size_t dimension_B, size_t dimension_C, typename accessor, typename const_accessor>
-void metal_contract(
-  const TensorView<const_accessor, dimension_A>& tensor_A,
-  const TensorView<const_accessor, dimension_B>& tensor_B,
-  TensorView<accessor, dimension_C>& tensor_C,
-  size_t contraction_1_dimension_A,
-  size_t contraction_2_dimension_A,
-  size_t contraction_1_dimension_B,
-  size_t contraction_2_dimension_B)
-{
-#define PROFILING 1
-
-  //
-  // Create algorithm
-  //
-#if PROFILING
-  TicToc timer;
-  timer.tic();
-#endif
-  std::string shader = R"(
-    #include <metal_stdlib>
-
-    using namespace metal;
-
-    kernel void contract(
-                      device const float * tensor_A,
-                      device const float * tensor_B,
-                      device atomic<float> * tensor_C,
-                      uint compute_id [[thread_position_in_grid]]) {
-
-        // Use regex to replace these with tensor sizes
-
-        x_sizes_C_x
-        x_strides_A_x
-        x_strides_B_x
-        x_strides_C_x
-
-        //
-        // Get C_multiindex
-        //
-        uint C_multiindex[dimension_C];
-        uint contraction_id_1;
-        uint contraction_id_2;
-        {
-          uint index = compute_id;
-          for (uint d = 0; d < dimension_C - 1; d++) {
-            C_multiindex[d] = index % sizes_C[d];
-            index /= sizes_C[d];
-          }
-          C_multiindex[dimension_C - 1] = index % sizes_C[dimension_C - 1];
-          index /= sizes_C[dimension_C - 1];
-          contraction_id_1 = index % contraction_length_1;
-          index /= contraction_length_1;
-          contraction_id_2 = index;
-        }
-
-        //
-        // Get A_pre_multiindex and B_pre_multiindex
-        //
-        // add 1 to length of array to get around "zero-length arrays are not permitted in C++"
-        uint A_pre_multiindex[dimension_A - 2 + 1];
-        uint B_pre_multiindex[dimension_B - 2 + 1];
-        for (uint d = 0; d < dimension_A - 2; d++)
-        {
-          A_pre_multiindex[d] = C_multiindex[d];
-        }
-        for (uint d = 0; d < dimension_B - 2; d++)
-        {
-          B_pre_multiindex[d] = C_multiindex[(dimension_A - 2) + d];
-        }
-
-        //
-        // Get A_multiindex
-        //
-        float value_A = 0.0;
-        {
-          uint A_multiindex[dimension_A];
-          for (uint d = 0; d < dimension_A; d++)
-          {
-            if(d == contraction_1_dimension_A)
-            {
-              A_multiindex[d] = contraction_id_1;
-            }
-            else if(d == contraction_2_dimension_A)
-            {
-              A_multiindex[d] = contraction_id_2;              
-            }
-            else
-            {
-              uint dprime = d;
-              if(d > contraction_1_dimension_A)
-              {
-                dprime--;
-              }
-              if(d > contraction_2_dimension_A)
-              {
-                dprime--;
-              }
-              A_multiindex[d] = A_pre_multiindex[dprime];
-            }
-          }
-
-          // Get A value
-          uint id_A = 0;
-          for(uint d = 0; d < dimension_A; ++d)
-          {
-            id_A += strides_A[d]*A_multiindex[d];
-          }
-          value_A = tensor_A[id_A];
-        }
-
-        //
-        // Get B_multiindex
-        //
-        float value_B = 0.0;
-        {
-          uint B_multiindex[dimension_B];
-          for (uint d = 0; d < dimension_B; d++)
-          {
-            if(d == contraction_1_dimension_B)
-            {
-              B_multiindex[d] = contraction_id_1;
-            }
-            else if(d == contraction_2_dimension_B)
-            {
-              B_multiindex[d] = contraction_id_2;              
-            }
-            else
-            {
-              uint dprime = d;
-              if(d > contraction_1_dimension_B)
-              {
-                dprime--;
-              }
-              if(d > contraction_2_dimension_B)
-              {
-                dprime--;
-              }
-              B_multiindex[d] = B_pre_multiindex[dprime];
-            }
-          }
-
-          // Get B value
-          uint id_B = 0;
-          for(uint d = 0; d < dimension_B; ++d)
-          {
-            id_B += strides_B[d]*B_multiindex[d];
-          }
-          value_B = tensor_B[id_B];
-        }
-
-        float value_C = value_A * value_B;
-
-        uint id_C = 0;
-        for(uint d = 0; d < dimension_C; ++d)
-        {
-          id_C += strides_C[d]*C_multiindex[d];
-        }
-        atomic_fetch_add_explicit(tensor_C + id_C, value_C, memory_order_relaxed);
-    })";
-
-  replace_all_string(shader, "contraction_1_dimension_A", std::to_string(contraction_1_dimension_A));
-  replace_all_string(shader, "contraction_2_dimension_A", std::to_string(contraction_2_dimension_A));
-  replace_all_string(shader, "contraction_1_dimension_B", std::to_string(contraction_1_dimension_B));
-  replace_all_string(shader, "contraction_2_dimension_B", std::to_string(contraction_2_dimension_B));
-
-  auto contraction_length_1 = tensor_A.sizes(contraction_1_dimension_A);
-  auto contraction_length_2 = tensor_A.sizes(contraction_2_dimension_A);
-  replace_all_string(shader, "contraction_length_1", std::to_string(contraction_length_1));
-  replace_all_string(shader, "contraction_length_2", std::to_string(contraction_length_2));
-
-  replace_all_string(shader, "x_sizes_C_x", make_metal_string("sizes_C", tensor_C.sizes(), 8));
-  replace_all_string(shader, "x_strides_A_x", make_metal_string("strides_A", tensor_A.strides(), 8));
-  replace_all_string(shader, "x_strides_B_x", make_metal_string("strides_B", tensor_B.strides(), 8));
-  replace_all_string(shader, "x_strides_C_x", make_metal_string("strides_C", tensor_C.strides(), 8));
-
-  replace_all_string(shader, "dimension_A", std::to_string(dimension_A));
-  replace_all_string(shader, "dimension_B", std::to_string(dimension_B));
-  replace_all_string(shader, "dimension_C", std::to_string(dimension_C));
-
-#if PROFILING
-  timer.end_and_print("define");
-  timer.tic();
-#endif
   //
   // Initialize pipeline
   //
@@ -1021,10 +755,6 @@ void metal_contract(
     assert(false);
   }
 
-#if PROFILING
-  timer.end_and_print("init");
-  timer.tic();
-#endif
   //
   // Data setup
   //
@@ -1049,14 +779,10 @@ void metal_contract(
     tensor_C_buffer_ptr[i] = static_cast<float>(0.0);
   }
 
-  auto kernel_size = tensor_C.size() * contraction_length_1 * contraction_length_2;
+  auto kernel_size = tensor_C.size() * contraction_size;
   MTL::Size grid(kernel_size, 1, 1);
   MTL::Size threadgroup(std::min(128_z, kernel_size), 1, 1);
 
-#if PROFILING
-  timer.end_and_print("data_setup");
-  timer.tic();
-#endif
   //
   // Launch compute
   //
@@ -1076,10 +802,6 @@ void metal_contract(
     assert(false);
   }
 
-#if PROFILING
-  timer.end_and_print("launch_compute");
-  timer.tic();
-#endif
   //
   // Set buffer
   //
@@ -1090,15 +812,12 @@ void metal_contract(
   pComputeEncoder->dispatchThreads(grid, threadgroup);
   pComputeEncoder->endEncoding();
   pCommandBuffer->commit();
+
   //
-  // Device snync
+  // Device sync
   //
   pCommandBuffer->waitUntilCompleted();
 
-#if PROFILING
-  timer.end_and_print("device_sync");
-  timer.tic();
-#endif
   //
   // Free memory
   //
@@ -1107,10 +826,6 @@ void metal_contract(
   mtl_pipe->release();
   pComputeLibrary->release();
 
-#if PROFILING
-  timer.end_and_print("free");
-  timer.tic();
-#endif
   //
   // Copy back to tensors
   //
@@ -1118,642 +833,21 @@ void metal_contract(
   {
     tensor_C(i) = static_cast<double>(tensor_C_buffer_ptr[i]);
   }
-
-#if PROFILING
-  timer.end_and_print("copy_back");
-#endif
 }
 
-//
-// Reduce
-//
-template <size_t dimension_A, size_t dimension_C, typename accessor, typename const_accessor>
+template <size_t reductions, size_t dimension_A, size_t dimension_C, typename accessor, typename const_accessor>
 void metal_reduce(
   const TensorView<const_accessor, dimension_A>& tensor_A,
   TensorView<accessor, dimension_C>& tensor_C,
-  size_t contraction_1_dimension,
-  size_t contraction_2_dimension)
+  const boba::Array<size_t, reductions> contraction_dimensions)
 {
-  //
-  // Create algorithm
-  //
-  std::string shader = R"(
-    #include <metal_stdlib>
-
-    using namespace metal;
-
-    kernel void contract(
-                      device const float * tensor_A,
-                      device atomic<float> * tensor_C,
-                      uint compute_id [[thread_position_in_grid]]) {
-
-        // Use regex to replace these with tensor sizes
-
-        x_sizes_C_x
-        x_strides_A_x
-        x_strides_C_x
-
-        //
-        // Get C_multiindex
-        //
-        uint C_multiindex[dimension_C];
-        uint contraction_id_1;
-        uint contraction_id_2;
-        {
-          uint index = compute_id;
-          for (uint d = 0; d < dimension_C - 1; d++) {
-            C_multiindex[d] = index % sizes_C[d];
-            index /= sizes_C[d];
-          }
-          C_multiindex[dimension_C - 1] = index % sizes_C[dimension_C - 1];
-          index /= sizes_C[dimension_C - 1];
-          contraction_id_1 = index % contraction_length_1;
-          index /= contraction_length_1;
-          contraction_id_2 = index;
-        }
-
-        //
-        // Get A_pre_multiindex
-        //
-        // add 1 to length of array to get around "zero-length arrays are not permitted in C++"
-        uint A_pre_multiindex[dimension_A - 2 + 1];
-        for (uint d = 0; d < dimension_A - 2; d++)
-        {
-          A_pre_multiindex[d] = C_multiindex[d];
-        }
-
-        //
-        // Get A_multiindex
-        //
-        float value_A = 0.0;
-        {
-          uint A_multiindex[dimension_A];
-          for (uint d = 0; d < dimension_A; d++)
-          {
-            if(d == contraction_1_dimension_A)
-            {
-              A_multiindex[d] = contraction_id_1;
-            }
-            else if(d == contraction_2_dimension_A)
-            {
-              A_multiindex[d] = contraction_id_2;              
-            }
-            else
-            {
-              uint dprime = d;
-              if(d > contraction_1_dimension_A)
-              {
-                dprime--;
-              }
-              if(d > contraction_2_dimension_A)
-              {
-                dprime--;
-              }
-              A_multiindex[d] = A_pre_multiindex[dprime];
-            }
-          }
-
-          // Get A value
-          uint id_A = 0;
-          for(uint d = 0; d < dimension_A; ++d)
-          {
-            id_A += strides_A[d]*A_multiindex[d];
-          }
-          value_A = tensor_A[id_A];
-        }
-
-        uint id_C = 0;
-        for(uint d = 0; d < dimension_C; ++d)
-        {
-          id_C += strides_C[d]*C_multiindex[d];
-        }
-
-        atomic_fetch_add_explicit(tensor_C + id_C, value_A, memory_order_relaxed);
-    })";
-
-  replace_all_string(shader, "contraction_1_dimension_A", std::to_string(contraction_1_dimension));
-  replace_all_string(shader, "contraction_2_dimension_A", std::to_string(contraction_2_dimension));
-
-  auto contraction_length_1 = tensor_A.sizes(contraction_1_dimension);
-  auto contraction_length_2 = tensor_A.sizes(contraction_2_dimension);
-  replace_all_string(shader, "contraction_length_1", std::to_string(contraction_length_1));
-  replace_all_string(shader, "contraction_length_2", std::to_string(contraction_length_2));
-
-  replace_all_string(shader, "x_sizes_C_x", make_metal_string("sizes_C", tensor_C.sizes(), 8));
-  replace_all_string(shader, "x_strides_A_x", make_metal_string("strides_A", tensor_A.strides(), 8));
-  replace_all_string(shader, "x_strides_C_x", make_metal_string("strides_C", tensor_C.strides(), 8));
-
-  replace_all_string(shader, "dimension_A", std::to_string(dimension_A));
-  replace_all_string(shader, "dimension_C", std::to_string(dimension_C));
-
-  //
-  // Initialize pipeline
-  //
-  MTL::Device* pDevice = MTL::CreateSystemDefaultDevice();
-  NS::Error* pError = nullptr;
-
-  MTL::Library* pComputeLibrary = pDevice->newLibrary(NS::String::string(shader.c_str(), NS::UTF8StringEncoding), nullptr, &pError);
-  if (!pComputeLibrary)
+  if constexpr (reductions == 1)
   {
-    printf("%s", pError->localizedDescription()->utf8String());
-    assert(false);
+    metal_reduce(tensor_A, tensor_C, contraction_dimensions[0]);
   }
-
-  MTL::Function* mtl_fcn = pComputeLibrary->newFunction(NS::String::string("contract", NS::UTF8StringEncoding));
-
-  MTL::ComputePipelineState* mtl_pipe = pDevice->newComputePipelineState(mtl_fcn, &pError);
-  if (!mtl_pipe)
+  else if constexpr (reductions == 2)
   {
-    printf("%s", pError->localizedDescription()->utf8String());
-    assert(false);
-  }
-
-  //
-  // Data setup
-  //
-  MTL::Buffer* tensor_A_buffer = pDevice->newBuffer(tensor_A.size() * sizeof(float), MTL::ResourceStorageModeShared);
-  MTL::Buffer* tensor_C_buffer = pDevice->newBuffer(tensor_C.size() * sizeof(float), MTL::ResourceStorageModeShared);
-
-  float* tensor_A_buffer_ptr = (float*)tensor_A_buffer->contents();
-  float* tensor_C_buffer_ptr = (float*)tensor_C_buffer->contents();
-
-  for (int i = 0; i < tensor_A.size(); i++)
-  {
-    tensor_A_buffer_ptr[i] = static_cast<float>(tensor_A(i));
-  }
-  for (int i = 0; i < tensor_C.size(); i++)
-  {
-    tensor_C_buffer_ptr[i] = static_cast<float>(0.0);
-  }
-
-  auto kernel_size = tensor_C.size() * contraction_length_1 * contraction_length_2;
-  MTL::Size grid(kernel_size, 1, 1);
-  MTL::Size threadgroup(std::min(128_z, kernel_size), 1, 1);
-
-  //
-  // Launch compute
-  //
-  MTL::CommandQueue* pQueue = pDevice->newCommandQueue();
-
-  MTL::CommandBuffer* pCommandBuffer = pQueue->commandBuffer();
-  if (!pCommandBuffer)
-  {
-    printf("%s", pError->localizedDescription()->utf8String());
-    assert(false);
-  }
-
-  MTL::ComputeCommandEncoder* pComputeEncoder = pCommandBuffer->computeCommandEncoder();
-  if (!pComputeEncoder)
-  {
-    printf("%s", pError->localizedDescription()->utf8String());
-    assert(false);
-  }
-
-  //
-  // Set buffer
-  //
-  pComputeEncoder->setComputePipelineState(mtl_pipe);
-  pComputeEncoder->setBuffer(tensor_A_buffer, 0, 0);
-  pComputeEncoder->setBuffer(tensor_C_buffer, 0, 1);
-  pComputeEncoder->dispatchThreads(grid, threadgroup);
-  pComputeEncoder->endEncoding();
-  pCommandBuffer->commit();
-
-  //
-  // Device snync
-  //
-  pCommandBuffer->waitUntilCompleted();
-
-  //
-  // Free memory
-  //
-  pDevice->release();
-  mtl_fcn->release();
-  mtl_pipe->release();
-  pComputeLibrary->release();
-
-  //
-  // Copy back to tensors
-  //
-  for (int i = 0; i < tensor_C.size(); i++)
-  {
-    tensor_C(i) = static_cast<double>(tensor_C_buffer_ptr[i]);
-  }
-}
-
-//
-// Reduce
-//
-template <size_t dimension_A, size_t dimension_C, typename accessor, typename const_accessor>
-void metal_reduce(
-  const TensorView<const_accessor, dimension_A>& tensor_A,
-  TensorView<accessor, dimension_C>& tensor_C,
-  size_t contraction_1_dimension)
-{
-  //
-  // Create algorithm
-  //
-  std::string shader = R"(
-    #include <metal_stdlib>
-
-    using namespace metal;
-
-    kernel void contract(
-                      device const float * tensor_A,
-                      device atomic<float> * tensor_C,
-                      uint compute_id [[thread_position_in_grid]]) {
-
-        // Use regex to replace these with tensor sizes
-
-        x_sizes_C_x
-        x_strides_A_x
-        x_strides_C_x
-
-        //
-        // Get C_multiindex
-        //
-        uint C_multiindex[dimension_C];
-        uint contraction_id_1;
-        uint contraction_id_2;
-        {
-          uint index = compute_id;
-          for (uint d = 0; d < dimension_C - 1; d++) {
-            C_multiindex[d] = index % sizes_C[d];
-            index /= sizes_C[d];
-          }
-          C_multiindex[dimension_C - 1] = index % sizes_C[dimension_C - 1];
-          index /= sizes_C[dimension_C - 1];
-          contraction_id_1 = index % contraction_length_1;
-          index /= contraction_length_1;
-          contraction_id_2 = index;
-        }
-
-        //
-        // Get A_pre_multiindex
-        //
-        // add 1 to length of array to get around "zero-length arrays are not permitted in C++"
-        uint A_pre_multiindex[dimension_A - 1 + 1];
-        for (uint d = 0; d < dimension_A - 1; d++)
-        {
-          A_pre_multiindex[d] = C_multiindex[d];
-        }
-
-        //
-        // Get A_multiindex
-        //
-        float value_A = 0.0;
-        {
-          uint A_multiindex[dimension_A];
-          for (uint d = 0; d < dimension_A; d++)
-          {
-            if(d == contraction_1_dimension_A)
-            {
-              A_multiindex[d] = contraction_id_1;
-            }
-            else
-            {
-              uint dprime = d;
-              if(d > contraction_1_dimension_A)
-              {
-                dprime--;
-              }
-              A_multiindex[d] = A_pre_multiindex[dprime];
-            }
-          }
-
-          // Get A value
-          uint id_A = 0;
-          for(uint d = 0; d < dimension_A; ++d)
-          {
-            id_A += strides_A[d]*A_multiindex[d];
-          }
-          value_A = tensor_A[id_A];
-        }
-
-        uint id_C = 0;
-        for(uint d = 0; d < dimension_C; ++d)
-        {
-          id_C += strides_C[d]*C_multiindex[d];
-        }
-
-        atomic_fetch_add_explicit(tensor_C + id_C, value_A, memory_order_relaxed);
-    })";
-
-  replace_all_string(shader, "contraction_1_dimension_A", std::to_string(contraction_1_dimension));
-
-  auto contraction_length_1 = tensor_A.sizes(contraction_1_dimension);
-  replace_all_string(shader, "contraction_length_1", std::to_string(contraction_length_1));
-
-  replace_all_string(shader, "x_sizes_C_x", make_metal_string("sizes_C", tensor_C.sizes(), 8));
-  replace_all_string(shader, "x_strides_A_x", make_metal_string("strides_A", tensor_A.strides(), 8));
-  replace_all_string(shader, "x_strides_C_x", make_metal_string("strides_C", tensor_C.strides(), 8));
-
-  replace_all_string(shader, "dimension_A", std::to_string(dimension_A));
-  replace_all_string(shader, "dimension_C", std::to_string(dimension_C));
-
-  //
-  // Initialize pipeline
-  //
-  MTL::Device* pDevice = MTL::CreateSystemDefaultDevice();
-  NS::Error* pError = nullptr;
-
-  MTL::Library* pComputeLibrary = pDevice->newLibrary(NS::String::string(shader.c_str(), NS::UTF8StringEncoding), nullptr, &pError);
-  if (!pComputeLibrary)
-  {
-    printf("%s", pError->localizedDescription()->utf8String());
-    assert(false);
-  }
-
-  MTL::Function* mtl_fcn = pComputeLibrary->newFunction(NS::String::string("contract", NS::UTF8StringEncoding));
-
-  MTL::ComputePipelineState* mtl_pipe = pDevice->newComputePipelineState(mtl_fcn, &pError);
-  if (!mtl_pipe)
-  {
-    printf("%s", pError->localizedDescription()->utf8String());
-    assert(false);
-  }
-
-  //
-  // Data setup
-  //
-  MTL::Buffer* tensor_A_buffer = pDevice->newBuffer(tensor_A.size() * sizeof(float), MTL::ResourceStorageModeShared);
-  MTL::Buffer* tensor_C_buffer = pDevice->newBuffer(tensor_C.size() * sizeof(float), MTL::ResourceStorageModeShared);
-
-  float* tensor_A_buffer_ptr = (float*)tensor_A_buffer->contents();
-  float* tensor_C_buffer_ptr = (float*)tensor_C_buffer->contents();
-
-  for (int i = 0; i < tensor_A.size(); i++)
-  {
-    tensor_A_buffer_ptr[i] = static_cast<float>(tensor_A(i));
-  }
-  for (int i = 0; i < tensor_C.size(); i++)
-  {
-    tensor_C_buffer_ptr[i] = static_cast<float>(0.0);
-  }
-
-  auto kernel_size = tensor_C.size() * contraction_length_1;
-  MTL::Size grid(kernel_size, 1, 1);
-  MTL::Size threadgroup(std::min(128_z, kernel_size), 1, 1);
-
-  //
-  // Launch compute
-  //
-  MTL::CommandQueue* pQueue = pDevice->newCommandQueue();
-
-  MTL::CommandBuffer* pCommandBuffer = pQueue->commandBuffer();
-  if (!pCommandBuffer)
-  {
-    printf("%s", pError->localizedDescription()->utf8String());
-    assert(false);
-  }
-
-  MTL::ComputeCommandEncoder* pComputeEncoder = pCommandBuffer->computeCommandEncoder();
-  if (!pComputeEncoder)
-  {
-    printf("%s", pError->localizedDescription()->utf8String());
-    assert(false);
-  }
-
-  //
-  // Set buffer
-  //
-  pComputeEncoder->setComputePipelineState(mtl_pipe);
-  pComputeEncoder->setBuffer(tensor_A_buffer, 0, 0);
-  pComputeEncoder->setBuffer(tensor_C_buffer, 0, 1);
-  pComputeEncoder->dispatchThreads(grid, threadgroup);
-  pComputeEncoder->endEncoding();
-  pCommandBuffer->commit();
-
-  //
-  // Device snync
-  //
-  pCommandBuffer->waitUntilCompleted();
-
-  //
-  // Free memory
-  //
-  pDevice->release();
-  mtl_fcn->release();
-  mtl_pipe->release();
-  pComputeLibrary->release();
-
-  //
-  // Copy back to tensors
-  //
-  for (int i = 0; i < tensor_C.size(); i++)
-  {
-    tensor_C(i) = static_cast<double>(tensor_C_buffer_ptr[i]);
-  }
-}
-
-//
-// Trace
-//
-template <size_t dimension_A, size_t dimension_C, typename accessor, typename const_accessor>
-void metal_trace(
-  const TensorView<const_accessor, dimension_A>& tensor_A,
-  TensorView<accessor, dimension_C>& tensor_C,
-  size_t contraction_1_dimension,
-  size_t contraction_2_dimension)
-{
-  //
-  // Create algorithm
-  //
-  std::string shader = R"(
-    #include <metal_stdlib>
-
-    using namespace metal;
-
-    kernel void contract(
-                      device const float * tensor_A,
-                      device atomic<float> * tensor_C,
-                      uint compute_id [[thread_position_in_grid]]) {
-
-        // Use regex to replace these with tensor sizes
-
-        x_sizes_C_x
-        x_strides_A_x
-        x_strides_C_x
-
-        //
-        // Get C_multiindex
-        //
-        uint C_multiindex[dimension_C];
-        uint contraction_id_1;
-        {
-          uint index = compute_id;
-          for (uint d = 0; d < dimension_C - 1; d++) {
-            C_multiindex[d] = index % sizes_C[d];
-            index /= sizes_C[d];
-          }
-          C_multiindex[dimension_C - 1] = index % sizes_C[dimension_C - 1];
-          index /= sizes_C[dimension_C - 1];
-          contraction_id_1 = index % contraction_length_1;
-        }
-
-        //
-        // Get A_pre_multiindex
-        //
-        // add 1 to length of array to get around "zero-length arrays are not permitted in C++"
-        uint A_pre_multiindex[dimension_A - 2 + 1];
-        for (uint d = 0; d < dimension_A - 2; d++)
-        {
-          A_pre_multiindex[d] = C_multiindex[d];
-        }
-
-        //
-        // Get A_multiindex
-        //
-        float value_A = 0.0;
-        {
-          uint A_multiindex[dimension_A];
-          for (uint d = 0; d < dimension_A; d++)
-          {
-            if(d == contraction_1_dimension_A)
-            {
-              A_multiindex[d] = contraction_id_1;
-            }
-            else if(d == contraction_2_dimension_A)
-            {
-              A_multiindex[d] = contraction_id_1;              
-            }
-            else
-            {
-              uint dprime = d;
-              if(d > contraction_1_dimension_A)
-              {
-                dprime--;
-              }
-              if(d > contraction_2_dimension_A)
-              {
-                dprime--;
-              }
-              A_multiindex[d] = A_pre_multiindex[dprime];
-            }
-          }
-
-          // Get A value
-          uint id_A = 0;
-          for(uint d = 0; d < dimension_A; ++d)
-          {
-            id_A += strides_A[d]*A_multiindex[d];
-          }
-          value_A = tensor_A[id_A];
-        }
-
-        uint id_C = 0;
-        for(uint d = 0; d < dimension_C; ++d)
-        {
-          id_C += strides_C[d]*C_multiindex[d];
-        }
-        atomic_fetch_add_explicit(tensor_C + id_C, value_A, memory_order_relaxed);
-    })";
-
-  replace_all_string(shader, "contraction_1_dimension_A", std::to_string(contraction_1_dimension));
-  replace_all_string(shader, "contraction_2_dimension_A", std::to_string(contraction_2_dimension));
-
-  auto contraction_length_1 = tensor_A.sizes(contraction_1_dimension);
-  replace_all_string(shader, "contraction_length_1", std::to_string(contraction_length_1));
-
-  replace_all_string(shader, "x_sizes_C_x", make_metal_string("sizes_C", tensor_C.sizes(), 8));
-  replace_all_string(shader, "x_strides_A_x", make_metal_string("strides_A", tensor_A.strides(), 8));
-  replace_all_string(shader, "x_strides_C_x", make_metal_string("strides_C", tensor_C.strides(), 8));
-
-  replace_all_string(shader, "dimension_A", std::to_string(dimension_A));
-  replace_all_string(shader, "dimension_C", std::to_string(dimension_C));
-
-  //
-  // Initialize pipeline
-  //
-  MTL::Device* pDevice = MTL::CreateSystemDefaultDevice();
-  NS::Error* pError = nullptr;
-
-  MTL::Library* pComputeLibrary = pDevice->newLibrary(NS::String::string(shader.c_str(), NS::UTF8StringEncoding), nullptr, &pError);
-  if (!pComputeLibrary)
-  {
-    printf("%s", pError->localizedDescription()->utf8String());
-    assert(false);
-  }
-
-  MTL::Function* mtl_fcn = pComputeLibrary->newFunction(NS::String::string("contract", NS::UTF8StringEncoding));
-
-  MTL::ComputePipelineState* mtl_pipe = pDevice->newComputePipelineState(mtl_fcn, &pError);
-  if (!mtl_pipe)
-  {
-    printf("%s", pError->localizedDescription()->utf8String());
-    assert(false);
-  }
-
-  //
-  // Data setup
-  //
-  MTL::Buffer* tensor_A_buffer = pDevice->newBuffer(tensor_A.size() * sizeof(float), MTL::ResourceStorageModeShared);
-  MTL::Buffer* tensor_C_buffer = pDevice->newBuffer(tensor_C.size() * sizeof(float), MTL::ResourceStorageModeShared);
-
-  float* tensor_A_buffer_ptr = (float*)tensor_A_buffer->contents();
-  float* tensor_C_buffer_ptr = (float*)tensor_C_buffer->contents();
-
-  for (int i = 0; i < tensor_A.size(); i++)
-  {
-    tensor_A_buffer_ptr[i] = static_cast<float>(tensor_A(i));
-  }
-  for (int i = 0; i < tensor_C.size(); i++)
-  {
-    tensor_C_buffer_ptr[i] = static_cast<float>(0.0);
-  }
-
-  auto kernel_size = tensor_C.size() * contraction_length_1;
-  MTL::Size grid(kernel_size, 1, 1);
-  MTL::Size threadgroup(std::min(128_z, kernel_size), 1, 1);
-
-  //
-  // Launch compute
-  //
-  MTL::CommandQueue* pQueue = pDevice->newCommandQueue();
-
-  MTL::CommandBuffer* pCommandBuffer = pQueue->commandBuffer();
-  if (!pCommandBuffer)
-  {
-    printf("%s", pError->localizedDescription()->utf8String());
-    assert(false);
-  }
-
-  MTL::ComputeCommandEncoder* pComputeEncoder = pCommandBuffer->computeCommandEncoder();
-  if (!pComputeEncoder)
-  {
-    printf("%s", pError->localizedDescription()->utf8String());
-    assert(false);
-  }
-
-  //
-  // Set buffer
-  //
-  pComputeEncoder->setComputePipelineState(mtl_pipe);
-  pComputeEncoder->setBuffer(tensor_A_buffer, 0, 0);
-  pComputeEncoder->setBuffer(tensor_C_buffer, 0, 1);
-  pComputeEncoder->dispatchThreads(grid, threadgroup);
-  pComputeEncoder->endEncoding();
-  pCommandBuffer->commit();
-
-  //
-  // Device snync
-  //
-  pCommandBuffer->waitUntilCompleted();
-
-  //
-  // Free memory
-  //
-  pDevice->release();
-  mtl_fcn->release();
-  mtl_pipe->release();
-  pComputeLibrary->release();
-
-  //
-  // Copy back to tensors
-  //
-  for (int i = 0; i < tensor_C.size(); i++)
-  {
-    tensor_C(i) = static_cast<double>(tensor_C_buffer_ptr[i]);
+    metal_reduce(tensor_A, tensor_C, contraction_dimensions[0], contraction_dimensions[1]);
   }
 }
 
@@ -1775,76 +869,36 @@ void metal_permute(
 }
 
 /**
- * @brief Reports that Metal single-index contraction support is unavailable.
+ * @brief Reports that Metal contraction support is unavailable.
  */
-template <size_t dimension_A, size_t dimension_B, size_t dimension_C, typename accessor, typename const_accessor>
+template <size_t contractions, size_t dimension_A, size_t dimension_B, size_t dimension_C, typename accessor, typename const_accessor>
 void metal_contract(
   const TensorView<const_accessor, dimension_A>& tensor_A,
   const TensorView<const_accessor, dimension_B>& tensor_B,
   TensorView<accessor, dimension_C>& tensor_C,
-  size_t contraction_dimension_A,
-  size_t contraction_dimension_B)
+  const boba::Array<size_t, contractions> contraction_dimensions_A,
+  const boba::Array<size_t, contractions> contraction_dimensions_B)
 {
   ::boba::detail::ignore(tensor_A);
   ::boba::detail::ignore(tensor_B);
   ::boba::detail::ignore(tensor_C);
-  ::boba::detail::ignore(contraction_dimension_A);
-  ::boba::detail::ignore(contraction_dimension_B);
+  ::boba::detail::ignore(contraction_dimensions_A);
+  ::boba::detail::ignore(contraction_dimensions_B);
   boba_error("metal_contract requires a Metal build.");
 }
 
 /**
- * @brief Reports that Metal double-index contraction support is unavailable.
+ * @brief Reports that Metal reduction support is unavailable.
  */
-template <size_t dimension_A, size_t dimension_B, size_t dimension_C, typename accessor, typename const_accessor>
-void metal_contract(
-  const TensorView<const_accessor, dimension_A>& tensor_A,
-  const TensorView<const_accessor, dimension_B>& tensor_B,
-  TensorView<accessor, dimension_C>& tensor_C,
-  size_t contraction_1_dimension_A,
-  size_t contraction_2_dimension_A,
-  size_t contraction_1_dimension_B,
-  size_t contraction_2_dimension_B)
-{
-  ::boba::detail::ignore(tensor_A);
-  ::boba::detail::ignore(tensor_B);
-  ::boba::detail::ignore(tensor_C);
-  ::boba::detail::ignore(contraction_1_dimension_A);
-  ::boba::detail::ignore(contraction_2_dimension_A);
-  ::boba::detail::ignore(contraction_1_dimension_B);
-  ::boba::detail::ignore(contraction_2_dimension_B);
-  boba_error("metal_contract requires a Metal build.");
-}
-
-/**
- * @brief Reports that Metal single-axis reduction support is unavailable.
- */
-template <size_t dimension_A, size_t dimension_C, typename accessor, typename const_accessor>
+template <size_t reductions, size_t dimension_A, size_t dimension_C, typename accessor, typename const_accessor>
 void metal_reduce(
   const TensorView<const_accessor, dimension_A>& tensor_A,
   TensorView<accessor, dimension_C>& tensor_C,
-  size_t contraction_1_dimension)
+  const boba::Array<size_t, reductions> contraction_dimensions)
 {
   ::boba::detail::ignore(tensor_A);
   ::boba::detail::ignore(tensor_C);
-  ::boba::detail::ignore(contraction_1_dimension);
-  boba_error("metal_reduce requires a Metal build.");
-}
-
-/**
- * @brief Reports that Metal double-axis reduction support is unavailable.
- */
-template <size_t dimension_A, size_t dimension_C, typename accessor, typename const_accessor>
-void metal_reduce(
-  const TensorView<const_accessor, dimension_A>& tensor_A,
-  TensorView<accessor, dimension_C>& tensor_C,
-  size_t contraction_1_dimension,
-  size_t contraction_2_dimension)
-{
-  ::boba::detail::ignore(tensor_A);
-  ::boba::detail::ignore(tensor_C);
-  ::boba::detail::ignore(contraction_1_dimension);
-  ::boba::detail::ignore(contraction_2_dimension);
+  ::boba::detail::ignore(contraction_dimensions);
   boba_error("metal_reduce requires a Metal build.");
 }
 

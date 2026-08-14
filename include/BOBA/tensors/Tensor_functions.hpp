@@ -932,21 +932,8 @@ Tensor<(dimension_A + dimension_B) - 2*contractions, space, data_t> tensor_contr
     not(force_naive))
   {
     tensor_C.fill_with_zeros();
-    if constexpr (contractions == 1)
-    {
-      ::boba::detail::hiptensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A[0], contraction_dimensions_B[0]);
-      return tensor_C;
-    }
-    else if constexpr (contractions == 2)
-    {
-      ::boba::detail::hiptensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A[0], contraction_dimensions_A[1], contraction_dimensions_B[0], contraction_dimensions_B[1]);
-      return tensor_C;
-    }
-    else if constexpr (contractions == 3)
-    {
-      ::boba::detail::hiptensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A[0], contraction_dimensions_A[1], contraction_dimensions_A[2], contraction_dimensions_B[0], contraction_dimensions_B[1], contraction_dimensions_B[2]);
-      return tensor_C;
-    }
+    ::boba::detail::hiptensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A, contraction_dimensions_B);
+    return tensor_C;
   }
   else if constexpr (
     (space == ::boba::execution_space::CUDA) and
@@ -955,21 +942,8 @@ Tensor<(dimension_A + dimension_B) - 2*contractions, space, data_t> tensor_contr
     not(force_naive))
   {
     tensor_C.fill_with_zeros();
-    if constexpr (contractions == 1)
-    {
-      ::boba::detail::cutensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A[0], contraction_dimensions_B[0]);
-      return tensor_C;
-    }
-    else if constexpr (contractions == 2)
-    {
-      ::boba::detail::cutensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A[0], contraction_dimensions_A[1], contraction_dimensions_B[0], contraction_dimensions_B[1]);
-      return tensor_C;
-    }
-    else if constexpr (contractions == 3)
-    {
-      ::boba::detail::cutensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A[0], contraction_dimensions_A[1], contraction_dimensions_A[2], contraction_dimensions_B[0], contraction_dimensions_B[1], contraction_dimensions_B[2]);
-      return tensor_C;
-    }
+    ::boba::detail::cutensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A, contraction_dimensions_B);
+    return tensor_C;
   }
   else if constexpr (
     (space == ::boba::execution_space::CPU) and
@@ -978,16 +952,8 @@ Tensor<(dimension_A + dimension_B) - 2*contractions, space, data_t> tensor_contr
     not(force_naive))
   {
     tensor_C.fill_with_zeros();
-    if constexpr (contractions == 1)
-    {
-      ::boba::detail::metal_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A[0], contraction_dimensions_B[0]);
-      return tensor_C;
-    }
-    else if constexpr (contractions == 2)
-    {
-      ::boba::detail::metal_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A[0], contraction_dimensions_A[1], contraction_dimensions_B[0], contraction_dimensions_B[1]);
-      return tensor_C;
-    }
+    ::boba::detail::metal_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A, contraction_dimensions_B);
+    return tensor_C;
   }
   else if constexpr (
     (space == ::boba::execution_space::CPU) and
@@ -995,21 +961,8 @@ Tensor<(dimension_A + dimension_B) - 2*contractions, space, data_t> tensor_contr
     ::boba::boba_eigen_tensor_enabled() and
     not(force_naive))
   {
-    if constexpr (contractions == 1)
-    {
-      ::boba::detail::eigen_tensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A[0], contraction_dimensions_B[0]);
-      return tensor_C;
-    }
-    else if constexpr (contractions == 2)
-    {
-      ::boba::detail::eigen_tensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A[0], contraction_dimensions_A[1], contraction_dimensions_B[0], contraction_dimensions_B[1]);
-      return tensor_C;
-    }
-    else if constexpr (contractions == 3)
-    {
-      ::boba::detail::eigen_tensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A[0], contraction_dimensions_A[1], contraction_dimensions_A[2], contraction_dimensions_B[0], contraction_dimensions_B[1], contraction_dimensions_B[2]);
-      return tensor_C;
-    }
+    ::boba::detail::eigen_tensor_contract(tensor_A_view, tensor_B_view, tensor_C.view(), contraction_dimensions_A, contraction_dimensions_B);
+    return tensor_C;
   }
 
   //
@@ -1186,16 +1139,8 @@ Tensor<dimension_A - reductions, space, data_t> tensor_reduction(
     ::boba::boba_cutensor_enabled() and
     not(force_naive))
   {
-    if constexpr (reductions == 1)
-    {
-      ::boba::detail::cutensor_reduce(tensor_A_view, tensor_C.view(), contraction_dimensions[0]);
-      return tensor_C;
-    }
-    else if constexpr (reductions == 2)
-    {
-      ::boba::detail::cutensor_reduce(tensor_A_view, tensor_C.view(), contraction_dimensions[0], contraction_dimensions[1]);
-      return tensor_C;
-    }
+    ::boba::detail::cutensor_reduce(tensor_A_view, tensor_C.view(), contraction_dimensions);
+    return tensor_C;
   }
   else if constexpr (
     (space == ::boba::execution_space::HIP) and
@@ -1203,16 +1148,8 @@ Tensor<dimension_A - reductions, space, data_t> tensor_reduction(
     ::boba::boba_hiptensor_enabled() and
     not(force_naive))
   {
-    if constexpr (reductions == 1)
-    {
-      ::boba::detail::hiptensor_reduce(tensor_A_view, tensor_C.view(), contraction_dimensions[0]);
-      return tensor_C;
-    }
-    else if constexpr (reductions == 2)
-    {
-      ::boba::detail::hiptensor_reduce(tensor_A_view, tensor_C.view(), contraction_dimensions[0], contraction_dimensions[1]);
-      return tensor_C;
-    }
+    ::boba::detail::hiptensor_reduce(tensor_A_view, tensor_C.view(), contraction_dimensions);
+    return tensor_C;
   }
   else if constexpr (
     (space == ::boba::execution_space::CPU) and
@@ -1220,16 +1157,8 @@ Tensor<dimension_A - reductions, space, data_t> tensor_reduction(
     ::boba::boba_metal_enabled() and
     not(force_naive))
   {
-    if constexpr (reductions == 1)
-    {
-      ::boba::detail::metal_reduce(tensor_A_view, tensor_C.view(), contraction_dimensions[0]);
-      return tensor_C;
-    }
-    else if constexpr (reductions == 2)
-    {
-      ::boba::detail::metal_reduce(tensor_A_view, tensor_C.view(), contraction_dimensions[0], contraction_dimensions[1]);
-      return tensor_C;
-    }
+    ::boba::detail::metal_reduce(tensor_A_view, tensor_C.view(), contraction_dimensions);
+    return tensor_C;
   }
   else if constexpr (
     (space == ::boba::execution_space::CPU) and
@@ -1237,16 +1166,8 @@ Tensor<dimension_A - reductions, space, data_t> tensor_reduction(
     ::boba::boba_eigen_tensor_enabled() and
     not(force_naive))
   {
-    if constexpr (reductions == 1)
-    {
-      ::boba::detail::eigen_tensor_reduce(tensor_A_view, tensor_C.view(), contraction_dimensions[0]);
-      return tensor_C;
-    }
-    else if constexpr (reductions == 2)
-    {
-      ::boba::detail::eigen_tensor_reduce(tensor_A_view, tensor_C.view(), contraction_dimensions[0], contraction_dimensions[1]);
-      return tensor_C;
-    }
+    ::boba::detail::eigen_tensor_reduce(tensor_A_view, tensor_C.view(), contraction_dimensions);
+    return tensor_C;
   }
 
   //

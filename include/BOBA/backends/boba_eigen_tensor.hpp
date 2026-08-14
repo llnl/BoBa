@@ -151,15 +151,15 @@ void eigen_tensor_permute(
 // Contract
 //
 /**
- * @brief Contracts one index pair between two full tensor views.
+ * @brief Contracts one or more index pairs between two full tensor views.
  */
-template <size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
+template <size_t contractions, size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
 void eigen_tensor_contract(
   TensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
   TensorView<DefaultAccessor<data_t const>, dimension_B> tensor_B,
   TensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_dimension_A,
-  size_t contraction_dimension_B)
+  const boba::Array<size_t, contractions> contraction_dimensions_A,
+  const boba::Array<size_t, contractions> contraction_dimensions_B)
 {
   BOBA_CALI_MARK
   // https://eigen.tuxfamily.org/dox-devel/unsupported/eigen_tensors.html
@@ -167,8 +167,11 @@ void eigen_tensor_contract(
   auto tensor_B_map = get_eigen_const_map(tensor_B);
   auto tensor_C_map = get_eigen_map(tensor_C);
 
-  Eigen::IndexPair<size_t> contraction_indices(contraction_dimension_A, contraction_dimension_B);
-  Eigen::array<Eigen::IndexPair<size_t>, 1> contraction_dims = {contraction_indices};
+  Eigen::array<Eigen::IndexPair<size_t>, contractions> contraction_dims;
+  for (size_t c = 0; c < contractions; c++)
+  {
+    contraction_dims[c] = Eigen::IndexPair<size_t>(contraction_dimensions_A[c], contraction_dimensions_B[c]);
+  }
 
   tensor_C_map = tensor_A_map.contract(tensor_B_map, contraction_dims);
   checkpoint();
@@ -178,109 +181,15 @@ void eigen_tensor_contract(
 // Contract
 //
 /**
- * @brief Contracts two index pairs between two full tensor views.
+ * @brief Contracts one or more index pairs between two subtensor views.
  */
-template <size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
-void eigen_tensor_contract(
-  TensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
-  TensorView<DefaultAccessor<data_t const>, dimension_B> tensor_B,
-  TensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_1_dimension_A,
-  size_t contraction_2_dimension_A,
-  size_t contraction_1_dimension_B,
-  size_t contraction_2_dimension_B)
-{
-  BOBA_CALI_MARK
-
-  // https://eigen.tuxfamily.org/dox-devel/unsupported/eigen_tensors.html
-  auto tensor_A_map = get_eigen_const_map(tensor_A);
-  auto tensor_B_map = get_eigen_const_map(tensor_B);
-  auto tensor_C_map = get_eigen_map(tensor_C);
-
-  Eigen::IndexPair<size_t> contraction_indices_1(contraction_1_dimension_A, contraction_1_dimension_B);
-  Eigen::IndexPair<size_t> contraction_indices_2(contraction_2_dimension_A, contraction_2_dimension_B);
-  Eigen::array<Eigen::IndexPair<size_t>, 2> contraction_dims = {contraction_indices_1, contraction_indices_2};
-
-  tensor_C_map = tensor_A_map.contract(tensor_B_map, contraction_dims);
-}
-
-//
-// Contract
-//
-/**
- * @brief Contracts three index pairs between two full tensor views.
- */
-template <size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
-void eigen_tensor_contract(
-  TensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
-  TensorView<DefaultAccessor<data_t const>, dimension_B> tensor_B,
-  TensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_1_dimension_A,
-  size_t contraction_2_dimension_A,
-  size_t contraction_3_dimension_A,
-  size_t contraction_1_dimension_B,
-  size_t contraction_2_dimension_B,
-  size_t contraction_3_dimension_B)
-{
-  BOBA_CALI_MARK
-
-  // https://eigen.tuxfamily.org/dox-devel/unsupported/eigen_tensors.html
-  checkpoint();
-  auto tensor_A_map = get_eigen_const_map(tensor_A);
-  auto tensor_B_map = get_eigen_const_map(tensor_B);
-  auto tensor_C_map = get_eigen_map(tensor_C);
-
-  Eigen::IndexPair<size_t> contraction_indices_1(contraction_1_dimension_A, contraction_1_dimension_B);
-  Eigen::IndexPair<size_t> contraction_indices_2(contraction_2_dimension_A, contraction_2_dimension_B);
-  Eigen::IndexPair<size_t> contraction_indices_3(contraction_3_dimension_A, contraction_3_dimension_B);
-  Eigen::array<Eigen::IndexPair<size_t>, 3> contraction_dims = {contraction_indices_1, contraction_indices_2, contraction_indices_3};
-
-  tensor_C_map = tensor_A_map.contract(tensor_B_map, contraction_dims);
-  checkpoint();
-}
-
-//
-// Contract
-//
-/**
- * @brief Contracts one index pair between two subtensor views.
- */
-template <size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
+template <size_t contractions, size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
 void eigen_tensor_contract(
   SubtensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
   SubtensorView<DefaultAccessor<data_t const>, dimension_B> tensor_B,
   SubtensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_dimension_A,
-  size_t contraction_dimension_B)
-{
-  BOBA_CALI_MARK
-  // https://eigen.tuxfamily.org/dox-devel/unsupported/eigen_tensors.html
-  auto tensor_A_map = get_eigen_const_map(tensor_A);
-  auto tensor_B_map = get_eigen_const_map(tensor_B);
-  auto tensor_C_map = get_eigen_map(tensor_C);
-
-  Eigen::IndexPair<size_t> contraction_indices(contraction_dimension_A, contraction_dimension_B);
-  Eigen::array<Eigen::IndexPair<size_t>, 1> contraction_dims = {contraction_indices};
-
-  tensor_C_map = tensor_A_map.contract(tensor_B_map, contraction_dims);
-  checkpoint();
-}
-
-//
-// Contract
-//
-/**
- * @brief Contracts two index pairs between two subtensor views.
- */
-template <size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
-void eigen_tensor_contract(
-  SubtensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
-  SubtensorView<DefaultAccessor<data_t const>, dimension_B> tensor_B,
-  SubtensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_1_dimension_A,
-  size_t contraction_2_dimension_A,
-  size_t contraction_1_dimension_B,
-  size_t contraction_2_dimension_B)
+  const boba::Array<size_t, contractions> contraction_dimensions_A,
+  const boba::Array<size_t, contractions> contraction_dimensions_B)
 {
   BOBA_CALI_MARK
 
@@ -289,43 +198,11 @@ void eigen_tensor_contract(
   auto tensor_B_map = get_eigen_const_map(tensor_B);
   auto tensor_C_map = get_eigen_map(tensor_C);
 
-  Eigen::IndexPair<size_t> contraction_indices_1(contraction_1_dimension_A, contraction_1_dimension_B);
-  Eigen::IndexPair<size_t> contraction_indices_2(contraction_2_dimension_A, contraction_2_dimension_B);
-  Eigen::array<Eigen::IndexPair<size_t>, 2> contraction_dims = {contraction_indices_1, contraction_indices_2};
-
-  tensor_C_map = tensor_A_map.contract(tensor_B_map, contraction_dims);
-}
-
-//
-// Contract
-//
-/**
- * @brief Contracts three index pairs between two subtensor views.
- */
-template <size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
-void eigen_tensor_contract(
-  SubtensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
-  SubtensorView<DefaultAccessor<data_t const>, dimension_B> tensor_B,
-  SubtensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_1_dimension_A,
-  size_t contraction_2_dimension_A,
-  size_t contraction_3_dimension_A,
-  size_t contraction_1_dimension_B,
-  size_t contraction_2_dimension_B,
-  size_t contraction_3_dimension_B)
-{
-  BOBA_CALI_MARK
-
-  // https://eigen.tuxfamily.org/dox-devel/unsupported/eigen_tensors.html
-  checkpoint();
-  auto tensor_A_map = get_eigen_const_map(tensor_A);
-  auto tensor_B_map = get_eigen_const_map(tensor_B);
-  auto tensor_C_map = get_eigen_map(tensor_C);
-
-  Eigen::IndexPair<size_t> contraction_indices_1(contraction_1_dimension_A, contraction_1_dimension_B);
-  Eigen::IndexPair<size_t> contraction_indices_2(contraction_2_dimension_A, contraction_2_dimension_B);
-  Eigen::IndexPair<size_t> contraction_indices_3(contraction_3_dimension_A, contraction_3_dimension_B);
-  Eigen::array<Eigen::IndexPair<size_t>, 3> contraction_dims = {contraction_indices_1, contraction_indices_2, contraction_indices_3};
+  Eigen::array<Eigen::IndexPair<size_t>, contractions> contraction_dims;
+  for (size_t c = 0; c < contractions; c++)
+  {
+    contraction_dims[c] = Eigen::IndexPair<size_t>(contraction_dimensions_A[c], contraction_dimensions_B[c]);
+  }
 
   tensor_C_map = tensor_A_map.contract(tensor_B_map, contraction_dims);
   checkpoint();
@@ -335,41 +212,24 @@ void eigen_tensor_contract(
 // Reduce
 //
 /**
- * @brief Reduces two axes of a full tensor view by summation.
+ * @brief Reduces axes of a full tensor view by summation.
  */
-template <size_t dimension_A, size_t dimension_C, typename data_t>
+template <size_t reductions, size_t dimension_A, size_t dimension_C, typename data_t>
 void eigen_tensor_reduce(
   TensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
   TensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_dimension_1,
-  size_t contraction_dimension_2)
+  const boba::Array<size_t, reductions> contraction_dimensions)
 {
   BOBA_CALI_MARK
   // https://eigen.tuxfamily.org/dox-devel/unsupported/eigen_tensors.html
   auto tensor_A_map = get_eigen_const_map(tensor_A);
   auto tensor_C_map = get_eigen_map(tensor_C);
 
-  Eigen::array<size_t, 2> contraction_dims({contraction_dimension_1, contraction_dimension_2});
-
-  tensor_C_map = tensor_A_map.sum(contraction_dims);
-}
-
-/**
- * @brief Reduces one axis of a full tensor view by summation.
- */
-template <size_t dimension_A, size_t dimension_C, typename data_t>
-void eigen_tensor_reduce(
-  TensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
-  TensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_dimension_1)
-{
-  BOBA_CALI_MARK
-  // https://eigen.tuxfamily.org/dox-devel/unsupported/eigen_tensors.html
-
-  auto tensor_A_map = get_eigen_const_map(tensor_A);
-  auto tensor_C_map = get_eigen_map(tensor_C);
-
-  Eigen::array<size_t, 1> contraction_dims({contraction_dimension_1});
+  Eigen::array<size_t, reductions> contraction_dims;
+  for (size_t i = 0; i < reductions; i++)
+  {
+    contraction_dims[i] = contraction_dimensions[i];
+  }
 
   tensor_C_map = tensor_A_map.sum(contraction_dims);
 }
@@ -410,101 +270,53 @@ void eigen_tensor_permute(
 /**
  * @brief Reports that Eigen tensor contraction support is unavailable.
  */
-template <size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
+template <size_t contractions, size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
 void eigen_tensor_contract(
   TensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
   TensorView<DefaultAccessor<data_t const>, dimension_B> tensor_B,
   TensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_dimension_A,
-  size_t contraction_dimension_B)
+  const boba::Array<size_t, contractions> contraction_dimensions_A,
+  const boba::Array<size_t, contractions> contraction_dimensions_B)
 {
   ::boba::detail::ignore(tensor_A);
   ::boba::detail::ignore(tensor_B);
   ::boba::detail::ignore(tensor_C);
-  ::boba::detail::ignore(contraction_dimension_A);
-  ::boba::detail::ignore(contraction_dimension_B);
+  ::boba::detail::ignore(contraction_dimensions_A);
+  ::boba::detail::ignore(contraction_dimensions_B);
   boba_error("eigen_tensor_contract requires BOBA_EIGEN_TENSOR.");
 }
 
 /**
  * @brief Reports that Eigen tensor contraction support is unavailable.
  */
-template <size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
+template <size_t contractions, size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
 void eigen_tensor_contract(
-  TensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
-  TensorView<DefaultAccessor<data_t const>, dimension_B> tensor_B,
-  TensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_1_dimension_A,
-  size_t contraction_2_dimension_A,
-  size_t contraction_1_dimension_B,
-  size_t contraction_2_dimension_B)
+  SubtensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
+  SubtensorView<DefaultAccessor<data_t const>, dimension_B> tensor_B,
+  SubtensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
+  const boba::Array<size_t, contractions> contraction_dimensions_A,
+  const boba::Array<size_t, contractions> contraction_dimensions_B)
 {
   ::boba::detail::ignore(tensor_A);
   ::boba::detail::ignore(tensor_B);
   ::boba::detail::ignore(tensor_C);
-  ::boba::detail::ignore(contraction_1_dimension_A);
-  ::boba::detail::ignore(contraction_2_dimension_A);
-  ::boba::detail::ignore(contraction_1_dimension_B);
-  ::boba::detail::ignore(contraction_2_dimension_B);
-  boba_error("eigen_tensor_contract requires BOBA_EIGEN_TENSOR.");
-}
-
-/**
- * @brief Reports that Eigen tensor contraction support is unavailable.
- */
-template <size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
-void eigen_tensor_contract(
-  TensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
-  TensorView<DefaultAccessor<data_t const>, dimension_B> tensor_B,
-  TensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_1_dimension_A,
-  size_t contraction_2_dimension_A,
-  size_t contraction_3_dimension_A,
-  size_t contraction_1_dimension_B,
-  size_t contraction_2_dimension_B,
-  size_t contraction_3_dimension_B)
-{
-  ::boba::detail::ignore(tensor_A);
-  ::boba::detail::ignore(tensor_B);
-  ::boba::detail::ignore(tensor_C);
-  ::boba::detail::ignore(contraction_1_dimension_A);
-  ::boba::detail::ignore(contraction_2_dimension_A);
-  ::boba::detail::ignore(contraction_3_dimension_A);
-  ::boba::detail::ignore(contraction_1_dimension_B);
-  ::boba::detail::ignore(contraction_2_dimension_B);
-  ::boba::detail::ignore(contraction_3_dimension_B);
+  ::boba::detail::ignore(contraction_dimensions_A);
+  ::boba::detail::ignore(contraction_dimensions_B);
   boba_error("eigen_tensor_contract requires BOBA_EIGEN_TENSOR.");
 }
 
 /**
  * @brief Reports that Eigen tensor reduction support is unavailable.
  */
-template <size_t dimension_A, size_t dimension_C, typename data_t>
+template <size_t reductions, size_t dimension_A, size_t dimension_C, typename data_t>
 void eigen_tensor_reduce(
   TensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
   TensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_dimension_1)
+  const boba::Array<size_t, reductions> contraction_dimensions)
 {
   ::boba::detail::ignore(tensor_A);
   ::boba::detail::ignore(tensor_C);
-  ::boba::detail::ignore(contraction_dimension_1);
-  boba_error("eigen_tensor_reduce requires BOBA_EIGEN_TENSOR.");
-}
-
-/**
- * @brief Reports that Eigen tensor reduction support is unavailable.
- */
-template <size_t dimension_A, size_t dimension_C, typename data_t>
-void eigen_tensor_reduce(
-  TensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
-  TensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_1_dimension,
-  size_t contraction_2_dimension)
-{
-  ::boba::detail::ignore(tensor_A);
-  ::boba::detail::ignore(tensor_C);
-  ::boba::detail::ignore(contraction_1_dimension);
-  ::boba::detail::ignore(contraction_2_dimension);
+  ::boba::detail::ignore(contraction_dimensions);
   boba_error("eigen_tensor_reduce requires BOBA_EIGEN_TENSOR.");
 }
 

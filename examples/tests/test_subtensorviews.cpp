@@ -46,6 +46,8 @@ int main(int argc, char* argv[])
 
   ::boba::Array<size_t, 4> new_sizes{sizes[0], sizes[2], sizes[0], sizes[2]};
   ::boba::Tensor<4, space, data_t> tensor_C(new_sizes);
+  ::boba::Array<size_t, 1> contraction_dimensions_A{1};
+  ::boba::Array<size_t, 1> contraction_dimensions_B{1};
 
   {
     auto tensor_A_view = tensor_A.view();
@@ -68,14 +70,14 @@ int main(int argc, char* argv[])
 
   timer.tic();
 #ifdef BOBA_CUTENSOR
-  ::boba::detail::cutensor_contract(tensor_A.const_view(), tensor_B.const_view(), tensor_C.view(), 1, 1);
+  ::boba::detail::cutensor_contract(tensor_A.const_view(), tensor_B.const_view(), tensor_C.view(), contraction_dimensions_A, contraction_dimensions_B);
 #endif
 #ifdef BOBA_HIPTENSOR
-  ::boba::detail::hiptensor_contract(tensor_A.const_view(), tensor_B.const_view(), tensor_C.view(), 1, 1);
+  ::boba::detail::hiptensor_contract(tensor_A.const_view(), tensor_B.const_view(), tensor_C.view(), contraction_dimensions_A, contraction_dimensions_B);
 #endif
   if constexpr (boba::is_host(space))
   {
-    ::boba::detail::eigen_tensor_contract(tensor_A.const_view(), tensor_B.const_view(), tensor_C.view(), 1, 1);
+    ::boba::detail::eigen_tensor_contract(tensor_A.const_view(), tensor_B.const_view(), tensor_C.view(), contraction_dimensions_A, contraction_dimensions_B);
   }
   auto time_full = timer.toc();
 
@@ -130,15 +132,15 @@ int main(int argc, char* argv[])
 
   timer.tic();
 #ifdef BOBA_CUTENSOR
-  ::boba::detail::cutensor_contract(tensor_A_sv, tensor_B_sv, tensor_C_sv.view(), 1, 1);
+  ::boba::detail::cutensor_contract(tensor_A_sv, tensor_B_sv, tensor_C_sv.view(), contraction_dimensions_A, contraction_dimensions_B);
 #endif
 #ifdef BOBA_HIPTENSOR
-  ::boba::detail::hiptensor_contract(tensor_A_sv, tensor_B_sv, tensor_C_sv.view(), 1, 1);
+  ::boba::detail::hiptensor_contract(tensor_A_sv, tensor_B_sv, tensor_C_sv.view(), contraction_dimensions_A, contraction_dimensions_B);
 #endif
   if constexpr (boba::is_host(space))
   {
     auto subtensor_C_sv = boba::make_subtensor_view(tensor_C_sv, boba::filled_array<4>(0_z), new_sv_sizes);
-    ::boba::detail::eigen_tensor_contract(tensor_A_sv, tensor_B_sv, subtensor_C_sv, 1, 1);
+    ::boba::detail::eigen_tensor_contract(tensor_A_sv, tensor_B_sv, subtensor_C_sv, contraction_dimensions_A, contraction_dimensions_B);
   }
   auto time_subtensorview = timer.toc();
 

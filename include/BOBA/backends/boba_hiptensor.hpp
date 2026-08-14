@@ -445,46 +445,36 @@ void contract_common(
 //
 // Contract
 //
-template <size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
+template <size_t contractions, size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
 void hiptensor_contract(
   TensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
   TensorView<DefaultAccessor<data_t const>, dimension_B> tensor_B,
   TensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_1_dimension_A,
-  size_t contraction_2_dimension_A,
-  size_t contraction_1_dimension_B,
-  size_t contraction_2_dimension_B)
+  const boba::Array<size_t, contractions> contraction_dimensions_A,
+  const boba::Array<size_t, contractions> contraction_dimensions_B)
 {
   BOBA_CALI_MARK
 
-  // See:
-  // https://github.com/ROCm/hipTensor/blob/develop/samples/01_contraction/simple_scale_contraction.hpp
-
-  data_t alpha = PotentiallyComplex<data_t>::value(1.0);
-
-  //
-  // Computing:
-  //
-
   // Create vector of modes and extents
   std::vector<int> modeA, modeB, modeC;
   std::unordered_map<int, int64_t> extent;
 
-  // Contraction indices are 0, 1
-  int running_index = 2;
+  int running_index = static_cast<int>(contractions);
   for (size_t i = 0; i < dimension_A; i++)
   {
-    if (i == contraction_1_dimension_A)
+    bool is_contraction_dimension = false;
+    for (size_t c = 0; c < contractions; c++)
     {
-      extent[0] = static_cast<int64_t>(tensor_A.sizes(i));
-      modeA.push_back(0);
+      if (i == contraction_dimensions_A[c])
+      {
+        extent[static_cast<int>(c)] = static_cast<int64_t>(tensor_A.sizes(i));
+        modeA.push_back(static_cast<int>(c));
+        is_contraction_dimension = true;
+        break;
+      }
     }
-    else if (i == contraction_2_dimension_A)
-    {
-      extent[1] = static_cast<int64_t>(tensor_A.sizes(i));
-      modeA.push_back(1);
-    }
-    else
+
+    if (not(is_contraction_dimension))
     {
       extent[running_index] = static_cast<int64_t>(tensor_A.sizes(i));
       modeA.push_back(running_index);
@@ -494,17 +484,19 @@ void hiptensor_contract(
   }
   for (size_t i = 0; i < dimension_B; i++)
   {
-    if (i == contraction_1_dimension_B)
+    bool is_contraction_dimension = false;
+    for (size_t c = 0; c < contractions; c++)
     {
-      boba_always_assert_equal(extent[0], static_cast<int64_t>(tensor_B.sizes(i)), "Unexpected extents");
-      modeB.push_back(0);
+      if (i == contraction_dimensions_B[c])
+      {
+        boba_always_assert_equal(extent[static_cast<int>(c)], static_cast<int64_t>(tensor_B.sizes(i)), "Unexpected extents");
+        modeB.push_back(static_cast<int>(c));
+        is_contraction_dimension = true;
+        break;
+      }
     }
-    else if (i == contraction_2_dimension_B)
-    {
-      boba_always_assert_equal(extent[1], static_cast<int64_t>(tensor_B.sizes(i)), "Unexpected extents");
-      modeB.push_back(1);
-    }
-    else
+
+    if (not(is_contraction_dimension))
     {
       extent[running_index] = static_cast<int64_t>(tensor_B.sizes(i));
       modeB.push_back(running_index);
@@ -516,202 +508,20 @@ void hiptensor_contract(
   contract_common(tensor_A, tensor_B, tensor_C, modeA, modeB, modeC);
 }
 
-template <size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
+template <size_t contractions, size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
 void hiptensor_contract(
   SubtensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
   SubtensorView<DefaultAccessor<data_t const>, dimension_B> tensor_B,
   TensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_1_dimension_A,
-  size_t contraction_2_dimension_A,
-  size_t contraction_1_dimension_B,
-  size_t contraction_2_dimension_B)
+  const boba::Array<size_t, contractions> contraction_dimensions_A,
+  const boba::Array<size_t, contractions> contraction_dimensions_B)
 {
-  auto tensor_A_view = hiptensor_subtensor_view(tensor_A);
-  auto tensor_B_view = hiptensor_subtensor_view(tensor_B);
   hiptensor_contract(
-    tensor_A_view,
-    tensor_B_view,
+    hiptensor_subtensor_view(tensor_A),
+    hiptensor_subtensor_view(tensor_B),
     tensor_C,
-    contraction_1_dimension_A,
-    contraction_2_dimension_A,
-    contraction_1_dimension_B,
-    contraction_2_dimension_B);
-}
-
-//
-// Contract
-//
-
-template <size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
-void hiptensor_contract(
-  TensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
-  TensorView<DefaultAccessor<data_t const>, dimension_B> tensor_B,
-  TensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_1_dimension_A,
-  size_t contraction_2_dimension_A,
-  size_t contraction_3_dimension_A,
-  size_t contraction_1_dimension_B,
-  size_t contraction_2_dimension_B,
-  size_t contraction_3_dimension_B)
-{
-  BOBA_CALI_MARK
-  //
-  // Computing:
-  //
-
-  // Create vector of modes and extents
-  std::vector<int> modeA, modeB, modeC;
-  std::unordered_map<int, int64_t> extent;
-
-  // Contraction indices are 0, 1, 2
-  int running_index = 3;
-  for (size_t i = 0; i < dimension_A; i++)
-  {
-    if (i == contraction_1_dimension_A)
-    {
-      extent[0] = static_cast<int64_t>(tensor_A.sizes(i));
-      modeA.push_back(0);
-    }
-    else if (i == contraction_2_dimension_A)
-    {
-      extent[1] = static_cast<int64_t>(tensor_A.sizes(i));
-      modeA.push_back(1);
-    }
-    else if (i == contraction_3_dimension_A)
-    {
-      extent[2] = static_cast<int64_t>(tensor_A.sizes(i));
-      modeA.push_back(2);
-    }
-    else
-    {
-      extent[running_index] = static_cast<int64_t>(tensor_A.sizes(i));
-      modeA.push_back(running_index);
-      modeC.push_back(running_index);
-      running_index++;
-    }
-  }
-  for (size_t i = 0; i < dimension_B; i++)
-  {
-    if (i == contraction_1_dimension_B)
-    {
-      boba_always_assert_equal(extent[0], static_cast<int64_t>(tensor_B.sizes(i)), "Unexpected extents");
-      modeB.push_back(0);
-    }
-    else if (i == contraction_2_dimension_B)
-    {
-      boba_always_assert_equal(extent[1], static_cast<int64_t>(tensor_B.sizes(i)), "Unexpected extents");
-      modeB.push_back(1);
-    }
-    else if (i == contraction_3_dimension_B)
-    {
-      boba_always_assert_equal(extent[2], static_cast<int64_t>(tensor_B.sizes(i)), "Unexpected extents");
-      modeB.push_back(2);
-    }
-    else
-    {
-      extent[running_index] = static_cast<int64_t>(tensor_B.sizes(i));
-      modeB.push_back(running_index);
-      modeC.push_back(running_index);
-      running_index++;
-    }
-  }
-
-  contract_common(tensor_A, tensor_B, tensor_C, modeA, modeB, modeC);
-}
-
-template <size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
-void hiptensor_contract(
-  SubtensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
-  SubtensorView<DefaultAccessor<data_t const>, dimension_B> tensor_B,
-  TensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_1_dimension_A,
-  size_t contraction_2_dimension_A,
-  size_t contraction_3_dimension_A,
-  size_t contraction_1_dimension_B,
-  size_t contraction_2_dimension_B,
-  size_t contraction_3_dimension_B)
-{
-  auto tensor_A_view = hiptensor_subtensor_view(tensor_A);
-  auto tensor_B_view = hiptensor_subtensor_view(tensor_B);
-  hiptensor_contract(
-    tensor_A_view,
-    tensor_B_view,
-    tensor_C,
-    contraction_1_dimension_A,
-    contraction_2_dimension_A,
-    contraction_3_dimension_A,
-    contraction_1_dimension_B,
-    contraction_2_dimension_B,
-    contraction_3_dimension_B);
-}
-
-//
-// Contract
-//
-template <size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
-void hiptensor_contract(
-  TensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
-  TensorView<DefaultAccessor<data_t const>, dimension_B> tensor_B,
-  TensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_dimension_A,
-  size_t contraction_dimension_B)
-{
-  // Create vector of modes and extents
-  std::vector<int> modeA, modeB, modeC;
-  std::unordered_map<int, int64_t> extent;
-
-  // Contraction index is 0
-  int running_index = 1;
-  for (size_t i = 0; i < dimension_A; i++)
-  {
-    if (i == contraction_dimension_A)
-    {
-      extent[0] = static_cast<int64_t>(tensor_A.sizes(i));
-      modeA.push_back(0);
-    }
-    else
-    {
-      extent[running_index] = static_cast<int64_t>(tensor_A.sizes(i));
-      modeA.push_back(running_index);
-      modeC.push_back(running_index);
-      running_index++;
-    }
-  }
-  for (size_t i = 0; i < dimension_B; i++)
-  {
-    if (i == contraction_dimension_B)
-    {
-      boba_always_assert_equal(extent[0], static_cast<int64_t>(tensor_B.sizes(i)), "Unexpected extents");
-      modeB.push_back(0);
-    }
-    else
-    {
-      extent[running_index] = static_cast<int64_t>(tensor_B.sizes(i));
-      modeB.push_back(running_index);
-      modeC.push_back(running_index);
-      running_index++;
-    }
-  }
-
-  contract_common(tensor_A, tensor_B, tensor_C, modeA, modeB, modeC);
-}
-
-template <size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
-void hiptensor_contract(
-  SubtensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
-  SubtensorView<DefaultAccessor<data_t const>, dimension_B> tensor_B,
-  TensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_dimension_A,
-  size_t contraction_dimension_B)
-{
-  auto tensor_A_view = hiptensor_subtensor_view(tensor_A);
-  auto tensor_B_view = hiptensor_subtensor_view(tensor_B);
-  hiptensor_contract(
-    tensor_A_view,
-    tensor_B_view,
-    tensor_C,
-    contraction_dimension_A,
-    contraction_dimension_B);
+    contraction_dimensions_A,
+    contraction_dimensions_B);
 }
 
 template <size_t dimension_A, size_t dimension_C, typename data_t>
@@ -824,65 +634,34 @@ void reduce_common(
 //
 // Reduce
 //
-template <size_t dimension_A, size_t dimension_C, typename data_t>
+template <size_t reductions, size_t dimension_A, size_t dimension_C, typename data_t>
 void hiptensor_reduce(
   TensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
   TensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_dimension_1,
-  size_t contraction_dimension_2)
+  const boba::Array<size_t, reductions> contraction_dimensions)
 {
   BOBA_CALI_MARK
   // Create vector of modes and extents
   std::vector<int> modeA, modeC;
   std::unordered_map<int, int64_t> extent;
 
-  // Contraction indices are 0, 1
-  int running_index = 2;
+  // Contraction indices are 0, 1, ...
+  int running_index = static_cast<int>(reductions);
   for (size_t i = 0; i < dimension_A; i++)
   {
-    if (i == contraction_dimension_1)
+    bool is_contraction_dimension = false;
+    for (size_t r = 0; r < reductions; r++)
     {
-      extent[0] = static_cast<int64_t>(tensor_A.sizes(i));
-      modeA.push_back(0);
+      if (i == contraction_dimensions[r])
+      {
+        extent[static_cast<int>(r)] = static_cast<int64_t>(tensor_A.sizes(i));
+        modeA.push_back(static_cast<int>(r));
+        is_contraction_dimension = true;
+        break;
+      }
     }
-    else if (i == contraction_dimension_2)
-    {
-      extent[1] = static_cast<int64_t>(tensor_A.sizes(i));
-      modeA.push_back(1);
-    }
-    else
-    {
-      extent[running_index] = static_cast<int64_t>(tensor_A.sizes(i));
-      modeA.push_back(running_index);
-      modeC.push_back(running_index);
-      running_index++;
-    }
-  }
 
-  reduce_common(tensor_A, tensor_C, modeA, modeC);
-}
-
-template <size_t dimension_A, size_t dimension_C, typename data_t>
-void hiptensor_reduce(
-  TensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
-  TensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_dimension_1)
-{
-  BOBA_CALI_MARK
-  // Create vector of modes and extents
-  std::vector<int> modeA, modeC;
-  std::unordered_map<int, int64_t> extent;
-
-  // Contraction index is 0
-  int running_index = 1;
-  for (size_t i = 0; i < dimension_A; i++)
-  {
-    if (i == contraction_dimension_1)
-    {
-      extent[0] = static_cast<int64_t>(tensor_A.sizes(i));
-      modeA.push_back(0);
-    }
-    else
+    if (not(is_contraction_dimension))
     {
       extent[running_index] = static_cast<int64_t>(tensor_A.sizes(i));
       modeA.push_back(running_index);
@@ -912,103 +691,36 @@ void hiptensor_permute(
 }
 
 /**
- * @brief Reports that hipTensor single-index contraction support is unavailable.
+ * @brief Reports that hipTensor contraction support is unavailable.
  */
-template <size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
+template <size_t contractions, size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
 void hiptensor_contract(
   TensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
   TensorView<DefaultAccessor<data_t const>, dimension_B> tensor_B,
   TensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_dimension_A,
-  size_t contraction_dimension_B)
+  const boba::Array<size_t, contractions> contraction_dimensions_A,
+  const boba::Array<size_t, contractions> contraction_dimensions_B)
 {
   ::boba::detail::ignore(tensor_A);
   ::boba::detail::ignore(tensor_B);
   ::boba::detail::ignore(tensor_C);
-  ::boba::detail::ignore(contraction_dimension_A);
-  ::boba::detail::ignore(contraction_dimension_B);
-  boba_error("hiptensor_contract requires a HIP build.");
-}
-
-/**
- * @brief Reports that hipTensor double-index contraction support is unavailable.
- */
-template <size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
-void hiptensor_contract(
-  TensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
-  TensorView<DefaultAccessor<data_t const>, dimension_B> tensor_B,
-  TensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_1_dimension_A,
-  size_t contraction_2_dimension_A,
-  size_t contraction_1_dimension_B,
-  size_t contraction_2_dimension_B)
-{
-  ::boba::detail::ignore(tensor_A);
-  ::boba::detail::ignore(tensor_B);
-  ::boba::detail::ignore(tensor_C);
-  ::boba::detail::ignore(contraction_1_dimension_A);
-  ::boba::detail::ignore(contraction_2_dimension_A);
-  ::boba::detail::ignore(contraction_1_dimension_B);
-  ::boba::detail::ignore(contraction_2_dimension_B);
-  boba_error("hiptensor_contract requires a HIP build.");
-}
-
-/**
- * @brief Reports that hipTensor triple-index contraction support is unavailable.
- */
-template <size_t dimension_A, size_t dimension_B, size_t dimension_C, typename data_t>
-void hiptensor_contract(
-  TensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
-  TensorView<DefaultAccessor<data_t const>, dimension_B> tensor_B,
-  TensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_1_dimension_A,
-  size_t contraction_2_dimension_A,
-  size_t contraction_3_dimension_A,
-  size_t contraction_1_dimension_B,
-  size_t contraction_2_dimension_B,
-  size_t contraction_3_dimension_B)
-{
-  ::boba::detail::ignore(tensor_A);
-  ::boba::detail::ignore(tensor_B);
-  ::boba::detail::ignore(tensor_C);
-  ::boba::detail::ignore(contraction_1_dimension_A);
-  ::boba::detail::ignore(contraction_2_dimension_A);
-  ::boba::detail::ignore(contraction_3_dimension_A);
-  ::boba::detail::ignore(contraction_1_dimension_B);
-  ::boba::detail::ignore(contraction_2_dimension_B);
-  ::boba::detail::ignore(contraction_3_dimension_B);
+  ::boba::detail::ignore(contraction_dimensions_A);
+  ::boba::detail::ignore(contraction_dimensions_B);
   boba_error("hiptensor_contract requires a HIP build.");
 }
 
 /**
  * @brief Reports that hipTensor single-axis reduction support is unavailable.
  */
-template <size_t dimension_A, size_t dimension_C, typename data_t>
+template <size_t reductions, size_t dimension_A, size_t dimension_C, typename data_t>
 void hiptensor_reduce(
   TensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
   TensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_dimension_1)
+  const boba::Array<size_t, reductions> contraction_dimensions)
 {
   ::boba::detail::ignore(tensor_A);
   ::boba::detail::ignore(tensor_C);
-  ::boba::detail::ignore(contraction_dimension_1);
-  boba_error("hiptensor_reduce requires a HIP build.");
-}
-
-/**
- * @brief Reports that hipTensor double-axis reduction support is unavailable.
- */
-template <size_t dimension_A, size_t dimension_C, typename data_t>
-void hiptensor_reduce(
-  TensorView<DefaultAccessor<data_t const>, dimension_A> tensor_A,
-  TensorView<DefaultAccessor<data_t>, dimension_C> tensor_C,
-  size_t contraction_dimension_1,
-  size_t contraction_dimension_2)
-{
-  ::boba::detail::ignore(tensor_A);
-  ::boba::detail::ignore(tensor_C);
-  ::boba::detail::ignore(contraction_dimension_1);
-  ::boba::detail::ignore(contraction_dimension_2);
+  ::boba::detail::ignore(contraction_dimensions);
   boba_error("hiptensor_reduce requires a HIP build.");
 }
 
