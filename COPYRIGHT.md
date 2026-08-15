@@ -6,7 +6,7 @@ BoBa is licensed under the Apache License, Version 2.0 with the LLVM exception.
 Copyrights and patents in the BoBa project are retained by contributors.
 No copyright assignment is required to contribute to BoBa.
 
-BoBa was originally developed in 2013 by Lawrence Livermore National
+BoBa was originally developed in 2021 by Lawrence Livermore National
 Security, LLC.
 
 
@@ -33,26 +33,34 @@ their own licenses. See the license files included with each package, and
 
 Third-party dependencies currently include:
 
-PackageName: BLT
+PackageName: BLT\
+PackageHomePage: https://github.com/LLNL/blt \
 PackageLicenseDeclared: BSD-3-Clause
 
-PackageName: Caliper
+PackageName: Caliper\
+PackageHomePage: https://github.com/LLNL/Caliper \
 PackageLicenseDeclared: BSD-3-Clause
 
-PackageName: camp
+PackageName: camp\
+PackageHomePage: https://github.com/LLNL/camp \
 PackageLicenseDeclared: BSD-3-Clause
 
-PackageName: Eigen
+PackageName: Eigen\
+PackageHomePage: https://gitlab.com/libeigen/eigen \
 PackageLicenseDeclared: MPL-2.0
 
-PackageName: fmt
+PackageName: fmt\
+PackageHomePage: https://github.com/fmtlib/fmt \
 PackageLicenseDeclared: MIT
 
-PackageName: HDF5
+PackageName: HDF5\
+PackageHomePage: https://github.com/HDFGroup/hdf5 \
 PackageLicenseDeclared: HDF5
 
-PackageName: RAJA
+PackageName: RAJA\
+PackageHomePage: https://github.com/LLNL/RAJA \
 PackageLicenseDeclared: BSD-3-Clause
 
-PackageName: Umpire
+PackageName: Umpire\
+PackageHomePage: https://github.com/LLNL/Umpire \
 PackageLicenseDeclared: MIT
