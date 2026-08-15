@@ -39,11 +39,13 @@
 // Dynamic objects
 #include "BOBA/tensors/TensorView.hpp"
 #include "BOBA/tensors/Tensor.hpp"
+#include "BOBA/tensors/SparseTensorView.hpp"
 #include "BOBA/tensors/SubtensorView.hpp"
 #include "BOBA/backends/boba_mat_files.hpp"
 #include "BOBA/backends/boba_hdf5.hpp"
 #include "BOBA/tensors/Tensor_io.hpp"
 #include "BOBA/tensors/Vector.hpp"
+#include "BOBA/tensors/SparseTensor.hpp"
 #include "BOBA/abstractions/argparser.hpp"
 #include "BOBA/tensors/Matrix.hpp"
 #include "BOBA/tensors/PermutationMatrix.hpp"

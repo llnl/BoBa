@@ -259,7 +259,10 @@ struct Tensor
   // deallocate (without changing sizes)
   void deallocate(data_pointer& data) noexcept
   {
-    ::boba::detail::free<space>(data, m_allocator);
+    if (data != nullptr)
+    {
+      ::boba::detail::free<space>(data, m_allocator);
+    }
   }
 
   void invalidating_reallocate(std::size_t new_capacity)

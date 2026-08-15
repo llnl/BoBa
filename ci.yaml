@@ -359,6 +359,10 @@
       inputs: "--size_factor 1 --which 0"
       skip: []
 
+  test_SparseTensor:
+    test_SparseTensor:
+      skip: []
+
   test_io:
     # Tensors
     test_tensor_io_3d_float:
