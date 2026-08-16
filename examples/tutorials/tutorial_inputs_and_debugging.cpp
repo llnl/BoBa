@@ -5,7 +5,7 @@
 #include "../tests/common.hpp"
 
 /*
-  This tutorial explains some the code's debugging mechanisms, as well as common ways to
+  This tutorial explains some of the code's debugging mechanisms, as well as common ways to
   take inputs and outputs.
 */
 

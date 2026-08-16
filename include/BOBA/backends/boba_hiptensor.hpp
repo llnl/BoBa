@@ -76,7 +76,7 @@ constexpr hipDataType get_hipDataType()
     return HIP_C_32F;
   }
 
-  boba_error("Unkown hipdatatype");
+  boba_error("Unknown hipdatatype");
   return static_cast<hipDataType>(0);
 }
 
@@ -106,7 +106,7 @@ constexpr hiptensorDataType_t get_hiptensorComputeType()
     return HIPTENSOR_C_32F;
   }
 
-  boba_error("Unkown hiptensorComputeType");
+  boba_error("Unknown hiptensorComputeType");
   return static_cast<hiptensorDataType_t>(0);
 }
 
@@ -136,7 +136,7 @@ constexpr hiptensorComputeDescriptor_t get_hiptensorComputeDescriptorType()
     return HIPTENSOR_COMPUTE_DESC_C32F;
   }
 
-  boba_error("Unkown hiptensorComputeDescriptorType");
+  boba_error("Unknown hiptensorComputeDescriptorType");
   return static_cast<hiptensorComputeDescriptor_t>(0);
 }
 

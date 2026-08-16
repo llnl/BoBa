@@ -74,7 +74,7 @@ constexpr cutensorDataType_t get_cuDataType()
     return CUTENSOR_C_32F;
   }
 
-  boba_error("Unkown cudatatype");
+  boba_error("Unknown cudatatype");
   return static_cast<cutensorDataType_t>(0);
 }
 
@@ -104,7 +104,7 @@ constexpr cutensorComputeDescriptor_t get_cutensorComputeType()
     return CUTENSOR_COMPUTE_DESC_32F;
   }
 
-  boba_error("Unkown cutensorComputeType");
+  boba_error("Unknown cutensorComputeType");
   return static_cast<cutensorComputeDescriptor_t>(0);
 }
 

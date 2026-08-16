@@ -247,7 +247,7 @@ Matrix<space, data_t> general_matrix_matrix_product(
   }
   else
   {
-    boba_error("Unkown execution space!");
+    boba_error("Unknown execution space!");
   }
   BOBA_CALI_OBJECT_END("matrix_matrix_product");
   checkpoint_objects();
@@ -304,7 +304,7 @@ Vector<space, data_t> general_matrix_vector_product(
   }
   else
   {
-    boba_error("Unkown execution space!");
+    boba_error("Unknown execution space!");
   }
   BOBA_CALI_OBJECT_END("matrix_matrix_product");
   checkpoint_objects();
@@ -356,7 +356,7 @@ Vector<space, data_t> general_vector_matrix_product(
   }
   else
   {
-    boba_error("Unkown execution space!");
+    boba_error("Unknown execution space!");
   }
   BOBA_CALI_OBJECT_END("matrix_matrix_product");
 

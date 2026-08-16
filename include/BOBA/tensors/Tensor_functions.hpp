@@ -747,12 +747,12 @@ Array<DimLabel_t, (dimension_A + dimension_B) - 2 * num_contractions> get_uncont
 
 template <size_t contractions, execution_space space, size_t dimension_A, size_t dimension_B, typename data_t, bool force_naive = false, typename DimLabel_t = std::string>
   requires((dimension_A > 1) or (dimension_B > 1))
-Tensor<(dimension_A + dimension_B) - 2*contractions, space, data_t> tensor_contraction(
+Tensor<(dimension_A + dimension_B) - 2 * contractions, space, data_t> tensor_contraction(
   const Array<DimLabel_t, dimension_A>& labels_A,
   const Tensor<dimension_A, space, data_t>& tensor_A,
   const Array<DimLabel_t, dimension_B>& labels_B,
   const Tensor<dimension_B, space, data_t>& tensor_B,
-  const Array<DimLabel_t, (dimension_A + dimension_B) - 2*contractions>& labels_C)
+  const Array<DimLabel_t, (dimension_A + dimension_B) - 2 * contractions>& labels_C)
 {
   BOBA_CALI_MARK
   checkpoint();
@@ -879,7 +879,7 @@ Tensor<1, space, data_t> tensor_contraction(
 
 template <size_t contractions, execution_space space, size_t dimension_A, size_t dimension_B, typename data_t, bool force_naive = false>
   requires((dimension_A > 1) or (dimension_B > 1))
-Tensor<(dimension_A + dimension_B) - 2*contractions, space, data_t> tensor_contraction(
+Tensor<(dimension_A + dimension_B) - 2 * contractions, space, data_t> tensor_contraction(
   const Tensor<dimension_A, space, data_t>& tensor_A,
   const Tensor<dimension_B, space, data_t>& tensor_B,
   const boba::Array<size_t, contractions> contraction_dimensions_A,
@@ -889,7 +889,7 @@ Tensor<(dimension_A + dimension_B) - 2*contractions, space, data_t> tensor_contr
 }
 
 template <size_t contractions, execution_space space, size_t dimension_A, size_t dimension_B, typename data_t, bool force_naive = false>
-Tensor<(dimension_A + dimension_B) - 2*contractions, space, data_t> tensor_contraction(
+Tensor<(dimension_A + dimension_B) - 2 * contractions, space, data_t> tensor_contraction(
   const TensorView<DefaultAccessor<data_t const>, dimension_A>& tensor_A_view,
   const TensorView<DefaultAccessor<data_t const>, dimension_B>& tensor_B_view,
   const boba::Array<size_t, contractions> contraction_dimensions_A,
@@ -897,10 +897,10 @@ Tensor<(dimension_A + dimension_B) - 2*contractions, space, data_t> tensor_contr
 {
   BOBA_CALI_MARK
   checkpoint();
-  constexpr size_t new_dimension = (dimension_A + dimension_B) - 2*contractions;
+  constexpr size_t new_dimension = (dimension_A + dimension_B) - 2 * contractions;
   auto sizes_A = tensor_A_view.sizes();
   auto sizes_B = tensor_B_view.sizes();
-  for(size_t c = 0; c < contractions; c++)
+  for (size_t c = 0; c < contractions; c++)
   {
     boba_always_assert_equal(sizes_A[contraction_dimensions_A[c]], sizes_B[contraction_dimensions_B[c]], "Invalid contraction.");
   }
@@ -977,7 +977,7 @@ Tensor<(dimension_A + dimension_B) - 2*contractions, space, data_t> tensor_contr
   auto multiindex_contracted_AB = ::boba::Multiindexer<2>({cA_size, cB_size});
 
   ::boba::Array<size_t, contractions> contractions_lengths;
-  for(size_t c = 0; c < contractions; c++)
+  for (size_t c = 0; c < contractions; c++)
   {
     contractions_lengths[c] = sizes_A[contraction_dimensions_A[c]];
   }
@@ -1012,7 +1012,6 @@ Tensor<(dimension_A + dimension_B) - 2*contractions, space, data_t> tensor_contr
     tensor_C_view(index_C) += value_A * value_B;
   });
   BOBA_CALI_END("reference_implementation");
-
 
   checkpoint();
   return tensor_C;

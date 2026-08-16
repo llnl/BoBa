@@ -27,7 +27,7 @@ void test_tt_blocks(bool& check, const size_t N)
   //   Test 1:  full to block to full
   // ------------------------------------------------------------------------
   {
-    // Note that using the matvec from the full operator will be genrally incorrect in ths case
+    // Note that using the matvec from the full operator will be generally incorrect in this case
     // This is because copy_vector_into_block_form makes no assumption about the validitidy of decomposing the full vector into its pieces
     // A great deal of caution should be used when thinking about block operators!
     //

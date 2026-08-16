@@ -57,8 +57,11 @@ Please use this citation when citing BoBa
               Joseph, Ilon and
               Minner, Paul and
               Irving, Samuel},
+    howpublished = {[Computer Software] \url{https://github.com/llnl/BoBa}},
+    abstractNote = {BoBa is a C++ software library for working with large matrices, tensors, and tensor decompositions. The library provides tools for dense matrix and tensor operations, tensor decompositions, and tensor decomposition methods that support modern CPU and GPU architectures. It includes portable abstractions for linear algebra, tensor algebra, and multidimensional computation. BoBa is intended for scientific computing applications that involve large multidimensional data sets or high dimensional mathematical models. Its capabilities support tasks such as data compression, linear algebra, efficient numerical computation, and the development of scalable algorithms for heterogeneous hardware. Tutorials, tests, and example applications are included to help users learn and apply the library.},
     url    = {https://github.com/llnl/BoBa},
     year   = {2026}
+    doi = {10.11578/dc.20260804.1},
   }
 ```
 

@@ -435,7 +435,7 @@ struct StaticTensor
    * \return The transformed tensor.
    *
    * TODO<feature> update this to handle rectangular matrices (output size not equal to input size)
-   * TODO<feature> update this to handle anisitropic operators
+   * TODO<feature> update this to handle anisotropic operators
    */
   template <
     typename... operation_types>

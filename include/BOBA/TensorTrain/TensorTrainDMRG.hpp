@@ -15,7 +15,7 @@ struct TensorTrainDMRG
 
   data_t convergence_tolerance = 1.0e-10;
   index_t kickrank = 4;
-  data_t resid_damp = 2.0; // Truncation error to true residual treshold
+  data_t resid_damp = 2.0; // Truncation error to true residual threshold
   index_t max_direct_solve_size = 1500;
   index_t max_allowed_ranks = 1000;
 

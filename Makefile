@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+ifndef BOBA_TOP_DIR
 BOBA_TOP_DIR=.
+endif
 
 TESTS_DIR=examples/tests
 EXAMPLES_DIR=examples/exercises
