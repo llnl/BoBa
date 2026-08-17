@@ -310,7 +310,7 @@ struct TensorTrainAMENBlock
               auto crz_prev = crz[ki].cores[i - 1];
               try
               {
-                crz[ki].cores[i - 1] = ::boba::tensor_contraction_single_index(
+                crz[ki].cores[i - 1] = ::boba::tensor_contraction<1, space>(
                   {"rzm1", "n", "rz"}, crz_prev,
                   {"k", "rz"}, rv,
                   {"rzm1", "n", "k"});
@@ -356,7 +356,7 @@ struct TensorTrainAMENBlock
           Tensor<3, space, data_t> new_cr2mat;
           try
           {
-            new_cr2mat = ::boba::tensor_contraction_single_index(
+            new_cr2mat = ::boba::tensor_contraction<1, space>(
               {"rxm1", "n", "rx"}, cr2,
               {"k", "rx"}, rv,
               {"rxm1", "n", "k"});
@@ -772,7 +772,7 @@ struct TensorTrainAMENBlock
                 i,
                 "lr-project-operator");
 
-              auto Bsol_prev = boba::tensor_contraction_triple_index(
+              auto Bsol_prev = boba::tensor_contraction<3, space>(
                 {"rx", "rx_", "n", "n_", "rxp1", "rxp1_"}, phi1A1phi2,
                 {"rx_", "n_", "rxp1_"}, sol_prev,
                 {"rx", "n", "rxp1"});
@@ -1080,7 +1080,7 @@ struct TensorTrainAMENBlock
               Tensor<2, space, data_t> v_temp;
               try
               {
-                v_temp = boba::tensor_contraction_single_index(
+                v_temp = boba::tensor_contraction<1, space>(
                   {"row", "k"}, v_expand,
                   {"col^T", "k"}, rv,
                   {"row", "col^T"});
@@ -1107,7 +1107,7 @@ struct TensorTrainAMENBlock
             Tensor<3, space, data_t> v_new;
             try
             {
-              v_new = boba::tensor_contraction_single_index(
+              v_new = boba::tensor_contraction<1, space>(
                 {"rxp1", "?"}, v,
                 {"rxp1", "np1", "rxp2"}, cr2,
                 {"?", "np1", "rxp2"});
@@ -1786,14 +1786,14 @@ struct TensorTrainAMENBlock
     BOBA_CALI_MARK
     checkpoint();
     // First contract the left environment into the operator core.
-    auto phi1A1 = ::boba::tensor_contraction_single_index(
+    auto phi1A1 = ::boba::tensor_contraction<1, space>(
       {"rx", "rx_", "ra"}, phia_i,
       {"ra", "row", "col", "rap1"}, A_core,
       {"rx", "rx_", "row", "col", "rap1"});
 
     checkpoint();
     // Then contract the right environment to finish the local operator tensor.
-    auto phi1A1phi2 = ::boba::tensor_contraction_single_index(
+    auto phi1A1phi2 = ::boba::tensor_contraction<1, space>(
       {"rx", "rx_", "row", "col", "rap1"}, phi1A1,
       {"rxp1", "rap1", "rxp1_"}, phia_ip1,
       {"rx", "rx_", "row", "col", "rxp1", "rxp1_"});
@@ -1856,14 +1856,14 @@ struct TensorTrainAMENBlock
     BOBA_CALI_MARK
     checkpoint();
     // Contract the left environment with the local RHS core first.
-    auto phizyy1 = boba::tensor_contraction_single_index(
+    auto phizyy1 = boba::tensor_contraction<1, space>(
       {"rz", "ry", "one"}, phizy_i,
       {"ry", "n", "ryp1"}, y1,
       {"rz", "one", "n", "ryp1"});
 
     checkpoint();
     // Finish by contracting the right environment and collapsing singleton axes.
-    auto crzy = boba::tensor_contraction_single_index(
+    auto crzy = boba::tensor_contraction<1, space>(
       {"rz", "one", "n", "ryp1"}, phizyy1,
       {"ryp1", "one_", "rzp1"}, phizy_ip1,
       {"rz", "one", "n", "one_", "rzp1"});

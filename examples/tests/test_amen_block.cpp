@@ -404,34 +404,6 @@ void run_block_test(
       : ::boba::sqrt(dense_residual_from_compressed_terms_norm_squared);
   std::cout << "Dense relative residual from decompressed A*compressed(exact solution) minus decompressed compressed RHS: "
             << dense_residual_from_compressed_terms_relative << std::endl;
-  auto diagonal_unblock = [](const block_tt_t& block_vec)
-  {
-    boba::Array<size_t, dimension> full_sizes = ::boba::filled_array<dimension>(0_z);
-    std::vector<boba::Array<size_t, dimension>> offsets(block_vec.block_size);
-    for(size_t block = 0; block < block_vec.block_size; block++)
-    {
-      offsets[block] = full_sizes;
-      full_sizes += block_vec(block).sizes();
-    }
-
-    tt_t full_tt(full_sizes);
-    full_tt.fill_with_zeros();
-    for(size_t block = 0; block < block_vec.block_size; block++)
-    {
-      full_tt.TensorTrain_add(block_vec(block), offsets[block]);
-    }
-    return full_tt;
-  };
-  auto standard_tt_matvec = diagonal_unblock(compressed_exact_matvec);
-  auto standard_tt_rhs = diagonal_unblock(rhs);
-  auto standard_tt_residual = standard_tt_matvec - standard_tt_rhs;
-  auto standard_tt_rhs_norm = ::boba::norm_frobenius(standard_tt_rhs);
-  auto standard_tt_relative_residual =
-    (standard_tt_rhs_norm > tiny_norm)
-      ? (::boba::norm_frobenius(standard_tt_residual) / standard_tt_rhs_norm)
-      : ::boba::norm_frobenius(standard_tt_residual);
-  std::cout << "Standard TT relative residual from unblocked A*compressed(exact solution) minus unblocked compressed RHS: "
-            << standard_tt_relative_residual << std::endl;
   auto reference_residual_norm = ::boba::norm_frobenius(reference_residual);
   auto reference_relative_residual = (block_rhs_norm > tiny_norm) ? (reference_residual_norm / block_rhs_norm) : reference_residual_norm;
   std::cout << "Pre-solve compressed reference relative residual: "
