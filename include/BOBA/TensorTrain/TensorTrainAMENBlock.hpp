@@ -23,6 +23,20 @@ struct TensorTrainAMENBlock
   data_t resid_damp = 2.0;
   int max_direct_solve_size = 1500;
   index_t max_allowed_ranks = 1000;
+  size_t max_sweeps = 20;
+  size_t minimum_sweeps = 1;
+  // Scalar AMEn-style intermediate normalization is algebraically safe for
+  // diagonal block systems. For genuinely coupled block systems the current
+  // per-block scalar bookkeeping does not preserve the off-diagonal projected
+  // equations, so coupled solves use unnormalized environments.
+  bool normalize_coupled_intermediate_quantities = false;
+  // Scale the assembled dense coupled site equations explicitly before the
+  // local solve. This is an algebraic row scaling of B*x=rhs; residual
+  // diagnostics and enrichment continue to use the original unscaled system.
+  // Unknown/column scaling is intentionally avoided because projected coupled
+  // systems may have gauge/nullspace freedom, and reweighting unknowns can
+  // change the least-squares representative selected by the local solve.
+  bool scale_coupled_site_system = true;
   /// \brief Enable per-sweep progress output from `solve()`.
   bool verbose = false;
 
@@ -80,13 +94,18 @@ struct TensorTrainAMENBlock
     boba_always_assert_equal(cry.block_size, crA.block_rows, "RHS block size must match operator block size");
     boba_always_assert_equal(tt_initial_guess.block_size, crA.block_rows, "Initial guess block size must match operator block size");
 
-    size_t K = crA.block_rows;
+    size_t Kay = crA.block_rows;
     bool has_offdiag_blocks = false;
+    data_t norm_cry = ::boba::norm_frobenius(cry);
+    if (::boba::is_tiny(norm_cry))
+    {
+      norm_cry = 1.0;
+    }
 
     // Validate the block layout and detect whether any off-diagonal couplings are present.
-    for (size_t ki = 0; ki < K; ki++)
+    for (size_t ki = 0; ki < Kay; ki++)
     {
-      for (size_t kj = 0; kj < K; kj++)
+      for (size_t kj = 0; kj < Kay; kj++)
       {
         if (crA({ki, kj}).get_number_elements() > 0)
         {
@@ -104,23 +123,34 @@ struct TensorTrainAMENBlock
     }
 
     auto crx = tt_initial_guess;
+    // The scalar-AMEn normalization below is valid only when each block row is
+    // an independent diagonal solve. In a coupled block system, normalizing a
+    // row by quantities derived from its diagonal block changes the relative
+    // scale of the off-diagonal projected operators and therefore changes the
+    // local equation. Coupled systems instead keep the environments unnormalized
+    // and apply an explicit row scaling to the assembled dense site equations.
+    if (has_offdiag_blocks && normalize_coupled_intermediate_quantities)
+    {
+      boba_warn("TensorTrainAMENBlock coupled intermediate normalization is disabled because the current scaling does not preserve off-diagonal projected equations.");
+    }
+    const bool normalize_intermediate_quantities = !has_offdiag_blocks;
 
     checkpoint();
 
     // Allocate the AMEn environments and the enrichment tensors for each block row/column pair.
-    std::vector<std::vector<::boba::TensorTrain<dimension + 1, space, data_t>>> phia(K);
-    std::vector<::boba::TensorTrain<dimension + 1, space, data_t>> phiy(K);
-    std::vector<std::vector<::boba::TensorTrain<dimension + 1, space, data_t>>> phiza(K);
-    std::vector<::boba::TensorTrain<dimension + 1, space, data_t>> phizy(K);
-    std::vector<::boba::TensorTrain<dimension, space, data_t>> crz(K);
+    std::vector<std::vector<::boba::TensorTrain<dimension + 1, space, data_t>>> phia(Kay);
+    std::vector<::boba::TensorTrain<dimension + 1, space, data_t>> phiy(Kay);
+    std::vector<std::vector<::boba::TensorTrain<dimension + 1, space, data_t>>> phiza(Kay);
+    std::vector<::boba::TensorTrain<dimension + 1, space, data_t>> phizy(Kay);
+    std::vector<::boba::TensorTrain<dimension, space, data_t>> crz(Kay);
 
     checkpoint();
-    for (size_t ki = 0; ki < K; ki++)
+    for (size_t ki = 0; ki < Kay; ki++)
     {
-      phia[ki].resize(K);
-      phiza[ki].resize(K);
+      phia[ki].resize(Kay);
+      phiza[ki].resize(Kay);
 
-      for (size_t kj = 0; kj < K; kj++)
+      for (size_t kj = 0; kj < Kay; kj++)
       {
         if (crA({ki, kj}).get_number_elements() > 0)
         {
@@ -141,8 +171,9 @@ struct TensorTrainAMENBlock
       crz[ki].resize(cry(ki).sizes());
       for (size_t d = 0; d < dimension; d++)
       {
-        auto rank_left = (d == 0) ? 1 : kickrank;
-        auto rank_right = (d == dimension - 1) ? 1 : kickrank;
+        auto z_rank = boba::max<index_t>(kickrank, 1);
+        auto rank_left = (d == 0) ? 1 : z_rank;
+        auto rank_right = (d == dimension - 1) ? 1 : z_rank;
 
         crz[ki].cores[d].resize({rank_left, cry(ki).sizes(d), rank_right});
         crz[ki].cores[d].fill_with_random();
@@ -153,21 +184,21 @@ struct TensorTrainAMENBlock
 
     // Track per-interface normalization factors so the left/right environment
     // contractions stay numerically stable across sweeps.
-    std::vector<::boba::Array<data_t, dimension - 1>> nrmsx(K);
-    std::vector<std::vector<::boba::Array<data_t, dimension - 1>>> nrmsa(K);
-    std::vector<::boba::Array<data_t, dimension - 1>> nrmsy(K);
-    std::vector<data_t> nrmsc(K, 1.0);
-    std::vector<::boba::Array<size_t, dimension + 1>> rz(K);
-    std::vector<index_t> rznew(K, 0);
-    std::vector<boba::Matrix<space, data_t>> crznew(K);
-    std::vector<boba::Tensor<3, space, data_t>> crznew_tensor(K);
+    std::vector<::boba::Array<data_t, dimension - 1>> nrmsx(Kay);
+    std::vector<std::vector<::boba::Array<data_t, dimension - 1>>> nrmsa(Kay);
+    std::vector<::boba::Array<data_t, dimension - 1>> nrmsy(Kay);
+    std::vector<data_t> nrmsc(Kay, 1.0);
+    std::vector<::boba::Array<size_t, dimension + 1>> rz(Kay);
+    std::vector<index_t> rznew(Kay, 0);
+    std::vector<boba::Matrix<space, data_t>> crznew(Kay);
+    std::vector<boba::Tensor<3, space, data_t>> crznew_tensor(Kay);
 
-    for (size_t ki = 0; ki < K; ki++)
+    for (size_t ki = 0; ki < Kay; ki++)
     {
       nrmsx[ki] = ::boba::filled_array<dimension - 1, data_t>(1.0);
       nrmsy[ki] = ::boba::filled_array<dimension - 1, data_t>(1.0);
-      nrmsa[ki].resize(K);
-      for (size_t kj = 0; kj < K; kj++)
+      nrmsa[ki].resize(Kay);
+      for (size_t kj = 0; kj < Kay; kj++)
       {
         nrmsa[ki][kj] = ::boba::filled_array<dimension - 1, data_t>(1.0);
       }
@@ -175,24 +206,23 @@ struct TensorTrainAMENBlock
     }
 
     checkpoint();
-    size_t max_sweep = 20;
-
     // Main AMEn sweeps: first move right-to-left to update environments and enrichment data.
     bool last_sweep = false;
-    for (size_t swp = 0; swp < max_sweep; swp++)
+    bool converged = false;
+    for (size_t swp = 0; swp < max_sweeps; swp++)
     {
       for (size_t ip1 = dimension; ip1 > 1; ip1--)
       {
         size_t i = ip1 - 1;
         // Snapshot the current site cores before any block is updated so
         // off-diagonal couplings at this site all see a consistent iterate.
-        std::vector<boba::Tensor<3, space, data_t>> site_x_cores(K);
-        for (size_t kj = 0; kj < K; kj++)
+        std::vector<boba::Tensor<3, space, data_t>> site_x_cores(Kay);
+        for (size_t kj = 0; kj < Kay; kj++)
         {
           site_x_cores[kj] = crx(kj).cores[i];
         }
 
-        for (size_t ki = 0; ki < K; ki++)
+        for (size_t ki = 0; ki < Kay; ki++)
         {
           if ((kickrank > 0) && (!last_sweep))
           {
@@ -209,7 +239,7 @@ struct TensorTrainAMENBlock
               boba::Tensor<3, space, data_t> crzAt({rz[ki][i], cry(ki).sizes(i), rz[ki][i + 1]});
               crzAt.fill_with_zeros();
 
-              for (size_t kj = 0; kj < K; kj++)
+              for (size_t kj = 0; kj < Kay; kj++)
               {
                 if (crA({ki, kj}).get_number_elements() == 0)
                 {
@@ -236,7 +266,10 @@ struct TensorTrainAMENBlock
                 ki,
                 i,
                 "rl-project_phizy");
-              crzy2 *= nrmsc[ki];
+              if (normalize_intermediate_quantities)
+              {
+                crzy2 *= nrmsc[ki];
+              }
               auto crzy2_matrix = boba::reshape_to_matrix(crzy2, {rz[ki][i], cry(ki).sizes(i) * rz[ki][i + 1]});
               crznew[ki] = crzy2_matrix - crzAt_matrix;
 
@@ -297,7 +330,10 @@ struct TensorTrainAMENBlock
           {
             // Undo the normalization that was applied while building the right
             // environments before re-factorizing the current solution core.
-            nrmsc[ki] = nrmsc[ki] / (nrmsy[ki][i - 1] / (nrmsa[ki][ki][i - 1] * nrmsx[ki][i - 1]));
+            if (normalize_intermediate_quantities)
+            {
+              nrmsc[ki] = nrmsc[ki] / (nrmsy[ki][i - 1] / (nrmsa[ki][ki][i - 1] * nrmsx[ki][i - 1]));
+            }
           }
 
           auto cr = crx(ki).cores[i];
@@ -331,7 +367,7 @@ struct TensorTrainAMENBlock
           }
 
           auto curnorm = ::boba::sqrt(::boba::abs(::boba::inner_product(new_cr2mat, new_cr2mat)));
-          if (!::boba::is_tiny(curnorm))
+          if (normalize_intermediate_quantities && !::boba::is_tiny(curnorm))
           {
             new_cr2mat *= (1.0 / curnorm);
           }
@@ -340,22 +376,27 @@ struct TensorTrainAMENBlock
             curnorm = 1;
           }
 
-          nrmsx[ki][i - 1] *= curnorm;
+          if (normalize_intermediate_quantities)
+          {
+            nrmsx[ki][i - 1] *= curnorm;
+          }
           crx(ki).cores[i - 1] = new_cr2mat;
           crx(ki).cores[i] = cr;
         }
 
         // Update right-to-left operator and RHS environments after every block
         // has contributed its newly orthogonalized site core.
-        for (size_t row = 0; row < K; row++)
+        for (size_t row = 0; row < Kay; row++)
         {
-          for (size_t col = 0; col < K; col++)
+          for (size_t col = 0; col < Kay; col++)
           {
             if (crA({row, col}).get_number_elements() == 0)
             {
               continue;
             }
-            auto phia_external_norm = (row == col) ? static_cast<data_t>(-1.0) : static_cast<data_t>(1.0);
+            auto phia_external_norm = normalize_intermediate_quantities
+                                        ? ((row == col) ? static_cast<data_t>(-1.0) : static_cast<data_t>(1.0))
+                                        : static_cast<data_t>(1.0);
 
             std::tie(phia[row][col].cores[i], nrmsa[row][col][i - 1]) =
               compute_next_phi_block<dimension>(
@@ -370,7 +411,7 @@ struct TensorTrainAMENBlock
                 i,
                 "rl-phia");
 
-            if (row != col)
+            if (row != col || !normalize_intermediate_quantities)
             {
               nrmsa[row][col][i - 1] = 1.0;
             }
@@ -382,30 +423,37 @@ struct TensorTrainAMENBlock
               crx(row).cores[i],
               cry(row).cores[i],
               false,
-              -1.0,
+              normalize_intermediate_quantities ? static_cast<data_t>(-1.0) : static_cast<data_t>(1.0),
               row,
               row,
               i,
               "rl-phiy");
 
-          nrmsc[row] = nrmsc[row] * (nrmsy[row][i - 1] / (nrmsa[row][row][i - 1] * nrmsx[row][i - 1]));
+          if (normalize_intermediate_quantities)
+          {
+            nrmsc[row] = nrmsc[row] * (nrmsy[row][i - 1] / (nrmsa[row][row][i - 1] * nrmsx[row][i - 1]));
+          }
         }
 
         if ((kickrank > 0) && (!last_sweep))
         {
           // Mirror the same environment propagation for the enrichment tensor z.
-          for (size_t row = 0; row < K; row++)
+          for (size_t row = 0; row < Kay; row++)
           {
             rz[row][i] = rznew[row];
 
-            for (size_t col = 0; col < K; col++)
+            for (size_t col = 0; col < Kay; col++)
             {
               if (crA({row, col}).get_number_elements() == 0)
               {
                 continue;
               }
 
-              auto phiza_external_norm = (row == col) ? nrmsa[row][col][i - 1] : static_cast<data_t>(1.0);
+              auto phiza_external_norm = static_cast<data_t>(1.0);
+              if (normalize_intermediate_quantities && (row == col))
+              {
+                phiza_external_norm = nrmsa[row][col][i - 1];
+              }
 
               std::tie(phiza[row][col].cores[i], std::ignore) =
                 compute_next_phi_block<dimension>(
@@ -427,7 +475,7 @@ struct TensorTrainAMENBlock
                 crz[row].cores[i],
                 cry(row).cores[i],
                 false,
-                nrmsy[row][i - 1],
+                normalize_intermediate_quantities ? nrmsy[row][i - 1] : static_cast<data_t>(1.0),
                 row,
                 row,
                 i,
@@ -444,8 +492,8 @@ struct TensorTrainAMENBlock
       // Sweep left-to-right, solve the local problems, and adapt the TT ranks.
       for (size_t i = 0; i < dimension; i++)
       {
-        std::vector<boba::Tensor<3, space, data_t>> site_x_cores(K);
-        for (size_t kj = 0; kj < K; kj++)
+        std::vector<boba::Tensor<3, space, data_t>> site_x_cores(Kay);
+        for (size_t kj = 0; kj < Kay; kj++)
         {
           site_x_cores[kj] = crx(kj).cores[i];
         }
@@ -453,23 +501,30 @@ struct TensorTrainAMENBlock
         // Temporary storage for the site-local linear system. For diagonal block
         // systems each block is solved independently; otherwise all blocks are
         // stacked into one coupled dense solve at this site.
-        std::vector<boba::Vector<space, data_t>> coupled_rhs(K);
-        std::vector<boba::Vector<space, data_t>> coupled_sol(K);
-        std::vector<data_t> coupled_norm_rhs(K, 0.0);
-        std::vector<data_t> coupled_res_prev(K, 0.0);
-        std::vector<data_t> coupled_res_new(K, 0.0);
-        std::vector<index_t> coupled_offsets(K + 1, 0);
+        std::vector<boba::Vector<space, data_t>> coupled_rhs(Kay);
+        std::vector<boba::Vector<space, data_t>> coupled_sol(Kay);
+        std::vector<data_t> coupled_norm_rhs(Kay, 0.0);
+        std::vector<data_t> coupled_res_prev(Kay, 0.0);
+        std::vector<data_t> coupled_res_new(Kay, 0.0);
+        std::vector<index_t> coupled_offsets(Kay + 1, 0);
         auto use_coupled_site_solve = has_offdiag_blocks;
+        auto real_tol = (convergence_tolerance / ::boba::sqrt(static_cast<data_t>(dimension))) / resid_damp;
+        bool skip_solution_enrichment = false;
+        data_t coupled_prev_res_for_convergence = 0.0;
+        data_t coupled_new_res_for_convergence = 0.0;
 
         // For coupled systems, assemble one local block system spanning all blocks at this site.
         if (use_coupled_site_solve)
         {
-          for (size_t ki = 0; ki < K; ki++)
+          for (size_t ki = 0; ki < Kay; ki++)
           {
             // Project each block RHS into the current local basis so every block
             // contributes one contiguous segment to the coupled site system.
             auto y1 = cry(ki).cores[i];
-            y1 *= nrmsc[ki];
+            if (normalize_intermediate_quantities)
+            {
+              y1 *= nrmsc[ki];
+            }
 
             auto rhs_tensor = project_phizy_block(
               phiy[ki].cores[i],
@@ -483,7 +538,7 @@ struct TensorTrainAMENBlock
             coupled_offsets[ki + 1] = coupled_offsets[ki] + static_cast<index_t>(coupled_rhs[ki].size());
           }
 
-          auto total_local_size = coupled_offsets[K];
+          auto total_local_size = coupled_offsets[Kay];
           boba::Matrix<space, data_t> coupled_B({total_local_size, total_local_size});
           coupled_B.fill_with_zeros();
 
@@ -493,14 +548,16 @@ struct TensorTrainAMENBlock
           boba::Vector<space, data_t> coupled_sol_prev_full({total_local_size});
           coupled_sol_prev_full.fill_with_zeros();
 
-          for (size_t ki = 0; ki < K; ki++)
+          std::vector<data_t> coupled_row_norm_squared(Kay, 0.0);
+          for (size_t ki = 0; ki < Kay; ki++)
           {
             // Assemble the dense site matrix block-by-block from the projected
             // TT operator environments and the old local iterate.
             copy_vector_block(coupled_rhs_full, coupled_offsets[ki], coupled_rhs[ki]);
             copy_vector_block(coupled_sol_prev_full, coupled_offsets[ki], flatten(site_x_cores[ki]));
+            coupled_row_norm_squared[ki] += coupled_norm_rhs[ki] * coupled_norm_rhs[ki];
 
-            for (size_t kj = 0; kj < K; kj++)
+            for (size_t kj = 0; kj < Kay; kj++)
             {
               if (crA({ki, kj}).get_number_elements() == 0)
               {
@@ -512,6 +569,9 @@ struct TensorTrainAMENBlock
                 crA({ki, kj}).cores[i],
                 phia[ki][kj].cores[i + 1]);
 
+              auto B_block_norm = ::boba::norm_frobenius(B_block);
+              coupled_row_norm_squared[ki] += B_block_norm * B_block_norm;
+
               coupled_B.replace_submatrix(
                 {coupled_offsets[ki], coupled_offsets[ki + 1]},
                 {coupled_offsets[kj], coupled_offsets[kj + 1]},
@@ -521,34 +581,124 @@ struct TensorTrainAMENBlock
 
           // Solve the coupled site problem once, then slice the solution and
           // residual diagnostics back into the per-block containers.
-          auto coupled_prev_residual = coupled_B * coupled_sol_prev_full - coupled_rhs_full;
-          auto coupled_sol_full = backsolve(coupled_B, coupled_rhs_full);
-          auto coupled_new_residual = coupled_B * coupled_sol_full - coupled_rhs_full;
+          auto coupled_prev_lhs = coupled_B * coupled_sol_prev_full;
+          auto coupled_prev_residual = coupled_prev_lhs - coupled_rhs_full;
+          auto coupled_rhs_norm = ::boba::norm_frobenius(coupled_rhs_full);
+          if (is_tiny(coupled_rhs_norm))
+          {
+            coupled_rhs_norm = 1.0;
+          }
+          auto coupled_prev_res_norm = ::boba::norm_frobenius(coupled_prev_residual) / coupled_rhs_norm;
+          coupled_prev_res_for_convergence = coupled_prev_res_norm;
+          auto coupled_sol_full = coupled_sol_prev_full;
 
-          for (size_t ki = 0; ki < K; ki++)
+          data_t coupled_max_prev_res = 0.0;
+          for (size_t ki = 0; ki < Kay; ki++)
+          {
+            auto local_size = coupled_offsets[ki + 1] - coupled_offsets[ki];
+            auto prev_residual = extract_vector_block(coupled_prev_residual, coupled_offsets[ki], local_size);
+            auto prev_denominator = coupled_norm_rhs[ki];
+
+            if (!is_tiny(prev_denominator))
+            {
+              coupled_res_prev[ki] = ::boba::norm_frobenius(prev_residual) / prev_denominator;
+              coupled_max_prev_res = boba::max(coupled_max_prev_res, coupled_res_prev[ki]);
+            }
+          }
+
+          bool coupled_skipped_solve = true;
+          if (coupled_prev_res_norm > real_tol)
+          {
+            coupled_skipped_solve = false;
+            if (scale_coupled_site_system)
+            {
+              // This scaling is a local equation preconditioner, not a TT
+              // environment normalization. Scaling complete equation rows in
+              // both B and rhs preserves the solution set of B*x=rhs while
+              // reducing the dynamic range seen by the dense local solver.
+              // We deliberately do not scale columns/unknowns here: the
+              // projected AMEn systems can have gauge/nullspace freedom, and
+              // column scaling changes the least-squares metric and may select
+              // a different local representative.
+              auto coupled_B_scaled = coupled_B;
+              auto coupled_rhs_scaled = coupled_rhs_full;
+              std::vector<data_t> row_factors(Kay, 1.0);
+              for (size_t ki = 0; ki < Kay; ki++)
+              {
+                row_factors[ki] = make_local_scale_factor(coupled_row_norm_squared[ki]);
+                scale_vector_block(coupled_rhs_scaled, coupled_offsets[ki], coupled_offsets[ki + 1] - coupled_offsets[ki], row_factors[ki]);
+              }
+
+              for (size_t ki = 0; ki < Kay; ki++)
+              {
+                for (size_t kj = 0; kj < Kay; kj++)
+                {
+                  scale_matrix_block(
+                    coupled_B_scaled,
+                    coupled_offsets[ki],
+                    coupled_offsets[ki + 1],
+                    coupled_offsets[kj],
+                    coupled_offsets[kj + 1],
+                    row_factors[ki]);
+                }
+              }
+
+              coupled_sol_full = solve_coupled_site_system(coupled_B_scaled, coupled_rhs_scaled);
+            }
+            else
+            {
+              coupled_sol_full = solve_coupled_site_system(coupled_B, coupled_rhs_full);
+            }
+          }
+          skip_solution_enrichment = coupled_skipped_solve && !normalize_intermediate_quantities;
+          auto coupled_new_lhs = coupled_B * coupled_sol_full;
+          auto coupled_new_residual = coupled_new_lhs - coupled_rhs_full;
+          auto coupled_new_res_norm = ::boba::norm_frobenius(coupled_new_residual) / coupled_rhs_norm;
+          coupled_new_res_for_convergence = coupled_new_res_norm;
+
+          // Keep per-block residuals as diagnostics only. Individual projected
+          // RHS blocks can nearly cancel, making norm(residual_i)/norm(rhs_i)
+          // dominated by roundoff even when the stacked coupled local system is
+          // solved accurately. Coupled convergence and skipping therefore use
+          // the stacked residual above, whose denominator is the full coupled
+          // RHS norm and matches the algebraic system solved at this site.
+          data_t coupled_max_new_res = 0.0;
+          for (size_t ki = 0; ki < Kay; ki++)
           {
             auto local_size = coupled_offsets[ki + 1] - coupled_offsets[ki];
             coupled_sol[ki] = extract_vector_block(coupled_sol_full, coupled_offsets[ki], local_size);
 
-            auto prev_residual = extract_vector_block(coupled_prev_residual, coupled_offsets[ki], local_size);
             auto new_residual = extract_vector_block(coupled_new_residual, coupled_offsets[ki], local_size);
+            auto new_denominator = coupled_norm_rhs[ki];
 
-            if (!is_tiny(coupled_norm_rhs[ki]))
+            if (!is_tiny(new_denominator))
             {
-              coupled_res_prev[ki] = ::boba::norm_frobenius(prev_residual) / coupled_norm_rhs[ki];
-              coupled_res_new[ki] = ::boba::norm_frobenius(new_residual) / coupled_norm_rhs[ki];
+              coupled_res_new[ki] = ::boba::norm_frobenius(new_residual) / new_denominator;
+              coupled_max_new_res = boba::max(coupled_max_new_res, coupled_res_new[ki]);
             }
+          }
+          if (verbose)
+          {
+            std::cout << "TensorTrainAMENBlock: site " << i
+                      << ", coupled_prev_res: " << coupled_prev_res_norm
+                      << ", coupled_new_res: " << coupled_new_res_norm
+                      << ", coupled_max_prev_res: " << coupled_max_prev_res
+                      << ", coupled_max_new_res: " << coupled_max_new_res
+                      << ", coupled_skipped_solve: " << coupled_skipped_solve
+                      << "\n";
           }
         }
 
-        for (size_t ki = 0; ki < K; ki++)
+        for (size_t ki = 0; ki < Kay; ki++)
         {
           auto y1 = cry(ki).cores[i];
-          y1 *= nrmsc[ki];
+          if (normalize_intermediate_quantities)
+          {
+            y1 *= nrmsc[ki];
+          }
 
           boba::Vector<space, data_t> rhs_flat;
           data_t norm_rhs = 0.0;
-          auto real_tol = (convergence_tolerance / ::boba::sqrt(static_cast<data_t>(dimension))) / resid_damp;
 
           data_t res_new, res_prev;
           boba::Vector<space, data_t> sol;
@@ -562,8 +712,8 @@ struct TensorTrainAMENBlock
             rhs_flat = coupled_rhs[ki];
             norm_rhs = coupled_norm_rhs[ki];
             sol = coupled_sol[ki];
-            res_prev = coupled_res_prev[ki];
-            res_new = coupled_res_new[ki];
+            res_prev = coupled_prev_res_for_convergence;
+            res_new = coupled_new_res_for_convergence;
           }
           else
           {
@@ -577,7 +727,7 @@ struct TensorTrainAMENBlock
               i,
               "lr-rhs-project");
 
-            for (size_t kj = 0; kj < K; kj++)
+            for (size_t kj = 0; kj < Kay; kj++)
             {
               if (kj == ki)
               {
@@ -621,8 +771,13 @@ struct TensorTrainAMENBlock
               auto Bsol_prev = boba::tensor_contraction<3>(
                 {"rx", "rx_", "n", "n_", "rxp1", "rxp1_"}, phi1A1phi2, {"rx_", "n_", "rxp1_"}, sol_prev, {"rx", "n", "rxp1"});
 
+              auto norm_lhs_prev = ::boba::norm_frobenius(Bsol_prev);
+              if (is_tiny(norm_lhs_prev))
+              {
+                norm_lhs_prev = norm_rhs;
+              }
               res_prev = ::boba::norm_difference_frobenius(boba::flatten(Bsol_prev), rhs_flat);
-              res_prev /= norm_rhs;
+              res_prev /= norm_lhs_prev;
 
               boba::permute(
                 {"rx", "rx_", "n", "n_", "rxp1", "rxp1_"},
@@ -632,10 +787,23 @@ struct TensorTrainAMENBlock
               auto B_rows = phi1A1phi2.sizes(0) * phi1A1phi2.sizes(1) * phi1A1phi2.sizes(2);
               B = reshape_to_matrix(phi1A1phi2, {B_rows, B_rows});
 
-              sol = backsolve(B, rhs_flat);
+              if (res_prev <= real_tol)
+              {
+                sol = boba::flatten(sol_prev);
+              }
+              else
+              {
+                sol = backsolve(B, rhs_flat);
+              }
 
-              res_new = ::boba::norm_difference_frobenius(B * sol, rhs_flat);
-              res_new /= norm_rhs;
+              auto Bsol = B * sol;
+              auto norm_lhs_new = ::boba::norm_frobenius(Bsol);
+              if (is_tiny(norm_lhs_new))
+              {
+                norm_lhs_new = norm_rhs;
+              }
+              res_new = ::boba::norm_difference_frobenius(Bsol, rhs_flat);
+              res_new /= norm_lhs_new;
             }
             else
             {
@@ -650,18 +818,27 @@ struct TensorTrainAMENBlock
                 i,
                 "lr-bfun-sol-prev");
 
-              res_prev = norm_difference_frobenius(bfun_sol_prev, rhs_tensor) / norm_rhs;
+              auto norm_lhs_prev = ::boba::norm_frobenius(bfun_sol_prev);
+              if (is_tiny(norm_lhs_prev))
+              {
+                norm_lhs_prev = norm_rhs;
+              }
+              res_prev = norm_difference_frobenius(bfun_sol_prev, rhs_tensor) / norm_lhs_prev;
 
               if (!is_tiny(norm_rhs))
               {
-                auto sol_tensor = solve3d_2ml(
-                  phia[ki][ki].cores[i],
-                  crA({ki, ki}).cores[i],
-                  phia[ki][ki].cores[i + 1],
-                  rhs_tensor,
-                  real_tol * norm_rhs,
-                  sol_prev,
-                  solve3d_2ml_options);
+                auto sol_tensor = sol_prev;
+                if (res_prev > real_tol)
+                {
+                  sol_tensor = solve3d_2ml(
+                    phia[ki][ki].cores[i],
+                    crA({ki, ki}).cores[i],
+                    phia[ki][ki].cores[i + 1],
+                    rhs_tensor,
+                    real_tol * norm_rhs,
+                    sol_prev,
+                    solve3d_2ml_options);
+                }
                 sol = flatten(sol_tensor);
                 auto bfun_sol = bfun3_diag_block(
                   phia[ki][ki].cores[i],
@@ -671,7 +848,12 @@ struct TensorTrainAMENBlock
                   ki,
                   i,
                   "lr-bfun-sol");
-                res_new = norm_difference_frobenius(bfun_sol, rhs_tensor) / norm_rhs;
+                auto norm_lhs_new = ::boba::norm_frobenius(bfun_sol);
+                if (is_tiny(norm_lhs_new))
+                {
+                  norm_lhs_new = norm_rhs;
+                }
+                res_new = norm_difference_frobenius(bfun_sol, rhs_tensor) / norm_lhs_new;
               }
               else
               {
@@ -753,7 +935,8 @@ struct TensorTrainAMENBlock
 
               r += 1;
             }
-            r = boba::min(r, s.size() - 1);
+            r = boba::min(r, s.size());
+            r = boba::max(r, size_t{1});
             r = boba::min(r, max_allowed_ranks);
           }
           else
@@ -785,7 +968,7 @@ struct TensorTrainAMENBlock
 
             boba::Tensor<3, space, data_t> crzAt({rz[ki][i], cry(ki).sizes(i), rz[ki][i + 1]});
             crzAt.fill_with_zeros();
-            for (size_t kj = 0; kj < K; kj++)
+            for (size_t kj = 0; kj < Kay; kj++)
             {
               if (crA({ki, kj}).get_number_elements() == 0)
               {
@@ -836,7 +1019,7 @@ struct TensorTrainAMENBlock
 
           if (i < dimension - 1)
           {
-            if ((kickrank > 0) && (!last_sweep))
+            if ((kickrank > 0) && (!last_sweep) && !skip_solution_enrichment)
             {
               // Augment the left factor with residual-based kick vectors, then
               // absorb the resulting basis change into the factor passed right.
@@ -844,7 +1027,7 @@ struct TensorTrainAMENBlock
 
               boba::Tensor<3, space, data_t> leftresid({crx(ki).ranks(i), cry(ki).sizes(i), rz[ki][i + 1]});
               leftresid.fill_with_zeros();
-              for (size_t kj = 0; kj < K; kj++)
+              for (size_t kj = 0; kj < Kay; kj++)
               {
                 if (crA({ki, kj}).get_number_elements() == 0)
                 {
@@ -933,10 +1116,13 @@ struct TensorTrainAMENBlock
             v = boba::reshape_to_matrix(v_new, {v_new.sizes(0), v_new.sizes(1) * v_new.sizes(2)});
 
             // Renormalize the propagated factor and store the two updated TT cores.
-            nrmsc[ki] = nrmsc[ki] / (nrmsy[ki][i] / (nrmsa[ki][ki][i] * nrmsx[ki][i]));
+            if (normalize_intermediate_quantities)
+            {
+              nrmsc[ki] = nrmsc[ki] / (nrmsy[ki][i] / (nrmsa[ki][ki][i] * nrmsx[ki][i]));
+            }
 
             auto curnorm = ::boba::norm_frobenius(v);
-            if (curnorm > 0)
+            if (normalize_intermediate_quantities && curnorm > 0)
             {
               v *= (1.0 / curnorm);
             }
@@ -945,7 +1131,10 @@ struct TensorTrainAMENBlock
               curnorm = 1.0;
             }
 
-            nrmsx[ki][i] *= curnorm;
+            if (normalize_intermediate_quantities)
+            {
+              nrmsx[ki][i] *= curnorm;
+            }
 
             auto u_tensor = boba::reshape_from_matrix<3>(u, {crx(ki).ranks(i), cry(ki).sizes(i), r});
             auto v_tensor = boba::reshape_from_matrix<3>(v, {r, cry(ki).sizes(i + 1), crx(ki).ranks(i + 2)});
@@ -971,16 +1160,18 @@ struct TensorTrainAMENBlock
         {
           // Refresh the left-to-right environments so the next site sees the
           // updated solution and enrichment bases.
-          for (size_t row = 0; row < K; row++)
+          for (size_t row = 0; row < Kay; row++)
           {
-            for (size_t col = 0; col < K; col++)
+            for (size_t col = 0; col < Kay; col++)
             {
               if (crA({row, col}).get_number_elements() == 0)
               {
                 continue;
               }
 
-              auto phia_external_norm = (row == col) ? static_cast<data_t>(-1.0) : static_cast<data_t>(1.0);
+              auto phia_external_norm = normalize_intermediate_quantities
+                                          ? ((row == col) ? static_cast<data_t>(-1.0) : static_cast<data_t>(1.0))
+                                          : static_cast<data_t>(1.0);
 
               std::tie(phia[row][col].cores[i + 1], nrmsa[row][col][i]) =
                 compute_next_phi_block<dimension>(
@@ -995,7 +1186,7 @@ struct TensorTrainAMENBlock
                   i,
                   "lr-phia");
 
-              if (row != col)
+              if (row != col || !normalize_intermediate_quantities)
               {
                 nrmsa[row][col][i] = 1.0;
               }
@@ -1007,26 +1198,33 @@ struct TensorTrainAMENBlock
                 crx(row).cores[i],
                 cry(row).cores[i],
                 true,
-                -1.0,
+                normalize_intermediate_quantities ? static_cast<data_t>(-1.0) : static_cast<data_t>(1.0),
                 row,
                 row,
                 i,
                 "lr-phiy");
 
-            nrmsc[row] = nrmsc[row] * (nrmsy[row][i] / (nrmsa[row][row][i] * nrmsx[row][i]));
+            if (normalize_intermediate_quantities)
+            {
+              nrmsc[row] = nrmsc[row] * (nrmsy[row][i] / (nrmsa[row][row][i] * nrmsx[row][i]));
+            }
           }
 
           if ((kickrank > 0) && (!last_sweep))
           {
-            for (size_t row = 0; row < K; row++)
+            for (size_t row = 0; row < Kay; row++)
             {
-              for (size_t col = 0; col < K; col++)
+              for (size_t col = 0; col < Kay; col++)
               {
                 if (crA({row, col}).get_number_elements() == 0)
                 {
                   continue;
                 }
-                auto phiza_external_norm = (row == col) ? nrmsa[row][col][i] : static_cast<data_t>(1.0);
+                auto phiza_external_norm = static_cast<data_t>(1.0);
+                if (normalize_intermediate_quantities && (row == col))
+                {
+                  phiza_external_norm = nrmsa[row][col][i];
+                }
 
                 std::tie(phiza[row][col].cores[i + 1], std::ignore) =
                   compute_next_phi_block<dimension>(
@@ -1048,7 +1246,7 @@ struct TensorTrainAMENBlock
                   crz[row].cores[i],
                   cry(row).cores[i],
                   true,
-                  nrmsy[row][i],
+                  normalize_intermediate_quantities ? nrmsy[row][i] : static_cast<data_t>(1.0),
                   row,
                   row,
                   i,
@@ -1058,29 +1256,86 @@ struct TensorTrainAMENBlock
         }
       }
 
+      data_t raw_global_res = 0.0;
+      data_t global_res = 0.0;
+      bool have_global_res = false;
+      if (verbose)
+      {
+        auto raw_global_residual = apply_nonempty_blocks(crA, crx);
+        raw_global_residual -= cry;
+        raw_global_residual.round();
+        raw_global_res = ::boba::norm_frobenius(raw_global_residual) / norm_cry;
+
+        auto crx_rescaled = crx;
+        for (size_t ki = 0; ki < Kay; ki++)
+        {
+          auto scaled_nrmsx = boba::exp(boba::sum(boba::log(nrmsx[ki])) / static_cast<data_t>(dimension));
+          for (index_t d = 0; d < dimension; d++)
+          {
+            crx_rescaled(ki).cores[d] = crx_rescaled(ki).cores[d] * scaled_nrmsx;
+          }
+        }
+        auto global_residual = apply_nonempty_blocks(crA, crx_rescaled);
+        global_residual -= cry;
+        global_residual.round();
+        global_res = ::boba::norm_frobenius(global_residual) / norm_cry;
+        have_global_res = true;
+      }
+
       if (verbose)
       {
         std::cout << "TensorTrainAMENBlock: sweep " << swp
                   << ", max_dx: " << max_dx
                   << ", max_res: " << max_res;
-        for (size_t ki = 0; ki < K; ki++)
+        for (size_t ki = 0; ki < Kay; ki++)
         {
           std::cout << ", ranks[" << ki << "]: " << crx(ki).ranks_string();
         }
-        std::cout << std::endl;
+        std::cout << ", raw_global_res: " << raw_global_res
+                  << ", global_res: " << global_res << std::endl;
       }
 
-      // Convergence is driven by the largest pre-truncation local residual seen
-      // during the sweep.
-      if (max_res < convergence_tolerance)
+      if ((swp + 1 >= minimum_sweeps) && (max_res < convergence_tolerance))
       {
-        break;
+        if (!have_global_res)
+        {
+          auto crx_rescaled = crx;
+          for (size_t ki = 0; ki < Kay; ki++)
+          {
+            auto scaled_nrmsx = boba::exp(boba::sum(boba::log(nrmsx[ki])) / static_cast<data_t>(dimension));
+            for (index_t d = 0; d < dimension; d++)
+            {
+              crx_rescaled(ki).cores[d] = crx_rescaled(ki).cores[d] * scaled_nrmsx;
+            }
+          }
+
+          auto global_residual = apply_nonempty_blocks(crA, crx_rescaled);
+          global_residual -= cry;
+          global_residual.round();
+          global_res = ::boba::norm_frobenius(global_residual) / norm_cry;
+        }
+
+        if (verbose)
+        {
+          std::cout << "TensorTrainAMENBlock: global_res " << global_res << std::endl;
+        }
+
+        if (global_res < convergence_tolerance)
+        {
+          converged = true;
+          break;
+        }
       }
     }
 
-    // Rebalance the accumulated core scaling before the final post-processing step.
+    if (!converged)
+    {
+      boba_warn("TensorTrainAMENBlock did not certify convergence before max_sweeps; returning the last iterate.");
+    }
+
+    // Rebalance the accumulated core scaling before returning the final block vector.
     checkpoint();
-    for (size_t ki = 0; ki < K; ki++)
+    for (size_t ki = 0; ki < Kay; ki++)
     {
       auto scaled_nrmsx = boba::exp(boba::sum(boba::log(nrmsx[ki])) / static_cast<data_t>(dimension));
       for (index_t d = 0; d < dimension; d++)
@@ -1089,71 +1344,14 @@ struct TensorTrainAMENBlock
       }
     }
 
-    // For coupled systems, finish with a small dense block-scalar correction.
-    if (has_offdiag_blocks)
-    {
-      // Build A*x block-by-block and solve a small dense least-squares-like
-      // correction so the block components are scaled consistently.
-      std::vector<std::vector<::boba::TensorTrain<dimension, space, data_t>>> block_images(K);
-      for (size_t row = 0; row < K; row++)
-      {
-        block_images[row].resize(K);
-        for (size_t col = 0; col < K; col++)
-        {
-          if (crA({row, col}).get_number_elements() == 0)
-          {
-            continue;
-          }
-          block_images[row][col] = crA({row, col}) * crx(col);
-        }
-      }
-
-      boba::Matrix<host_space, data_t> scalar_system({static_cast<index_t>(K), static_cast<index_t>(K)});
-      scalar_system.fill_with_zeros();
-      boba::Vector<host_space, data_t> scalar_rhs({static_cast<index_t>(K)});
-      scalar_rhs.fill_with_zeros();
-
-      for (size_t col_p = 0; col_p < K; col_p++)
-      {
-        data_t rhs_entry = 0.0;
-        for (size_t row = 0; row < K; row++)
-        {
-          if (block_images[row][col_p].get_number_elements() == 0)
-          {
-            continue;
-          }
-          rhs_entry += ::boba::inner_product(block_images[row][col_p], cry(row));
-        }
-        scalar_rhs({static_cast<index_t>(col_p)}) = rhs_entry;
-
-        for (size_t col_q = 0; col_q < K; col_q++)
-        {
-          data_t system_entry = 0.0;
-          for (size_t row = 0; row < K; row++)
-          {
-            if ((block_images[row][col_p].get_number_elements() == 0) || (block_images[row][col_q].get_number_elements() == 0))
-            {
-              continue;
-            }
-            system_entry += ::boba::inner_product(block_images[row][col_p], block_images[row][col_q]);
-          }
-          scalar_system({static_cast<index_t>(col_p), static_cast<index_t>(col_q)}) = system_entry;
-        }
-      }
-
-      auto block_scalars = backsolve(scalar_system, scalar_rhs);
-      auto block_scalars_view = block_scalars.const_view();
-      for (size_t col = 0; col < K; col++)
-      {
-        // Applying the scalar to the first core scales the full TT block vector.
-        crx(col).cores[0] *= block_scalars_view(static_cast<index_t>(col));
-      }
-    }
+    // Coupled systems are already certified against the stacked global residual
+    // above. Do not apply a post-solve block-scalar refit here: it can move a
+    // converged coupled solution away from the residual-minimizing iterate.
 
     checkpoint();
-    ::boba::BlockVector<::boba::TensorTrain<dimension, host_space, data_t>> host_crx(K);
+    ::boba::BlockVector<::boba::TensorTrain<dimension, host_space, data_t>> host_crx(Kay);
     host_crx.m_name = crx.m_name;
-    for (size_t ki = 0; ki < K; ki++)
+    for (size_t ki = 0; ki < Kay; ki++)
     {
       host_crx(ki) = crx(ki);
     }
@@ -1161,6 +1359,59 @@ struct TensorTrainAMENBlock
   }
 
 private:
+  template <execution_space space_local>
+  ::boba::Vector<space_local, data_t> solve_coupled_site_system(
+    const ::boba::Matrix<space_local, data_t>& matrix,
+    const ::boba::Vector<space_local, data_t>& rhs)
+  {
+    if constexpr (space_local == execution_space::CPU)
+    {
+      auto rhs_matrix = reshape_to_matrix(rhs, {rhs.size(), 1});
+      ::boba::Matrix<space_local, data_t> output({matrix.cols(), 1});
+      ::boba::detail::ls_solve_cod_eigen(matrix, rhs_matrix, output);
+      return flatten(output);
+    }
+    else
+    {
+      return backsolve(matrix, rhs);
+    }
+  }
+
+  template <size_t dimension_local, execution_space space_local>
+  ::boba::BlockVector<::boba::TensorTrain<dimension_local, space_local, data_t>>
+  apply_nonempty_blocks(
+    const ::boba::BlockOperator<::boba::TensorTrainMatrix<dimension_local, space_local, data_t>>& crA,
+    const ::boba::BlockVector<::boba::TensorTrain<dimension_local, space_local, data_t>>& crx)
+  {
+    ::boba::BlockVector<::boba::TensorTrain<dimension_local, space_local, data_t>> output(crA.block_rows);
+
+    for (size_t row = 0; row < crA.block_rows; row++)
+    {
+      bool initialized = false;
+      for (size_t col = 0; col < crA.block_cols; col++)
+      {
+        if (crA({row, col}).get_number_elements() == 0)
+        {
+          continue;
+        }
+
+        if (initialized)
+        {
+          output(row) += crA({row, col}) * crx(col);
+        }
+        else
+        {
+          output(row) = crA({row, col}) * crx(col);
+          initialized = true;
+        }
+      }
+      boba_always_assert(initialized, "Block AMEn global residual requires at least one nonempty block per row.");
+      output(row).round();
+    }
+
+    return output;
+  }
+
   /**
    * \brief Update a projected operator environment and attach block/site context to errors.
    *
@@ -1310,6 +1561,76 @@ public:
       output_view({idx}) = source_view({offset + idx});
     });
     return output;
+  }
+
+  /**
+   * \brief Convert a squared local block norm into a multiplicative scale.
+   *
+   * A zero or tiny norm means there is no useful scale information for that
+   * block, so the neutral factor is returned.
+   */
+  data_t make_local_scale_factor(data_t norm_squared) const
+  {
+    if (norm_squared <= 0.0)
+    {
+      return 1.0;
+    }
+    auto norm = ::boba::sqrt(norm_squared);
+    if (::boba::is_tiny(norm))
+    {
+      return 1.0;
+    }
+    return 1.0 / norm;
+  }
+
+  /**
+   * \brief Scale one contiguous slice of a dense work vector in place.
+   */
+  template <execution_space space_local>
+  void scale_vector_block(
+    ::boba::Vector<space_local, data_t>& vector,
+    index_t offset,
+    index_t size,
+    data_t factor)
+  {
+    if (::boba::abs(factor - 1.0) <= ::boba::epsilon<data_t>())
+    {
+      return;
+    }
+    auto vector_view = vector.view();
+    ::boba::loop<space_local, 1>(size,
+                                 [=] __boba_host_device__(index_t idx)
+    {
+      vector_view({offset + idx}) *= factor;
+    });
+  }
+
+  /**
+   * \brief Scale one dense matrix subblock in place.
+   */
+  template <execution_space space_local>
+  void scale_matrix_block(
+    ::boba::Matrix<space_local, data_t>& matrix,
+    index_t row_begin,
+    index_t row_end,
+    index_t col_begin,
+    index_t col_end,
+    data_t factor)
+  {
+    if (::boba::abs(factor - 1.0) <= ::boba::epsilon<data_t>())
+    {
+      return;
+    }
+    auto rows = row_end - row_begin;
+    auto cols = col_end - col_begin;
+    auto matrix_view = matrix.view();
+    ::boba::loop<space_local, 1>(rows * cols,
+                                 [=] __boba_host_device__(index_t idx)
+    {
+      auto row = idx / cols;
+      auto col = idx - row * cols;
+      matrix_view({row_begin + row, col_begin + col}) *= factor;
+    });
   }
 
 private:

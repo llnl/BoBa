@@ -42,12 +42,13 @@ constexpr boba::tictoc_units tictoc_units = boba::tictoc_units::seconds;
   The right-hand side is manufactured from a known exact solution. For each block,
   the exact solution is a sum of separable sinusoidal terms,
 
-    u_exact = sum_{k=0}^{r-1} alpha_k prod_d sin(omega_{k,d} * pi * x_d),
+    u_exact = sum_{k=0}^{r-1} alpha_k prod_d sin(omega_{k,d} * pi * x_d + phi_{k,d}),
 
-  with block- and dimension-dependent amplitudes/frequencies. The input parameter
-  exact_solution_rank controls the number of separable terms in that sum. The test
-  forms f = A * u_exact, solves the block system in TT form, and checks both the
-  explicit residual and the relative error against the manufactured solution.
+  with block-, term-, and dimension-dependent amplitudes, frequencies, and phase
+  shifts. The input parameter exact_solution_rank controls the number of
+  separable terms in that sum. The test forms f = A * u_exact, solves the block
+  system in TT form, and checks both the explicit residual and the relative error
+  against the manufactured solution.
 */
 
 template <size_t dimension>
@@ -72,9 +73,11 @@ boba::Tensor<dimension, space, double> make_exact_block_solution(
       for (size_t dim = 0; dim < dimension; dim++)
       {
         auto x = static_cast<double>(midx[dim] + 1) / static_cast<double>(sizes[dim] + 1);
-        auto frequency = static_cast<double>(2 * term + 1 + 2 * ((block_id + dim) % 2));
-        auto phase = frequency * boba::pi * x;
-        auto amplitude = 1.0 + static_cast<double>(block_id + dim) / (10.0 * static_cast<double>(term + 1));
+        auto frequency = static_cast<double>(
+          1 + ((3 * term + 2 * dim + 5 * block_id + term * dim) % (sizes[dim] + 1)));
+        auto phase_shift = 0.17 * static_cast<double>((block_id + 1) * (term + 1) * (dim + 2));
+        auto phase = frequency * boba::pi * x + phase_shift;
+        auto amplitude = 1.0 + static_cast<double>((block_id + 1) * (dim + 1)) / (8.0 * static_cast<double>(term + 1));
         term_value *= amplitude * boba::sin(phase);
       }
       value += term_value;
@@ -104,6 +107,7 @@ struct input
   double coupling_strength = 1.0e-2;
   size_t coupling_rank = 1;
   size_t exact_solution_rank = 3;
+  bool verbose = false;
   double dx = 1.0;
 };
 
@@ -229,7 +233,7 @@ void run_block_test(
         for (size_t term = 0; term < parameters.coupling_rank; term++)
         {
           boba::Array<boba::Matrix<space, double>, dimension> array_of_matrices;
-          auto term_weight = coupling_strength * boba::pow(0.3, static_cast<double>(term));
+          auto term_weight = boba::pow(0.3, static_cast<double>(term));
 
           for (size_t d = 0; d < dimension; d++)
           {
@@ -264,6 +268,15 @@ void run_block_test(
           {
             A_coupling += A_term;
           }
+        }
+
+        auto diagonal_scale = boba::sqrt(
+          ::boba::norm_frobenius(A({row, row})) *
+          ::boba::norm_frobenius(A({col, col})));
+        auto coupling_norm = ::boba::norm_frobenius(A_coupling);
+        if (coupling_norm > 0.0)
+        {
+          A_coupling *= coupling_strength * diagonal_scale / coupling_norm;
         }
 
         A({row, col}) = A_coupling;
@@ -325,6 +338,7 @@ void run_block_test(
   tt_amen_block.convergence_tolerance = parameters.convergence_tolerance;
   tt_amen_block.solve3d_2ml_options.method = parameters.solve3d_2ml_method;
   tt_amen_block.solve3d_2ml_options.tolerance_relative = parameters.solve3d_2ml_tolerance_relative;
+  tt_amen_block.verbose = parameters.verbose;
 
   boba::TicToc<tictoc_units> timer;
   timer.tic();
@@ -348,6 +362,7 @@ void run_block_test(
       }
       residual_vec += A({blk, src}) * solution(src);
     }
+    residual_vec.round();
     auto residual_norm = ::boba::norm_frobenius(residual_vec);
     auto rhs_norm = ::boba::norm_frobenius(rhs(blk));
     auto exact_norm = ::boba::norm_frobenius(exact_solution_tt(blk));
@@ -457,6 +472,12 @@ int main(int argc, char* argv[])
     "-r",
     "--exact_solution_rank",
     "Target rank for the manufactured exact block solution.");
+
+  args.add_optional_argument(
+    parameters.verbose,
+    "-v",
+    "--verbose",
+    "Print per-sweep Block TT-AMEn residual history.");
 
   args.parse_check();
 
