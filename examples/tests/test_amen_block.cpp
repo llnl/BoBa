@@ -298,27 +298,15 @@ void run_block_test(
 
   block_tt_t exact_solution_tt(n_blocks);
   boba::BlockVector<boba::TensorTrain<dimension, host_space, double>> exact_solution_tt_host(n_blocks);
-  double max_exact_solution_compression_error = 0.0;
   for (size_t blk = 0; blk < n_blocks; blk++)
   {
     exact_solution_tt(blk) = boba::compress_to_TensorTrain(exact_solution(blk), 1.0e-14, 0.0);
     boba::Tensor<dimension, host_space, double> exact_solution_host = exact_solution(blk);
     exact_solution_tt_host(blk) = boba::compress_to_TensorTrain(exact_solution_host, 1.0e-14, 0.0);
-    auto exact_solution_norm = ::boba::norm_frobenius(exact_solution_tt_host(blk));
-    auto exact_solution_compression_error =
-      boba::norm_difference_frobenius(exact_solution_tt(blk), exact_solution_tt_host(blk));
-    if (exact_solution_norm > 1.0e-14)
-    {
-      exact_solution_compression_error /= exact_solution_norm;
-    }
-    max_exact_solution_compression_error =
-      boba::max(max_exact_solution_compression_error, exact_solution_compression_error);
   }
 
   // Create RHS from the manufactured exact solution
-  block_tensor_t rhs_tensor_dense(n_blocks);
   block_tt_t rhs(n_blocks);
-  double max_rhs_compression_error = 0.0;
   for (size_t blk = 0; blk < n_blocks; blk++)
   {
     tensor_t rhs_tensor(block_sizes[blk]);
@@ -331,23 +319,8 @@ void run_block_test(
       }
       rhs_tensor += A({blk, src}) * exact_solution(src);
     }
-    rhs_tensor_dense(blk) = rhs_tensor;
     rhs(blk) = boba::compress_to_TensorTrain(rhs_tensor, 1.0e-14, 0.0);
-    tensor_t rhs_compressed_tensor = rhs(blk).decompress();
-    auto rhs_tensor_norm = ::boba::norm_frobenius(rhs_tensor);
-    auto rhs_compression_error =
-      ::boba::norm_frobenius(rhs_compressed_tensor - rhs_tensor);
-    if (rhs_tensor_norm > 1.0e-14)
-    {
-      rhs_compression_error /= rhs_tensor_norm;
-    }
-    max_rhs_compression_error =
-      boba::max(max_rhs_compression_error, rhs_compression_error);
   }
-  std::cout << "Max relative compression error in exact solution blocks: "
-            << max_exact_solution_compression_error << std::endl;
-  std::cout << "Max relative compression error in RHS blocks: "
-            << max_rhs_compression_error << std::endl;
 
   // Create initial guess
   block_tt_t initial_guess(n_blocks);
@@ -356,74 +329,6 @@ void run_block_test(
     initial_guess(blk).resize(block_sizes[blk]);
     initial_guess(blk).fill_with(1.0);
   }
-
-  constexpr double tiny_norm = 1.0e-14;
-  block_tt_t reference_residual(n_blocks);
-  block_tt_t compressed_exact_matvec(n_blocks);
-  double max_operator_application_error_from_compressed_exact = 0.0;
-  double dense_residual_from_compressed_terms_norm_squared = 0.0;
-  auto block_rhs_norm = ::boba::norm_frobenius(rhs);
-  for (size_t row = 0; row < n_blocks; row++)
-  {
-    bool initialized = false;
-    tt_t compressed_exact_matvec_row;
-    for (size_t src = 0; src < n_blocks; src++)
-    {
-      if (A({row, src}).get_number_elements() == 0)
-      {
-        continue;
-      }
-      if (initialized)
-      {
-        compressed_exact_matvec_row += A({row, src}) * exact_solution_tt(src);
-      }
-      else
-      {
-        compressed_exact_matvec_row = A({row, src}) * exact_solution_tt(src);
-        initialized = true;
-      }
-    }
-    boba_always_assert(initialized, "Reference residual requires at least one nonempty block per row.");
-    tensor_t compressed_exact_matvec_tensor = compressed_exact_matvec_row.decompress();
-    auto dense_rhs_norm = ::boba::norm_frobenius(rhs_tensor_dense(row));
-    auto operator_application_error =
-      ::boba::norm_frobenius(compressed_exact_matvec_tensor - rhs_tensor_dense(row));
-    if (dense_rhs_norm > tiny_norm)
-    {
-      operator_application_error /= dense_rhs_norm;
-    }
-    max_operator_application_error_from_compressed_exact =
-      boba::max(max_operator_application_error_from_compressed_exact, operator_application_error);
-    compressed_exact_matvec(row) = compressed_exact_matvec_row;
-    tensor_t compressed_rhs_tensor = rhs(row).decompress();
-    auto dense_residual_from_compressed_terms =
-      compressed_exact_matvec_tensor - compressed_rhs_tensor;
-    const auto dense_residual_from_compressed_terms_norm =
-      ::boba::norm_frobenius(dense_residual_from_compressed_terms);
-    dense_residual_from_compressed_terms_norm_squared +=
-      dense_residual_from_compressed_terms_norm * dense_residual_from_compressed_terms_norm;
-    reference_residual(row) = compressed_exact_matvec_row;
-    reference_residual(row) -= rhs(row);
-  }
-  std::cout << "Max relative error in A*compressed(exact solution) vs dense A*exact solution: "
-            << max_operator_application_error_from_compressed_exact << std::endl;
-  auto dense_residual_from_compressed_terms_relative =
-    (block_rhs_norm > tiny_norm)
-      ? (::boba::sqrt(dense_residual_from_compressed_terms_norm_squared) / block_rhs_norm)
-      : ::boba::sqrt(dense_residual_from_compressed_terms_norm_squared);
-  std::cout << "Dense relative residual from decompressed A*compressed(exact solution) minus decompressed compressed RHS: "
-            << dense_residual_from_compressed_terms_relative << std::endl;
-  auto reference_residual_norm = ::boba::norm_frobenius(reference_residual);
-  auto reference_relative_residual = (block_rhs_norm > tiny_norm) ? (reference_residual_norm / block_rhs_norm) : reference_residual_norm;
-  std::cout << "Pre-solve compressed reference relative residual: "
-            << reference_relative_residual << std::endl;
-  auto rounded_reference_residual = reference_residual;
-  rounded_reference_residual.round();
-  auto rounded_reference_residual_norm = ::boba::norm_frobenius(rounded_reference_residual);
-  auto rounded_reference_relative_residual =
-    (block_rhs_norm > tiny_norm) ? (rounded_reference_residual_norm / block_rhs_norm) : rounded_reference_residual_norm;
-  std::cout << "Pre-solve rounded compressed reference relative residual: "
-            << rounded_reference_relative_residual << std::endl;
 
   checkpoint();
 
@@ -444,6 +349,7 @@ void run_block_test(
   double max_residual = 0.0;
   double max_solution_error = 0.0;
   bool saw_rank_growth = false;
+  constexpr double tiny_norm = 1.0e-14;
   for (size_t blk = 0; blk < n_blocks; blk++)
   {
     auto residual_vec = rhs(blk);
