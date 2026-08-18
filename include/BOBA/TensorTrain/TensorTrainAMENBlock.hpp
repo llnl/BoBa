@@ -94,7 +94,7 @@ struct TensorTrainAMENBlock
     boba_always_assert_equal(cry.block_size, crA.block_rows, "RHS block size must match operator block size");
     boba_always_assert_equal(tt_initial_guess.block_size, crA.block_rows, "Initial guess block size must match operator block size");
 
-    size_t K = crA.block_rows;
+    size_t Kay = crA.block_rows;
     bool has_offdiag_blocks = false;
     data_t norm_cry = ::boba::norm_frobenius(cry);
     if (::boba::is_tiny(norm_cry))
@@ -103,9 +103,9 @@ struct TensorTrainAMENBlock
     }
 
     // Validate the block layout and detect whether any off-diagonal couplings are present.
-    for (size_t ki = 0; ki < K; ki++)
+    for (size_t ki = 0; ki < Kay; ki++)
     {
-      for (size_t kj = 0; kj < K; kj++)
+      for (size_t kj = 0; kj < Kay; kj++)
       {
         if (crA({ki, kj}).get_number_elements() > 0)
         {
@@ -138,19 +138,19 @@ struct TensorTrainAMENBlock
     checkpoint();
 
     // Allocate the AMEn environments and the enrichment tensors for each block row/column pair.
-    std::vector<std::vector<::boba::TensorTrain<dimension + 1, space, data_t>>> phia(K);
-    std::vector<::boba::TensorTrain<dimension + 1, space, data_t>> phiy(K);
-    std::vector<std::vector<::boba::TensorTrain<dimension + 1, space, data_t>>> phiza(K);
-    std::vector<::boba::TensorTrain<dimension + 1, space, data_t>> phizy(K);
-    std::vector<::boba::TensorTrain<dimension, space, data_t>> crz(K);
+    std::vector<std::vector<::boba::TensorTrain<dimension + 1, space, data_t>>> phia(Kay);
+    std::vector<::boba::TensorTrain<dimension + 1, space, data_t>> phiy(Kay);
+    std::vector<std::vector<::boba::TensorTrain<dimension + 1, space, data_t>>> phiza(Kay);
+    std::vector<::boba::TensorTrain<dimension + 1, space, data_t>> phizy(Kay);
+    std::vector<::boba::TensorTrain<dimension, space, data_t>> crz(Kay);
 
     checkpoint();
-    for (size_t ki = 0; ki < K; ki++)
+    for (size_t ki = 0; ki < Kay; ki++)
     {
-      phia[ki].resize(K);
-      phiza[ki].resize(K);
+      phia[ki].resize(Kay);
+      phiza[ki].resize(Kay);
 
-      for (size_t kj = 0; kj < K; kj++)
+      for (size_t kj = 0; kj < Kay; kj++)
       {
         if (crA({ki, kj}).get_number_elements() > 0)
         {
@@ -184,21 +184,21 @@ struct TensorTrainAMENBlock
 
     // Track per-interface normalization factors so the left/right environment
     // contractions stay numerically stable across sweeps.
-    std::vector<::boba::Array<data_t, dimension - 1>> nrmsx(K);
-    std::vector<std::vector<::boba::Array<data_t, dimension - 1>>> nrmsa(K);
-    std::vector<::boba::Array<data_t, dimension - 1>> nrmsy(K);
-    std::vector<data_t> nrmsc(K, 1.0);
-    std::vector<::boba::Array<size_t, dimension + 1>> rz(K);
-    std::vector<index_t> rznew(K, 0);
-    std::vector<boba::Matrix<space, data_t>> crznew(K);
-    std::vector<boba::Tensor<3, space, data_t>> crznew_tensor(K);
+    std::vector<::boba::Array<data_t, dimension - 1>> nrmsx(Kay);
+    std::vector<std::vector<::boba::Array<data_t, dimension - 1>>> nrmsa(Kay);
+    std::vector<::boba::Array<data_t, dimension - 1>> nrmsy(Kay);
+    std::vector<data_t> nrmsc(Kay, 1.0);
+    std::vector<::boba::Array<size_t, dimension + 1>> rz(Kay);
+    std::vector<index_t> rznew(Kay, 0);
+    std::vector<boba::Matrix<space, data_t>> crznew(Kay);
+    std::vector<boba::Tensor<3, space, data_t>> crznew_tensor(Kay);
 
-    for (size_t ki = 0; ki < K; ki++)
+    for (size_t ki = 0; ki < Kay; ki++)
     {
       nrmsx[ki] = ::boba::filled_array<dimension - 1, data_t>(1.0);
       nrmsy[ki] = ::boba::filled_array<dimension - 1, data_t>(1.0);
-      nrmsa[ki].resize(K);
-      for (size_t kj = 0; kj < K; kj++)
+      nrmsa[ki].resize(Kay);
+      for (size_t kj = 0; kj < Kay; kj++)
       {
         nrmsa[ki][kj] = ::boba::filled_array<dimension - 1, data_t>(1.0);
       }
@@ -216,13 +216,13 @@ struct TensorTrainAMENBlock
         size_t i = ip1 - 1;
         // Snapshot the current site cores before any block is updated so
         // off-diagonal couplings at this site all see a consistent iterate.
-        std::vector<boba::Tensor<3, space, data_t>> site_x_cores(K);
-        for (size_t kj = 0; kj < K; kj++)
+        std::vector<boba::Tensor<3, space, data_t>> site_x_cores(Kay);
+        for (size_t kj = 0; kj < Kay; kj++)
         {
           site_x_cores[kj] = crx(kj).cores[i];
         }
 
-        for (size_t ki = 0; ki < K; ki++)
+        for (size_t ki = 0; ki < Kay; ki++)
         {
           if ((kickrank > 0) && (!last_sweep))
           {
@@ -239,7 +239,7 @@ struct TensorTrainAMENBlock
               boba::Tensor<3, space, data_t> crzAt({rz[ki][i], cry(ki).sizes(i), rz[ki][i + 1]});
               crzAt.fill_with_zeros();
 
-              for (size_t kj = 0; kj < K; kj++)
+              for (size_t kj = 0; kj < Kay; kj++)
               {
                 if (crA({ki, kj}).get_number_elements() == 0)
                 {
@@ -308,7 +308,7 @@ struct TensorTrainAMENBlock
               auto crz_prev = crz[ki].cores[i - 1];
               try
               {
-                crz[ki].cores[i - 1] = ::boba::tensor_contraction<1, space>(
+                crz[ki].cores[i - 1] = ::boba::tensor_contraction<1>(
                   {"rzm1", "n", "rz"}, crz_prev, {"k", "rz"}, rv, {"rzm1", "n", "k"});
               }
               catch (const std::exception& error)
@@ -352,7 +352,7 @@ struct TensorTrainAMENBlock
           Tensor<3, space, data_t> new_cr2mat;
           try
           {
-            new_cr2mat = ::boba::tensor_contraction<1, space>(
+            new_cr2mat = ::boba::tensor_contraction<1>(
               {"rxm1", "n", "rx"}, cr2, {"k", "rx"}, rv, {"rxm1", "n", "k"});
           }
           catch (const std::exception& error)
@@ -386,9 +386,9 @@ struct TensorTrainAMENBlock
 
         // Update right-to-left operator and RHS environments after every block
         // has contributed its newly orthogonalized site core.
-        for (size_t row = 0; row < K; row++)
+        for (size_t row = 0; row < Kay; row++)
         {
-          for (size_t col = 0; col < K; col++)
+          for (size_t col = 0; col < Kay; col++)
           {
             if (crA({row, col}).get_number_elements() == 0)
             {
@@ -438,20 +438,22 @@ struct TensorTrainAMENBlock
         if ((kickrank > 0) && (!last_sweep))
         {
           // Mirror the same environment propagation for the enrichment tensor z.
-          for (size_t row = 0; row < K; row++)
+          for (size_t row = 0; row < Kay; row++)
           {
             rz[row][i] = rznew[row];
 
-            for (size_t col = 0; col < K; col++)
+            for (size_t col = 0; col < Kay; col++)
             {
               if (crA({row, col}).get_number_elements() == 0)
               {
                 continue;
               }
 
-              auto phiza_external_norm = normalize_intermediate_quantities
-                                           ? ((row == col) ? nrmsa[row][col][i - 1] : static_cast<data_t>(1.0))
-                                           : static_cast<data_t>(1.0);
+              auto phiza_external_norm = static_cast<data_t>(1.0);
+              if (normalize_intermediate_quantities && (row == col))
+              {
+                phiza_external_norm = nrmsa[row][col][i - 1];
+              }
 
               std::tie(phiza[row][col].cores[i], std::ignore) =
                 compute_next_phi_block<dimension>(
@@ -490,8 +492,8 @@ struct TensorTrainAMENBlock
       // Sweep left-to-right, solve the local problems, and adapt the TT ranks.
       for (size_t i = 0; i < dimension; i++)
       {
-        std::vector<boba::Tensor<3, space, data_t>> site_x_cores(K);
-        for (size_t kj = 0; kj < K; kj++)
+        std::vector<boba::Tensor<3, space, data_t>> site_x_cores(Kay);
+        for (size_t kj = 0; kj < Kay; kj++)
         {
           site_x_cores[kj] = crx(kj).cores[i];
         }
@@ -499,12 +501,12 @@ struct TensorTrainAMENBlock
         // Temporary storage for the site-local linear system. For diagonal block
         // systems each block is solved independently; otherwise all blocks are
         // stacked into one coupled dense solve at this site.
-        std::vector<boba::Vector<space, data_t>> coupled_rhs(K);
-        std::vector<boba::Vector<space, data_t>> coupled_sol(K);
-        std::vector<data_t> coupled_norm_rhs(K, 0.0);
-        std::vector<data_t> coupled_res_prev(K, 0.0);
-        std::vector<data_t> coupled_res_new(K, 0.0);
-        std::vector<index_t> coupled_offsets(K + 1, 0);
+        std::vector<boba::Vector<space, data_t>> coupled_rhs(Kay);
+        std::vector<boba::Vector<space, data_t>> coupled_sol(Kay);
+        std::vector<data_t> coupled_norm_rhs(Kay, 0.0);
+        std::vector<data_t> coupled_res_prev(Kay, 0.0);
+        std::vector<data_t> coupled_res_new(Kay, 0.0);
+        std::vector<index_t> coupled_offsets(Kay + 1, 0);
         auto use_coupled_site_solve = has_offdiag_blocks;
         auto real_tol = (convergence_tolerance / ::boba::sqrt(static_cast<data_t>(dimension))) / resid_damp;
         bool skip_solution_enrichment = false;
@@ -514,7 +516,7 @@ struct TensorTrainAMENBlock
         // For coupled systems, assemble one local block system spanning all blocks at this site.
         if (use_coupled_site_solve)
         {
-          for (size_t ki = 0; ki < K; ki++)
+          for (size_t ki = 0; ki < Kay; ki++)
           {
             // Project each block RHS into the current local basis so every block
             // contributes one contiguous segment to the coupled site system.
@@ -536,7 +538,7 @@ struct TensorTrainAMENBlock
             coupled_offsets[ki + 1] = coupled_offsets[ki] + static_cast<index_t>(coupled_rhs[ki].size());
           }
 
-          auto total_local_size = coupled_offsets[K];
+          auto total_local_size = coupled_offsets[Kay];
           boba::Matrix<space, data_t> coupled_B({total_local_size, total_local_size});
           coupled_B.fill_with_zeros();
 
@@ -546,8 +548,8 @@ struct TensorTrainAMENBlock
           boba::Vector<space, data_t> coupled_sol_prev_full({total_local_size});
           coupled_sol_prev_full.fill_with_zeros();
 
-          std::vector<data_t> coupled_row_norm_squared(K, 0.0);
-          for (size_t ki = 0; ki < K; ki++)
+          std::vector<data_t> coupled_row_norm_squared(Kay, 0.0);
+          for (size_t ki = 0; ki < Kay; ki++)
           {
             // Assemble the dense site matrix block-by-block from the projected
             // TT operator environments and the old local iterate.
@@ -555,7 +557,7 @@ struct TensorTrainAMENBlock
             copy_vector_block(coupled_sol_prev_full, coupled_offsets[ki], flatten(site_x_cores[ki]));
             coupled_row_norm_squared[ki] += coupled_norm_rhs[ki] * coupled_norm_rhs[ki];
 
-            for (size_t kj = 0; kj < K; kj++)
+            for (size_t kj = 0; kj < Kay; kj++)
             {
               if (crA({ki, kj}).get_number_elements() == 0)
               {
@@ -591,7 +593,7 @@ struct TensorTrainAMENBlock
           auto coupled_sol_full = coupled_sol_prev_full;
 
           data_t coupled_max_prev_res = 0.0;
-          for (size_t ki = 0; ki < K; ki++)
+          for (size_t ki = 0; ki < Kay; ki++)
           {
             auto local_size = coupled_offsets[ki + 1] - coupled_offsets[ki];
             auto prev_residual = extract_vector_block(coupled_prev_residual, coupled_offsets[ki], local_size);
@@ -620,16 +622,16 @@ struct TensorTrainAMENBlock
               // a different local representative.
               auto coupled_B_scaled = coupled_B;
               auto coupled_rhs_scaled = coupled_rhs_full;
-              std::vector<data_t> row_factors(K, 1.0);
-              for (size_t ki = 0; ki < K; ki++)
+              std::vector<data_t> row_factors(Kay, 1.0);
+              for (size_t ki = 0; ki < Kay; ki++)
               {
                 row_factors[ki] = make_local_scale_factor(coupled_row_norm_squared[ki]);
                 scale_vector_block(coupled_rhs_scaled, coupled_offsets[ki], coupled_offsets[ki + 1] - coupled_offsets[ki], row_factors[ki]);
               }
 
-              for (size_t ki = 0; ki < K; ki++)
+              for (size_t ki = 0; ki < Kay; ki++)
               {
-                for (size_t kj = 0; kj < K; kj++)
+                for (size_t kj = 0; kj < Kay; kj++)
                 {
                   scale_matrix_block(
                     coupled_B_scaled,
@@ -661,7 +663,7 @@ struct TensorTrainAMENBlock
           // the stacked residual above, whose denominator is the full coupled
           // RHS norm and matches the algebraic system solved at this site.
           data_t coupled_max_new_res = 0.0;
-          for (size_t ki = 0; ki < K; ki++)
+          for (size_t ki = 0; ki < Kay; ki++)
           {
             auto local_size = coupled_offsets[ki + 1] - coupled_offsets[ki];
             coupled_sol[ki] = extract_vector_block(coupled_sol_full, coupled_offsets[ki], local_size);
@@ -687,7 +689,7 @@ struct TensorTrainAMENBlock
           }
         }
 
-        for (size_t ki = 0; ki < K; ki++)
+        for (size_t ki = 0; ki < Kay; ki++)
         {
           auto y1 = cry(ki).cores[i];
           if (normalize_intermediate_quantities)
@@ -725,7 +727,7 @@ struct TensorTrainAMENBlock
               i,
               "lr-rhs-project");
 
-            for (size_t kj = 0; kj < K; kj++)
+            for (size_t kj = 0; kj < Kay; kj++)
             {
               if (kj == ki)
               {
@@ -766,7 +768,7 @@ struct TensorTrainAMENBlock
                 i,
                 "lr-project-operator");
 
-              auto Bsol_prev = boba::tensor_contraction<3, space>(
+              auto Bsol_prev = boba::tensor_contraction<3>(
                 {"rx", "rx_", "n", "n_", "rxp1", "rxp1_"}, phi1A1phi2, {"rx_", "n_", "rxp1_"}, sol_prev, {"rx", "n", "rxp1"});
 
               auto norm_lhs_prev = ::boba::norm_frobenius(Bsol_prev);
@@ -966,7 +968,7 @@ struct TensorTrainAMENBlock
 
             boba::Tensor<3, space, data_t> crzAt({rz[ki][i], cry(ki).sizes(i), rz[ki][i + 1]});
             crzAt.fill_with_zeros();
-            for (size_t kj = 0; kj < K; kj++)
+            for (size_t kj = 0; kj < Kay; kj++)
             {
               if (crA({ki, kj}).get_number_elements() == 0)
               {
@@ -1025,7 +1027,7 @@ struct TensorTrainAMENBlock
 
               boba::Tensor<3, space, data_t> leftresid({crx(ki).ranks(i), cry(ki).sizes(i), rz[ki][i + 1]});
               leftresid.fill_with_zeros();
-              for (size_t kj = 0; kj < K; kj++)
+              for (size_t kj = 0; kj < Kay; kj++)
               {
                 if (crA({ki, kj}).get_number_elements() == 0)
                 {
@@ -1072,7 +1074,7 @@ struct TensorTrainAMENBlock
               Tensor<2, space, data_t> v_temp;
               try
               {
-                v_temp = boba::tensor_contraction<1, space>(
+                v_temp = boba::tensor_contraction<1>(
                   {"row", "k"}, v_expand, {"col^T", "k"}, rv, {"row", "col^T"});
               }
               catch (const std::exception& error)
@@ -1097,7 +1099,7 @@ struct TensorTrainAMENBlock
             Tensor<3, space, data_t> v_new;
             try
             {
-              v_new = boba::tensor_contraction<1, space>(
+              v_new = boba::tensor_contraction<1>(
                 {"rxp1", "?"}, v, {"rxp1", "np1", "rxp2"}, cr2, {"?", "np1", "rxp2"});
             }
             catch (const std::exception& error)
@@ -1158,9 +1160,9 @@ struct TensorTrainAMENBlock
         {
           // Refresh the left-to-right environments so the next site sees the
           // updated solution and enrichment bases.
-          for (size_t row = 0; row < K; row++)
+          for (size_t row = 0; row < Kay; row++)
           {
-            for (size_t col = 0; col < K; col++)
+            for (size_t col = 0; col < Kay; col++)
             {
               if (crA({row, col}).get_number_elements() == 0)
               {
@@ -1210,17 +1212,19 @@ struct TensorTrainAMENBlock
 
           if ((kickrank > 0) && (!last_sweep))
           {
-            for (size_t row = 0; row < K; row++)
+            for (size_t row = 0; row < Kay; row++)
             {
-              for (size_t col = 0; col < K; col++)
+              for (size_t col = 0; col < Kay; col++)
               {
                 if (crA({row, col}).get_number_elements() == 0)
                 {
                   continue;
                 }
-                auto phiza_external_norm = normalize_intermediate_quantities
-                                             ? ((row == col) ? nrmsa[row][col][i] : static_cast<data_t>(1.0))
-                                             : static_cast<data_t>(1.0);
+                auto phiza_external_norm = static_cast<data_t>(1.0);
+                if (normalize_intermediate_quantities && (row == col))
+                {
+                  phiza_external_norm = nrmsa[row][col][i];
+                }
 
                 std::tie(phiza[row][col].cores[i + 1], std::ignore) =
                   compute_next_phi_block<dimension>(
@@ -1263,7 +1267,7 @@ struct TensorTrainAMENBlock
         raw_global_res = ::boba::norm_frobenius(raw_global_residual) / norm_cry;
 
         auto crx_rescaled = crx;
-        for (size_t ki = 0; ki < K; ki++)
+        for (size_t ki = 0; ki < Kay; ki++)
         {
           auto scaled_nrmsx = boba::exp(boba::sum(boba::log(nrmsx[ki])) / static_cast<data_t>(dimension));
           for (index_t d = 0; d < dimension; d++)
@@ -1283,7 +1287,7 @@ struct TensorTrainAMENBlock
         std::cout << "TensorTrainAMENBlock: sweep " << swp
                   << ", max_dx: " << max_dx
                   << ", max_res: " << max_res;
-        for (size_t ki = 0; ki < K; ki++)
+        for (size_t ki = 0; ki < Kay; ki++)
         {
           std::cout << ", ranks[" << ki << "]: " << crx(ki).ranks_string();
         }
@@ -1296,7 +1300,7 @@ struct TensorTrainAMENBlock
         if (!have_global_res)
         {
           auto crx_rescaled = crx;
-          for (size_t ki = 0; ki < K; ki++)
+          for (size_t ki = 0; ki < Kay; ki++)
           {
             auto scaled_nrmsx = boba::exp(boba::sum(boba::log(nrmsx[ki])) / static_cast<data_t>(dimension));
             for (index_t d = 0; d < dimension; d++)
@@ -1331,7 +1335,7 @@ struct TensorTrainAMENBlock
 
     // Rebalance the accumulated core scaling before returning the final block vector.
     checkpoint();
-    for (size_t ki = 0; ki < K; ki++)
+    for (size_t ki = 0; ki < Kay; ki++)
     {
       auto scaled_nrmsx = boba::exp(boba::sum(boba::log(nrmsx[ki])) / static_cast<data_t>(dimension));
       for (index_t d = 0; d < dimension; d++)
@@ -1345,9 +1349,9 @@ struct TensorTrainAMENBlock
     // converged coupled solution away from the residual-minimizing iterate.
 
     checkpoint();
-    ::boba::BlockVector<::boba::TensorTrain<dimension, host_space, data_t>> host_crx(K);
+    ::boba::BlockVector<::boba::TensorTrain<dimension, host_space, data_t>> host_crx(Kay);
     host_crx.m_name = crx.m_name;
-    for (size_t ki = 0; ki < K; ki++)
+    for (size_t ki = 0; ki < Kay; ki++)
     {
       host_crx(ki) = crx(ki);
     }
@@ -1771,12 +1775,12 @@ private:
     BOBA_CALI_MARK
     checkpoint();
     // First contract the left environment into the operator core.
-    auto phi1A1 = ::boba::tensor_contraction<1, space>(
+    auto phi1A1 = ::boba::tensor_contraction<1>(
       {"rx", "rx_", "ra"}, phia_i, {"ra", "row", "col", "rap1"}, A_core, {"rx", "rx_", "row", "col", "rap1"});
 
     checkpoint();
     // Then contract the right environment to finish the local operator tensor.
-    auto phi1A1phi2 = ::boba::tensor_contraction<1, space>(
+    auto phi1A1phi2 = ::boba::tensor_contraction<1>(
       {"rx", "rx_", "row", "col", "rap1"}, phi1A1, {"rxp1", "rap1", "rxp1_"}, phia_ip1, {"rx", "rx_", "row", "col", "rxp1", "rxp1_"});
 
     return phi1A1phi2;
@@ -1837,12 +1841,12 @@ private:
     BOBA_CALI_MARK
     checkpoint();
     // Contract the left environment with the local RHS core first.
-    auto phizyy1 = boba::tensor_contraction<1, space>(
+    auto phizyy1 = boba::tensor_contraction<1>(
       {"rz", "ry", "one"}, phizy_i, {"ry", "n", "ryp1"}, y1, {"rz", "one", "n", "ryp1"});
 
     checkpoint();
     // Finish by contracting the right environment and collapsing singleton axes.
-    auto crzy = boba::tensor_contraction<1, space>(
+    auto crzy = boba::tensor_contraction<1>(
       {"rz", "one", "n", "ryp1"}, phizyy1, {"ryp1", "one_", "rzp1"}, phizy_ip1, {"rz", "one", "n", "one_", "rzp1"});
 
     auto crzy_final = reshape<3>(crzy, {crzy.sizes(0), crzy.sizes(2), crzy.sizes(4)});
