@@ -24,7 +24,7 @@ template <std::size_t dimension>
 using dense_tensor = boba::Tensor<dimension, tensor_completion_space, double>;
 
 template <std::size_t dimension>
-using sparse_tensor = TensorCOO<dimension>;
+using sparse_tensor = boba::SparseTensor<dimension, tensor_completion_space, double>;
 
 struct CommandLineOptions
 {
@@ -131,29 +131,6 @@ CommandLineOptions parse_args(int argc, char** argv)
   return options;
 }
 
-template <std::size_t dimension>
-double total_mass(const sparse_tensor<dimension>& tensor)
-{
-  auto values_view = tensor.values.const_view();
-  double total = 0.0;
-  ::boba::sum_reduce<tensor_completion_space>(total, 0_z, static_cast<std::size_t>(tensor.values.size()), [=] __boba_host_device__(std::size_t entry, boba::sum_reducer_operator<double>& local_total)
-  {
-    local_total += values_view(static_cast<boba::index_t>(entry));
-  });
-  return total;
-}
-
-template <std::size_t dimension>
-std::size_t total_bins(const coo_index<dimension>& dims)
-{
-  std::size_t total = 1;
-  for (std::size_t mode = 0; mode < dimension; ++mode)
-  {
-    total *= static_cast<std::size_t>(dims[mode]);
-  }
-  return total;
-}
-
 template <typename index_t, std::size_t dimension>
 std::string format_index(const boba::Array<index_t, dimension>& idx)
 {
@@ -218,48 +195,6 @@ coo_index<dimension> to_coo_dims(const std::vector<int>& dims)
     sizes[mode] = static_cast<boba::index_t>(dims[mode]);
   }
   return sizes;
-}
-
-template <std::size_t dimension>
-boba::Array<boba::index_t, dimension> to_boba_dims(const coo_index<dimension>& dims)
-{
-  auto sizes = boba::filled_array<dimension>(0_z);
-  for (std::size_t mode = 0; mode < dimension; ++mode)
-  {
-    sizes[mode] = static_cast<boba::index_t>(dims[mode]);
-  }
-  return sizes;
-}
-
-template <std::size_t dimension>
-auto make_multiindexer(const coo_index<dimension>& dims)
-{
-  return boba::Multiindexer<dimension>(to_boba_dims(dims));
-}
-
-template <std::size_t dimension>
-boba::index_t sparse_nnz(const sparse_tensor<dimension>& tensor)
-{
-  return tensor.values.size();
-}
-
-template <std::size_t dimension, typename indices_view_t>
-__boba_host_device__
-coo_index<dimension>
-coo_index_at(const indices_view_t& indices_view, boba::index_t entry)
-{
-  auto idx = boba::filled_array<dimension>(boba::index_t(0));
-  for (std::size_t mode = 0; mode < dimension; ++mode)
-  {
-    idx[mode] = indices_view({entry, static_cast<boba::index_t>(mode)});
-  }
-  return idx;
-}
-
-template <std::size_t dimension>
-coo_index<dimension> coo_index_at(const sparse_tensor<dimension>& tensor, boba::index_t entry)
-{
-  return coo_index_at<dimension>(tensor.get_indices_const_view(), entry);
 }
 
 void column_sum_normalize(host_matrix& A)
@@ -399,13 +334,14 @@ void compute_Phi_mode_n(
 
   auto Phi_view = Phi_out.view();
   auto B_view = B.const_view();
-  auto indices_view = tensor.get_indices_const_view();
-  auto values_view = tensor.values.const_view();
+  auto tensor_view = tensor.const_view();
+  auto values_view = tensor.values_tensor().const_view();
   std::vector<double> w;
 
-  for (boba::index_t entry = 0; entry < sparse_nnz(tensor); ++entry)
+  const auto nnz = tensor.number_nonzeros();
+  for (boba::index_t entry = 0; entry < nnz; ++entry)
   {
-    const auto idx = coo_index_at<dimension>(indices_view, entry);
+    const auto idx = tensor_view.entry_multiindex(entry);
     const auto i_n = idx[mode];
     build_w_for_index(idx, mode, model, w);
 
@@ -511,11 +447,12 @@ template <std::size_t dimension>
 void print_observed_counts(const sparse_tensor<dimension>& tensor, const CPAPRModel<dimension>& model)
 {
   std::cout << "\nNon-zero count bin data (CP-APR)\n";
-  auto indices_view = tensor.get_indices_const_view();
-  auto values_view = tensor.values.const_view();
-  for (boba::index_t entry = 0; entry < sparse_nnz(tensor); ++entry)
+  auto tensor_view = tensor.const_view();
+  auto values_view = tensor.values_tensor().const_view();
+  const auto nnz = tensor.number_nonzeros();
+  for (boba::index_t entry = 0; entry < nnz; ++entry)
   {
-    const auto idx = coo_index_at<dimension>(indices_view, entry);
+    const auto idx = tensor_view.entry_multiindex(entry);
     const long long original_count = static_cast<long long>(values_view(entry));
     std::ostringstream out;
     out << format_index(idx) << " "
@@ -529,13 +466,15 @@ void print_observed_counts(const sparse_tensor<dimension>& tensor, const CPAPRMo
 template <std::size_t dimension>
 void print_empty_estimated_counts(const sparse_tensor<dimension>& tensor, const CPAPRModel<dimension>& model)
 {
-  const auto indexer = make_multiindexer(tensor.dims);
-  auto indices_view = tensor.get_indices_const_view();
-  const auto bins = static_cast<std::size_t>(indexer.size());
+  const auto bins = static_cast<std::size_t>(tensor.size());
+  auto tensor_view = tensor.const_view();
   std::vector<bool> observed_bins(bins, false);
-  for (boba::index_t entry = 0; entry < sparse_nnz(tensor); ++entry)
+
+  const auto nnz = tensor.number_nonzeros();
+  for (boba::index_t entry = 0; entry < nnz; ++entry)
   {
-    observed_bins[static_cast<std::size_t>(indexer.index(coo_index_at<dimension>(indices_view, entry)))] = true;
+    const auto idx = tensor_view.entry_multiindex(entry);
+    observed_bins[static_cast<std::size_t>(tensor_view.index(idx))] = true;
   }
 
   boba_print("");
@@ -544,9 +483,9 @@ void print_empty_estimated_counts(const sparse_tensor<dimension>& tensor, const 
   bool found = false;
   for (std::size_t flat = 0; flat < bins; ++flat)
   {
-    const auto idx = indexer.multiindex(static_cast<boba::index_t>(flat));
     if (!observed_bins[flat])
     {
+      const auto idx = tensor.multiindex(static_cast<boba::index_t>(flat));
       const double estimate = tensor_entry_estimate(model, idx);
       if (estimate > 0.0)
       {
@@ -614,7 +553,7 @@ sparse_tensor<dimension> generate_gaussian_binned_tensor(
   }
 
   const auto dims = to_coo_dims<dimension>(config.dims);
-  const auto indexer = make_multiindexer(dims);
+  const auto indexer = boba::Multiindexer<dimension>(dims);
   const std::size_t order = dimension;
   for (std::size_t mode = 0; mode < dimension; ++mode)
   {
@@ -659,17 +598,21 @@ sparse_tensor<dimension> generate_gaussian_binned_tensor(
     dense_counts[static_cast<std::size_t>(indexer.index(idx))] += 1.0;
   }
 
-  sparse_tensor<dimension> tensor;
-  tensor.dims = dims;
   const boba::index_t nnz = static_cast<boba::index_t>(
     std::count_if(dense_counts.begin(), dense_counts.end(), [](double value)
   {
     return value > 0.0;
   }));
-  tensor.indices.resize({nnz, static_cast<boba::index_t>(dimension)});
-  tensor.values.resize(nnz);
-  auto indices_view = tensor.indices.view();
-  auto values_view = tensor.values.view();
+
+  typename sparse_tensor<dimension>::index_list_array_t index_lists;
+  for (std::size_t mode = 0; mode < dimension; ++mode)
+  {
+    index_lists[mode].resize({nnz});
+  }
+
+  typename sparse_tensor<dimension>::values_list_t values({nnz});
+  auto values_view = values.view();
+
   boba::index_t entry = 0;
   for (std::size_t flat = 0; flat < dense_counts.size(); ++flat)
   {
@@ -678,29 +621,32 @@ sparse_tensor<dimension> generate_gaussian_binned_tensor(
       const auto idx = indexer.multiindex(static_cast<boba::index_t>(flat));
       for (std::size_t mode = 0; mode < dimension; ++mode)
       {
-        indices_view({entry, static_cast<boba::index_t>(mode)}) = static_cast<boba::index_t>(idx[mode]);
+        index_lists[mode].view()(entry) = static_cast<boba::index_t>(idx[mode]);
       }
       values_view(entry) = dense_counts[flat];
       ++entry;
     }
   }
-  return tensor;
+  return sparse_tensor<dimension>(dims, std::move(index_lists), std::move(values));
 }
 
 template <std::size_t dimension>
 dense_tensor<dimension> dense_tensor_from_sparse(const sparse_tensor<dimension>& tensor)
 {
-  dense_tensor<dimension> dense(to_boba_dims(tensor.dims));
+  dense_tensor<dimension> dense(tensor.sizes());
   dense.fill_with_zeros();
-  auto indices_view = tensor.get_indices_const_view();
-  auto values_view = tensor.values.const_view();
+  auto tensor_view = tensor.const_view();
+  auto values_view = tensor.values_tensor().const_view();
   auto dense_view = dense.view();
 
-  ::boba::detail::loop<tensor_completion_space>(0_z, static_cast<std::size_t>(sparse_nnz(tensor)), [=] __boba_host_device__(std::size_t entry)
+  ::boba::detail::loop<tensor_completion_space>(
+    0_z,
+    static_cast<std::size_t>(tensor.number_nonzeros()),
+    [=] __boba_host_device__(std::size_t entry)
   {
     const auto boba_entry = static_cast<boba::index_t>(entry);
-    const auto idx = coo_index_at<dimension>(indices_view, boba_entry);
-    dense_view(to_boba_dims(idx)) = values_view(boba_entry);
+    const auto idx = tensor_view.entry_multiindex(boba_entry);
+    dense_view(idx) = values_view(boba_entry);
   });
 
   return dense;
@@ -709,9 +655,10 @@ dense_tensor<dimension> dense_tensor_from_sparse(const sparse_tensor<dimension>&
 template <std::size_t dimension>
 double sparse_tensor_entropy(const sparse_tensor<dimension>& tensor)
 {
-  auto values_view = tensor.values.const_view();
+  auto values_view = tensor.values_tensor().const_view();
+  const auto nnz = static_cast<std::size_t>(tensor.number_nonzeros());
   double mass = 0.0;
-  ::boba::sum_reduce<tensor_completion_space>(mass, 0_z, static_cast<std::size_t>(sparse_nnz(tensor)), [=] __boba_host_device__(std::size_t entry, boba::sum_reducer_operator<double>& local_mass)
+  ::boba::sum_reduce<tensor_completion_space>(mass, 0_z, nnz, [=] __boba_host_device__(std::size_t entry, boba::sum_reducer_operator<double>& local_mass)
   {
     local_mass += values_view(static_cast<boba::index_t>(entry));
   });
@@ -721,7 +668,7 @@ double sparse_tensor_entropy(const sparse_tensor<dimension>& tensor)
   }
 
   double entropy = 0.0;
-  ::boba::sum_reduce<tensor_completion_space>(entropy, 0_z, static_cast<std::size_t>(sparse_nnz(tensor)), [=] __boba_host_device__(std::size_t entry, boba::sum_reducer_operator<double>& local_entropy)
+  ::boba::sum_reduce<tensor_completion_space>(entropy, 0_z, nnz, [=] __boba_host_device__(std::size_t entry, boba::sum_reducer_operator<double>& local_entropy)
   {
     const double probability = values_view(static_cast<boba::index_t>(entry)) / mass;
     if (probability > 0.0)
@@ -735,7 +682,7 @@ double sparse_tensor_entropy(const sparse_tensor<dimension>& tensor)
 template <std::size_t dimension>
 double tensor_entropy(const CPAPRModel<dimension>& model, const coo_index<dimension>& dims)
 {
-  const auto indexer = make_multiindexer(dims);
+  const auto indexer = boba::Multiindexer<dimension>(dims);
   const auto bins = static_cast<std::size_t>(indexer.size());
   double max_estimate = 0.0;
   for (std::size_t flat = 0; flat < bins; ++flat)
@@ -796,7 +743,7 @@ CPAPRModel<dimension> initialize_random_stochastic_from_dims(
   std::mt19937 generator(seed);
   std::uniform_real_distribution<double> dist(0.0, 1.0);
 
-  CPAPRModel<dimension> model(to_boba_dims<dimension>(dims));
+  CPAPRModel<dimension> model(dims);
   model.rename("tensor_completion_cpd");
   model.m_weights.resize({static_cast<boba::index_t>(rank)});
   model.m_weights.fill_with(1.0);
@@ -823,7 +770,7 @@ CPAPRModel<dimension> initialize_random_stochastic_from_dims(
 template <std::size_t dimension>
 CPAPRModel<dimension> initialize_random_stochastic(const sparse_tensor<dimension>& tensor, int rank, unsigned seed)
 {
-  return initialize_random_stochastic_from_dims<dimension>(tensor.dims, rank, seed);
+  return initialize_random_stochastic_from_dims<dimension>(tensor.sizes(), rank, seed);
 }
 
 template <std::size_t dimension>
@@ -851,7 +798,7 @@ CPAPRModel<dimension> cp_apr_fit(
 
     for (std::size_t mode = 0; mode < dimension; ++mode)
     {
-      const auto extent = static_cast<boba::index_t>(tensor.dims[mode]);
+      const auto extent = tensor.sizes(static_cast<boba::index_t>(mode));
       host_matrix S({extent, static_cast<boba::index_t>(model.rank())});
       S.fill_with_zeros();
 
@@ -1065,14 +1012,16 @@ int run_tensor_completion(const CommandLineOptions& options)
     model = cp_apr_fit(observed_tensor, params, std::move(model));
   }
 
+  const auto observed_dims = observed_tensor.sizes();
+  const double observed_mass = observed_tensor.values_tensor().sum_reduce();
   const double observed_tensor_entropy = sparse_tensor_entropy(observed_tensor);
-  const double completed_tensor_entropy = tensor_entropy(model, observed_tensor.dims);
+  const double completed_tensor_entropy = tensor_entropy(model, observed_dims);
 
   boba_print(std::string("Observed tensor entropy (nats): ") + std::to_string(observed_tensor_entropy));
   boba_print(std::string("Completed tensor entropy (nats): ") + std::to_string(completed_tensor_entropy));
 
-  pass_or_fail_bool(check, observed_tensor.dims.size() == dimension);
-  pass_or_fail(check, total_mass(observed_tensor) - static_cast<double>(options.sample_count), 1.0e-12);
+  pass_or_fail_bool(check, observed_dims.size() == dimension);
+  pass_or_fail(check, observed_mass - static_cast<double>(options.sample_count), 1.0e-12);
   pass_or_fail_bool(check, std::isfinite(observed_tensor_entropy));
   pass_or_fail_bool(check, observed_tensor_entropy >= 0.0);
   pass_or_fail_bool(check, std::isfinite(completed_tensor_entropy));
@@ -1081,16 +1030,16 @@ int run_tensor_completion(const CommandLineOptions& options)
 
   if (options.verbose_bins)
   {
-    boba_print(std::string("Observed tensor dims: ") + format_dims(observed_tensor.dims));
+    boba_print(std::string("Observed tensor dims: ") + format_dims(observed_dims));
     boba_print(
       std::string("Bin widths: ") +
-      format_values(std::vector<double>(observed_tensor.dims.size(), options.bin_width)));
+      format_values(std::vector<double>(observed_dims.size(), options.bin_width)));
     boba_print(std::string("Samples binned: ") + std::to_string(options.sample_count));
     boba_print(std::string("CP rank: ") + std::to_string(options.rank));
-    boba_print(std::string("APR input path: ") + (options.dense_apr ? "dense" : "sparse COO"));
-    boba_print(std::string("Total bins: ") + std::to_string(total_bins(observed_tensor.dims)));
-    boba_print(std::string("Nonzero bins: ") + std::to_string(observed_tensor.values.size()));
-    boba_print(std::string("Observed total mass: ") + std::to_string(total_mass(observed_tensor)));
+    boba_print(std::string("APR input path: ") + (options.dense_apr ? "dense" : "sparse"));
+    boba_print(std::string("Total bins: ") + std::to_string(static_cast<long long>(observed_tensor.size())));
+    boba_print(std::string("Nonzero bins: ") + std::to_string(static_cast<long long>(observed_tensor.number_nonzeros())));
+    boba_print(std::string("Observed total mass: ") + std::to_string(observed_mass));
     print_lambda(model);
     print_observed_counts(observed_tensor, model);
     print_empty_estimated_counts(observed_tensor, model);

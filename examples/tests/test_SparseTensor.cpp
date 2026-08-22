@@ -109,16 +109,19 @@ void test_manual_sparse_tensor(bool& check)
   pass_or_fail(check, sparse.const_view()(middle_index) + 2.0, 1.0e-14);
   pass_or_fail(check, sparse.const_view()(last_index) - 3.25, 1.0e-14);
   pass_or_fail(check, sparse.const_view()(missing_index), 1.0e-14);
+  pass_or_fail(check, ::boba::norm_l1(sparse) - 6.75, 1.0e-14);
   validate_host_index_lists(sparse, check);
 
   sparse.set(middle_index, 4.5);
   pass_or_fail_bool(check, sparse.number_nonzeros() == 3);
   pass_or_fail(check, sparse(middle_index) - 4.5, 1.0e-14);
+  pass_or_fail(check, ::boba::norm_l1(sparse) - 9.25, 1.0e-14);
 
   sparse.set(zero_index, 0.0);
   pass_or_fail_bool(check, sparse.number_nonzeros() == 3);
   pass_or_fail_bool(check, sparse.contains(zero_index));
   pass_or_fail(check, sparse(zero_index), 1.0e-14);
+  pass_or_fail(check, ::boba::norm_l1(sparse) - 7.75, 1.0e-14);
 
   sparse.set(zero_index, 0.0);
   pass_or_fail_bool(check, sparse.number_nonzeros() == 3);
@@ -129,6 +132,7 @@ void test_manual_sparse_tensor(bool& check)
   pass_or_fail_bool(check, sparse.number_nonzeros() == 2);
   pass_or_fail_bool(check, !sparse.contains(zero_index));
   pass_or_fail(check, sparse(zero_index), 1.0e-14);
+  pass_or_fail(check, ::boba::norm_l1(sparse) - 7.75, 1.0e-14);
   validate_host_index_lists(sparse, check);
   for (std::size_t d = 0; d < dimension; ++d)
   {

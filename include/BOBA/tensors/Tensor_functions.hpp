@@ -1541,6 +1541,63 @@ auto norm_inf(Vector<space, data_t> const& vector)
 
 /**
  * \brief
+ * L1 norm of a tensor.
+ */
+
+template <size_t dimension, execution_space space, typename data_t>
+typename Tensor<dimension, space, data_t>::real_data_t
+norm_l1(Tensor<dimension, space, data_t> const& tensor)
+{
+  checkpoint();
+  using real_data_t = typename Tensor<dimension, space, data_t>::real_data_t;
+
+  auto tensor_data = tensor.const_data();
+
+  real_data_t value = 0.0;
+
+  ::boba::sum_reduce<space>(value, index_t(0), tensor.size(), [=] __boba_host_device__(index_t i, sum_reducer_operator<real_data_t> & local_value)
+  {
+    local_value += boba::abs(tensor_data[i]);
+  });
+
+  return value;
+}
+
+template <execution_space space, typename data_t>
+auto norm_l1(Matrix<space, data_t> const& matrix)
+{
+  checkpoint();
+  return norm_l1(static_cast<Tensor<2, space, data_t> const&>(matrix));
+}
+
+template <execution_space space, typename data_t>
+auto norm_l1(Vector<space, data_t> const& vector)
+{
+  checkpoint();
+  return norm_l1(static_cast<Tensor<1, space, data_t> const&>(vector));
+}
+
+template <size_t dimension, execution_space space, typename data_t>
+real_type_t<data_t>
+norm_l1(SparseTensor<dimension, space, data_t> const& tensor)
+{
+  checkpoint();
+  using real_data_t = real_type_t<data_t>;
+
+  auto values = tensor.values_tensor().const_view().data();
+
+  real_data_t value = 0.0;
+
+  ::boba::sum_reduce<space>(value, index_t(0), tensor.number_nonzeros(), [=] __boba_host_device__(index_t i, sum_reducer_operator<real_data_t> & local_value)
+  {
+    local_value += boba::abs(values[i]);
+  });
+
+  return value;
+}
+
+/**
+ * \brief
  * Frobenius norm of a tensor.
  */
 

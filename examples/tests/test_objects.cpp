@@ -123,6 +123,28 @@ void test_complex(bool& check)
   }
 
   {
+    boba_print("test norm_l1()");
+
+    boba::Tensor<2, space, boba::complex<T>> complex_tensor({42, 86});
+    auto complex_tensor_view = complex_tensor.view();
+
+    boba::Tensor<2, space, T> real_tensor(complex_tensor.sizes());
+    real_tensor.fill_with_random();
+    auto real_tensor_view = real_tensor.const_view();
+
+    boba::loop<space, 2>(complex_tensor.sizes(), [=] __boba_host_device__(boba::Array<size_t, 2> multiindex)
+    {
+      auto sign = (boba::sum(multiindex) % 2 == 0) ? T(1) : -T(1);
+      complex_tensor_view(multiindex) = boba::complex<T>{real_tensor_view(multiindex), sign * real_tensor_view(multiindex)};
+    });
+
+    auto complex_norm = ::boba::norm_l1(complex_tensor);
+    auto real_norm = ::boba::norm_l1(real_tensor);
+
+    pass_or_fail(check, boba::abs(complex_norm - boba::sqrt(T(2)) * real_norm), 100 * complex_tensor.size() * boba::epsilon<T>());
+  }
+
+  {
     boba_print("test norm_difference_frobenius()");
 
     boba::Tensor<3, space, boba::complex<T>> left_tensor({11, 17, 13});

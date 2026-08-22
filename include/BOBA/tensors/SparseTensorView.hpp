@@ -122,6 +122,23 @@ struct SparseTensorView : Multiindexer<_dimension>
   }
 
   /**
+   * \brief Returns the tensor multi-index for a stored sparse entry.
+   */
+  [[nodiscard]]
+  __boba_host_device__ index_array entry_multiindex(index_t entry) const
+  {
+    boba_assert_nonnegative(entry, "Negative index");
+    boba_assert_lt(entry, m_number_nonzeros, "Out of bounds");
+
+    index_array indices;
+    for (std::size_t d = 0; d < dimension; ++d)
+    {
+      indices[d] = m_index_lists[d][entry];
+    }
+    return indices;
+  }
+
+  /**
    * \brief Returns the sparse value buffer.
    */
   [[nodiscard]]
