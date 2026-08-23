@@ -363,6 +363,10 @@
     test_SparseTensor:
       skip: []
 
+  test_SparseTensor_functions:
+    test_SparseTensor_functions:
+      skip: []
+
   test_io:
     # Tensors
     test_tensor_io_3d_float:

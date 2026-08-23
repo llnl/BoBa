@@ -70,6 +70,7 @@
 #include "BOBA/backends/boba_metal.hpp"
 #include "BOBA/tensors/Matrix_functions.hpp"
 #include "BOBA/tensors/Tensor_functions.hpp"
+#include "BOBA/tensors/SparseTensor_functions.hpp"
 
 // Fast Fourier Transform
 #include "BOBA/backends/boba_eigen_fft.hpp"

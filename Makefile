@@ -82,6 +82,7 @@ all: \
 	test_quantized_tensor_train_matrix \
 	test_tensors \
 	test_SparseTensor \
+	test_SparseTensor_functions \
 	test_subtensorviews \
 	test_cp \
 	test_tensor_completion \
@@ -477,6 +478,16 @@ test_SparseTensor${NAME_FLAG}.out: test_SparseTensor${NAME_FLAG}.o boba${NAME_FL
 
 test_SparseTensor${NAME_FLAG}.o: ${TESTS_DIR}/test_SparseTensor.cpp ${BOBA_INC} boba${NAME_FLAG}.o
 	${COMPILE} ${OPTS} -c ${TESTS_DIR}/test_SparseTensor.cpp -o test_SparseTensor${NAME_FLAG}.o
+
+###############################
+test_SparseTensor_functions: test_SparseTensor_functions${NAME_FLAG}.out
+	echo "Done making $@${NAME_FLAG}.out"
+
+test_SparseTensor_functions${NAME_FLAG}.out: test_SparseTensor_functions${NAME_FLAG}.o boba${NAME_FLAG}.o
+	${LINK} -o $@ $^ ${LIBS}
+
+test_SparseTensor_functions${NAME_FLAG}.o: ${TESTS_DIR}/test_SparseTensor_functions.cpp ${BOBA_INC} boba${NAME_FLAG}.o
+	${COMPILE} ${OPTS} -c ${TESTS_DIR}/test_SparseTensor_functions.cpp -o test_SparseTensor_functions${NAME_FLAG}.o
 
 ###############################
 test_cp: test_cp${NAME_FLAG}.out

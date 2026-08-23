@@ -1577,25 +1577,6 @@ auto norm_l1(Vector<space, data_t> const& vector)
   return norm_l1(static_cast<Tensor<1, space, data_t> const&>(vector));
 }
 
-template <size_t dimension, execution_space space, typename data_t>
-real_type_t<data_t>
-norm_l1(SparseTensor<dimension, space, data_t> const& tensor)
-{
-  checkpoint();
-  using real_data_t = real_type_t<data_t>;
-
-  auto values = tensor.values_tensor().const_view().data();
-
-  real_data_t value = 0.0;
-
-  ::boba::sum_reduce<space>(value, index_t(0), tensor.number_nonzeros(), [=] __boba_host_device__(index_t i, sum_reducer_operator<real_data_t> & local_value)
-  {
-    local_value += boba::abs(values[i]);
-  });
-
-  return value;
-}
-
 /**
  * \brief
  * Frobenius norm of a tensor.

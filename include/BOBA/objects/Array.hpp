@@ -1475,6 +1475,39 @@ __boba_host_device__ constexpr Array<std::decay_t<T>, N> filled_array(const T& v
 }
 
 /**
+ * @brief Returns an array with multiple original-index positions removed.
+ *
+ * Elements are removed by their positions in the input array. The removal list
+ * does not need to be sorted, but duplicate positions are not meaningful.
+ *
+ * @param array Source array.
+ * @param elements_to_delete Original-index positions to remove.
+ * @return A copy of `array` without the selected elements.
+ */
+template <typename T, std::size_t N, typename S, std::size_t M>
+__boba_host_device__ constexpr Array<std::decay_t<T>, N - M> delete_elements(const Array<T, N>& array, const Array<S, M>& elements_to_delete)
+{
+  static_assert(M <= N, "Cannot delete more elements than the array contains.");
+  Array<std::decay_t<T>, N - M> new_array;
+  size_t output_id = 0_z;
+  for (size_t i = 0_z; i < N; i++)
+  {
+    bool is_deleted = false;
+    for (size_t j = 0_z; j < M; j++)
+    {
+      boba_assert(elements_to_delete[j] < N, "Element to delete is out of bounds.");
+      is_deleted = is_deleted || (elements_to_delete[j] == i);
+    }
+    if (!is_deleted)
+    {
+      new_array[output_id] = array[i];
+      output_id++;
+    }
+  }
+  return new_array;
+}
+
+/**
  * @brief Returns an array of size `N - 1` containing all values except the deleted element.
  * @param array Source array.
  * @param element_to_delete Index of the element to remove.
@@ -1483,32 +1516,8 @@ __boba_host_device__ constexpr Array<std::decay_t<T>, N> filled_array(const T& v
 template <std::size_t N, typename T>
 __boba_host_device__ constexpr Array<std::decay_t<T>, N - 1> delete_element(const Array<T, N>& array, size_t element_to_delete)
 {
-  static_assert(N > 1, "Negative-sized arrays are not defined, and N = 0 case is specified.");
-  Array<std::decay_t<T>, N - 1> new_array{0};
-  for (size_t i = 0; i < element_to_delete; i++)
-  {
-    new_array[i] = array[i];
-  }
-  for (size_t i = element_to_delete + 1; i < N; i++)
-  {
-    new_array[i - 1] = array[i];
-  }
-  return new_array;
-}
-
-/**
- * @brief Specialization of `delete_element` for an input array of size `1`.
- * @param array Source array.
- * @param element_to_delete Index of the element to remove.
- * @return An empty array.
- */
-template <typename T>
-__boba_host_device__ constexpr Array<std::decay_t<T>, 0> delete_element(const Array<T, 1>& array, size_t element_to_delete)
-{
-  detail::ignore(array);
-  detail::ignore(element_to_delete);
-  Array<std::decay_t<T>, 0> new_array;
-  return new_array;
+  static_assert(N > 0, "Cannot delete an element from an empty array.");
+  return delete_elements(array, Array<size_t, 1>{element_to_delete});
 }
 
 /**
