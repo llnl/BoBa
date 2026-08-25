@@ -23,6 +23,53 @@ void nan_check(TensorTrain<dimension, space, data_t> const& train)
 }
 
 // -------------------------------------------------------------------------------------
+// Section: Cumulative sum (CDF)
+// -------------------------------------------------------------------------------------
+
+/**
+ * \brief Computes the multi-dimensional cumulative sum of a TensorTrain (a discrete CDF over bins).
+ *
+ * For a tensor train representing `pdf(i)`, this returns a tensor train representing
+ * `cdf(j) = sum_{i<=j} pdf(i)` (axis-aligned lower-orthant cumulative sum).
+ *
+ * The returned tensor train is computed by replacing each TT core with its 1D prefix sum
+ * along the physical index dimension; TT ranks are unchanged.
+ */
+template <size_t dimension, execution_space space, typename data_t>
+TensorTrain<dimension, space, data_t>
+cumulative_sum(const TensorTrain<dimension, space, data_t>& pdf)
+{
+  BOBA_CALI_MARK
+
+  TensorTrain<dimension, space, data_t> cdf(pdf);
+  cdf.rename(pdf.name() + "_cumulative_sum");
+
+  for (size_t d = 0; d < dimension; ++d)
+  {
+    auto core_view = cdf.cores[d].view();
+    const index_t rank_left = cdf.cores[d].sizes(0);
+    const index_t extent = cdf.cores[d].sizes(1);
+    const index_t rank_right = cdf.cores[d].sizes(2);
+
+    const ::boba::Multiindexer<2> rank_indexer({rank_left, rank_right});
+    ::boba::detail::loop<space>(
+      0_z, static_cast<size_t>(rank_indexer.size()), [=] __boba_host_device__(size_t flat)
+    {
+      const auto ranks = rank_indexer.multiindex(static_cast<index_t>(flat));
+      const index_t rank_left_index = ranks[0];
+      const index_t rank_right_index = ranks[1];
+      for (index_t i = 1; i < extent; ++i)
+      {
+        core_view({rank_left_index, i, rank_right_index}) +=
+          core_view({rank_left_index, i - 1, rank_right_index});
+      }
+    });
+  }
+
+  return cdf;
+}
+
+// -------------------------------------------------------------------------------------
 // Section: Norms
 // -------------------------------------------------------------------------------------
 

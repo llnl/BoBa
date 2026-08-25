@@ -16,6 +16,56 @@
 
 namespace boba
 {
+
+/**
+ * \brief Computes the multi-dimensional cumulative sum of a tensor (a discrete CDF over bins).
+ *
+ * For a tensor `pdf`, this returns `cdf` such that for each multi-index `i`:
+ * `cdf(i) = sum_{j_0<=i_0, ..., j_{d-1}<=i_{d-1}} pdf(j)`.
+ *
+ * This is equivalent to the standard multi-dimensional prefix sum / integral image.
+ *
+ * Each dimension is processed in a separate pass. Prefix scans along that dimension are sequential,
+ * while independent tensor lines are processed in parallel.
+ */
+template <size_t dimension, execution_space space, typename data_t>
+Tensor<dimension, space, data_t> cumulative_sum(const Tensor<dimension, space, data_t>& pdf)
+{
+  BOBA_CALI_OBJECT_MARK
+
+  Tensor<dimension, space, data_t> cdf(pdf);
+  cdf.rename(pdf.name() + "_cumulative_sum");
+
+  if (pdf.size() == 0)
+  {
+    return cdf;
+  }
+
+  auto cdf_view = cdf.view();
+
+  for (size_t d = 0; d < dimension; ++d)
+  {
+    const index_t extent = cdf.sizes(static_cast<index_t>(d));
+    auto line_sizes = cdf.sizes();
+    line_sizes[d] = 1;
+    const ::boba::Multiindexer<dimension> line_indexer(line_sizes);
+    ::boba::detail::loop<space>(
+      0_z, static_cast<size_t>(line_indexer.size()), [=] __boba_host_device__(size_t line)
+    {
+      auto current = line_indexer.multiindex(static_cast<index_t>(line));
+      for (index_t i = 1; i < extent; ++i)
+      {
+        current[d] = i;
+        auto previous = current;
+        previous[d] -= 1;
+        cdf_view(current) += cdf_view(previous);
+      }
+    });
+  }
+
+  return cdf;
+}
+
 template <size_t dimension, execution_space space, typename data_t>
 Tensor<dimension, space, data_t> nonnegative_part(
   Tensor<dimension, space, data_t> const& input)

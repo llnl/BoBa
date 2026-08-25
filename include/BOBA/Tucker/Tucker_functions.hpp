@@ -21,6 +21,47 @@ void nan_check(Tucker<dimension, space, data_t> const& tucker)
   ::boba::nan_check(tucker.R_core);
 }
 
+// -------------------------------------------------------------------------------------
+// Section: Cumulative sum (CDF)
+// -------------------------------------------------------------------------------------
+
+/**
+ * \brief Computes the multi-dimensional cumulative sum of a Tucker tensor (a discrete CDF over bins).
+ *
+ * For a Tucker decomposition representing `pdf(i)`, this returns a Tucker decomposition representing
+ * `cdf(j) = sum_{i<=j} pdf(i)` (axis-aligned lower-orthant cumulative sum).
+ *
+ * The returned Tucker is computed by replacing each factor matrix column with its 1D prefix sum
+ * along the physical index; the Tucker core is unchanged.
+ */
+template <size_t dimension, ::boba::execution_space space, typename data_t>
+Tucker<dimension, space, data_t>
+cumulative_sum(const Tucker<dimension, space, data_t>& pdf)
+{
+  BOBA_CALI_MARK
+
+  Tucker<dimension, space, data_t> cdf(pdf);
+  cdf.rename(pdf.name() + "_cumulative_sum");
+
+  for (size_t d = 0; d < dimension; ++d)
+  {
+    auto core_view = cdf.cores[d].view();
+    const index_t rows = cdf.cores[d].rows();
+    const index_t cols = cdf.cores[d].cols();
+
+    ::boba::detail::loop<space>(0_z, static_cast<size_t>(cols), [=] __boba_host_device__(size_t r)
+    {
+      const auto rr = static_cast<index_t>(r);
+      for (index_t i = 1; i < rows; ++i)
+      {
+        core_view({i, rr}) += core_view({i - 1, rr});
+      }
+    });
+  }
+
+  return cdf;
+}
+
 // -------------------------------------------------------------------------
 // norms
 // -------------------------------------------------------------------------

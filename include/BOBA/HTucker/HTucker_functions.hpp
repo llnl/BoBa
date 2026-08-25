@@ -31,6 +31,55 @@ void nan_check(HierarchicalTucker<dimension, space, data_t> const& x)
   }
 }
 
+// -------------------------------------------------------------------------------------
+// Section: Cumulative sum (CDF)
+// -------------------------------------------------------------------------------------
+
+/**
+ * \brief Computes the multi-dimensional cumulative sum of an HTucker tensor (a discrete CDF over bins).
+ *
+ * For an HTucker decomposition representing `pdf(i)`, this returns an HTucker decomposition representing
+ * `cdf(j) = sum_{i<=j} pdf(i)` (axis-aligned lower-orthant cumulative sum).
+ *
+ * The returned HTucker is computed by replacing each leaf basis matrix column with its 1D prefix sum
+ * along the physical index; transfer tensors are unchanged.
+ */
+template <size_t dimension, ::boba::execution_space space, typename data_t>
+HierarchicalTucker<dimension, space, data_t>
+cumulative_sum(const HierarchicalTucker<dimension, space, data_t>& pdf)
+{
+  BOBA_CALI_MARK
+
+  using ht_t = HierarchicalTucker<dimension, space, data_t>;
+
+  ht_t cdf(pdf);
+  cdf.set_name(std::string(pdf.name()) + "_cumulative_sum");
+
+  const auto& dim_tree = cdf.get_dim_tree();
+  for (size_t d = 0; d < dimension; ++d)
+  {
+    const size_t node = dim_tree.get_dim2idx_of_dim(d);
+    auto basis = cdf.get_basis_matrix(node);
+
+    auto basis_view = basis.view();
+    const index_t rows = basis.rows();
+    const index_t cols = basis.cols();
+
+    ::boba::detail::loop<space>(0_z, static_cast<size_t>(cols), [=] __boba_host_device__(size_t r)
+    {
+      const auto rr = static_cast<index_t>(r);
+      for (index_t i = 1; i < rows; ++i)
+      {
+        basis_view({i, rr}) += basis_view({i - 1, rr});
+      }
+    });
+
+    cdf.set_basis_matrix(node, std::move(basis));
+  }
+
+  return cdf;
+}
+
 // -------------------------------------------------------------------------
 // Product operations involving HierarchicalTucker objects
 // -------------------------------------------------------------------------

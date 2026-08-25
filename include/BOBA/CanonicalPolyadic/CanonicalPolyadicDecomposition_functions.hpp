@@ -22,6 +22,48 @@ void nan_check(CanonicalPolyadicDecomposition<dimension, space, data_t> const& c
 }
 
 // -------------------------------------------------------------------------------------
+// Section: Cumulative sum (CDF)
+// -------------------------------------------------------------------------------------
+
+/**
+ * \brief Computes the multi-dimensional cumulative sum of a CPD (a discrete CDF over bins).
+ *
+ * For a CPD representing `pdf(i) = sum_r w_r * prod_d A_d(i_d, r)`, this returns a CPD
+ * representing the cumulative sum over axis-aligned lower orthants:
+ * `cdf(i) = sum_{j<=i} pdf(j)`.
+ *
+ * The returned CPD is computed by replacing each factor matrix `A_d(:, r)` with its
+ * 1D prefix sum along the row index; weights are unchanged.
+ */
+template <size_t dimension, execution_space space, typename data_t>
+CanonicalPolyadicDecomposition<dimension, space, data_t>
+cumulative_sum(const CanonicalPolyadicDecomposition<dimension, space, data_t>& pdf)
+{
+  BOBA_CALI_MARK
+
+  CanonicalPolyadicDecomposition<dimension, space, data_t> cdf(pdf);
+  cdf.rename(pdf.name() + "_cumulative_sum");
+
+  for (size_t d = 0; d < dimension; ++d)
+  {
+    auto core_view = cdf.m_cores[d].view();
+    const index_t rows = cdf.m_cores[d].rows();
+    const index_t cols = cdf.m_cores[d].cols();
+
+    ::boba::detail::loop<space>(0_z, static_cast<size_t>(cols), [=] __boba_host_device__(size_t r)
+    {
+      const auto rr = static_cast<index_t>(r);
+      for (index_t i = 1; i < rows; ++i)
+      {
+        core_view({i, rr}) += core_view({i - 1, rr});
+      }
+    });
+  }
+
+  return cdf;
+}
+
+// -------------------------------------------------------------------------------------
 // Section: Norms
 // -------------------------------------------------------------------------------------
 

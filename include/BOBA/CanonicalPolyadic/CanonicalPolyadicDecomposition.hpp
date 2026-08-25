@@ -74,8 +74,9 @@ struct CanonicalPolyadicDecomposition
       : m_name(rhs.m_name),
         ALS_tolerance_relative(rhs.ALS_tolerance_relative),
         ALS_tolerance_absolute(rhs.ALS_tolerance_absolute),
+        ALS_iters(rhs.ALS_iters),
         ALS_restarts(rhs.ALS_restarts),
-        m_cores(rhs.m_cores),
+        m_cores(::boba::typed_array<Matrix<space, data_t>>(rhs.m_cores)),
         m_weights(rhs.m_weights)
   {
   }
@@ -91,8 +92,9 @@ struct CanonicalPolyadicDecomposition
     m_name = rhs.m_name;
     ALS_tolerance_absolute = rhs.ALS_tolerance_absolute;
     ALS_tolerance_relative = rhs.ALS_tolerance_relative;
+    ALS_iters = rhs.ALS_iters;
     ALS_restarts = rhs.ALS_restarts;
-    m_cores = rhs.m_cores;
+    m_cores = ::boba::typed_array<Matrix<space, data_t>>(rhs.m_cores);
     m_weights = rhs.m_weights;
     return *this;
   }
