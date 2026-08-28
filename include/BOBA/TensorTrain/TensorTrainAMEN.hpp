@@ -559,7 +559,7 @@ struct TensorTrainAMEN
           crx_rescaled.cores[k] = crx_rescaled.cores[k]*scaled_nrmsx;
         }
 
-        auto global_residual = crA.TensorTrainMatrix_vector_multiply(crx_rescaled, true);
+        auto global_residual = crA.TensorTrainMatrix_vector_multiply(crx_rescaled);
         global_residual -= cry;
         auto global_res = ::boba::norm_frobenius(global_residual)/norm_cry;
 
