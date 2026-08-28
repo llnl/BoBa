@@ -85,8 +85,12 @@ struct TensorTrainAMEN
 
     checkpoint();
     size_t max_sweep = 20;
-
     data_t nrmsc = 1.0;
+    data_t norm_cry = ::boba::norm_frobenius(cry);
+    if(::boba::is_tiny(norm_cry))
+    {
+      norm_cry = 1.0;
+    }
     size_t rznew = 0;
 
     boba::Tensor<3, space, data_t> crznew_tensor;
@@ -364,7 +368,7 @@ struct TensorTrainAMEN
           checkpoint();
 
           r += 1;
-          r = boba::min(r, s.size() - 1);
+          r = boba::min(r, s.size());
           r = boba::min(r, max_allowed_ranks);
           r = boba::max(r, size_t(1));
           checkpoint();
@@ -545,7 +549,30 @@ struct TensorTrainAMEN
 
       if (max_res < convergence_tolerance)
       {
-        last_sweep = true;
+        //
+        // Compute global residual  - TODO! move this to a function
+        //
+        auto crx_rescaled = crx;
+        auto scaled_nrmsx = boba::exp(boba::sum(boba::log(nrmsx))/static_cast<data_t>(dimension));
+        for(index_t k = 0; k < dimension; k++)
+        {
+          crx_rescaled.cores[k] = crx_rescaled.cores[k]*scaled_nrmsx;
+        }
+
+        auto global_residual = crA.TensorTrainMatrix_vector_multiply(crx_rescaled, true);
+        global_residual -= cry;
+        auto global_res = ::boba::norm_frobenius(global_residual)/norm_cry;
+
+        std::cout << "TensorTrainAMEN: global_res " << global_res << std::endl;
+
+        //
+        // Only exit if the global residual is ALSO satisfied
+        //
+        if(global_res < convergence_tolerance)
+        {
+          last_sweep = true;
+        }
+
       }
     }
 
@@ -589,7 +616,7 @@ private:
     BOBA_CALI_MARK
     checkpoint();
     auto phizyy1 = boba::tensor_contraction<1>(
-      {"rz", "one", "ry"}, phizy_i, {"ry", "n", "ryp1"}, y1, {"rz", "one", "n", "ryp1"});
+      {"rz", "ry", "one"}, phizy_i, {"ry", "n", "ryp1"}, y1, {"rz", "one", "n", "ryp1"});
 
     checkpoint();
     auto crzy = boba::tensor_contraction<1>(
