@@ -35,7 +35,7 @@ struct TensorTrainAMEN
   }
 
   template <size_t dimension, execution_space space>
-  ::boba::TensorTrain<dimension, host_space, data_t> solve(
+  ::boba::TensorTrain<dimension, space, data_t> solve(
     const ::boba::TensorTrainMatrix<dimension, space, data_t>& crA,
     const ::boba::TensorTrain<dimension, space, data_t>& cry,
     const ::boba::TensorTrain<dimension, space, data_t>& tt_initial_guess)
@@ -588,8 +588,9 @@ private:
   {
     BOBA_CALI_MARK
     checkpoint();
+
     auto phizyy1 = boba::tensor_contraction<1>(
-      {"rz", "one", "ry"}, phizy_i, {"ry", "n", "ryp1"}, y1, {"rz", "one", "n", "ryp1"});
+      {"rz", "ry", "one"}, phizy_i, {"ry", "n", "ryp1"}, y1, {"rz", "one", "n", "ryp1"});
 
     checkpoint();
     auto crzy = boba::tensor_contraction<1>(
