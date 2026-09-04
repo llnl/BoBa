@@ -166,6 +166,25 @@ void run_dimension_with_solver(
   ttb.fill_with(1.0);
   auto tt_initial_guess = ttb;
 
+  boba::Array<boba::Vector<space, double>, dimension> rhs_second_term_vectors;
+  for (size_t d = 0; d < dimension; d++)
+  {
+    rhs_second_term_vectors[d] = boba::Vector<space, double>({sizes[d]});
+    const auto rhs_vector_view = rhs_second_term_vectors[d].view();
+    const auto size = sizes[d];
+    ::boba::loop<space, 1>(size,
+                           [=] __boba_host_device__(size_t i)
+    {
+      rhs_vector_view(i) = ::boba::sin(
+        ::boba::pi * static_cast<double>(i + 1) / static_cast<double>(size + 1));
+    });
+  }
+  auto rhs_second_term = boba::make_tt_from_vectors<dimension, space, double>(rhs_second_term_vectors);
+  rhs_second_term *= 1.0e-2;
+  ttb += rhs_second_term;
+
+  pass_or_fail_bool(check, ttb.get_ranks_right(0) == 2);
+
   checkpoint();
   solver_t tt_solver;
   configure_solver(tt_solver, parameters);
