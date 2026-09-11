@@ -244,7 +244,6 @@ int main(int argc, char* argv[])
 
   size_t dimension = 0;
   size_t which = 1;
-
   input parameters;
 
   ::boba::argparser args(argc, argv);

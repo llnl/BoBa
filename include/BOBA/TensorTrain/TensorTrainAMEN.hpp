@@ -18,6 +18,9 @@ struct TensorTrainAMEN
   data_t resid_damp = 2.0;
   int max_direct_solve_size = 1500;
   index_t max_allowed_ranks = 1000;
+  size_t max_sweeps = 20;
+  size_t minimum_sweeps = 1;
+  bool verbose = false;
 
   Solve3D2MLOptions<data_t> solve3d_2ml_options;
 
@@ -84,16 +87,20 @@ struct TensorTrainAMEN
     auto nrmsy = ::boba::filled_array<dimension - 1, data_t>(1.0);
 
     checkpoint();
-    size_t max_sweep = 20;
-
     data_t nrmsc = 1.0;
+    data_t norm_cry = ::boba::norm_frobenius(cry);
+    if(::boba::is_tiny(norm_cry))
+    {
+      norm_cry = 1.0;
+    }
     size_t rznew = 0;
 
     boba::Tensor<3, space, data_t> crznew_tensor;
 
     // AMEn sweeps
     bool last_sweep = false;
-    for (size_t swp = 0; swp < max_sweep; swp++)
+    bool converged = false;
+    for (size_t swp = 0; swp < max_sweeps; swp++)
     {
       boba::Matrix<space, data_t> crznew;
 
@@ -364,7 +371,7 @@ struct TensorTrainAMEN
           checkpoint();
 
           r += 1;
-          r = boba::min(r, s.size() - 1);
+          r = boba::min(r, s.size());
           r = boba::min(r, max_allowed_ranks);
           r = boba::max(r, size_t(1));
           checkpoint();
@@ -536,17 +543,75 @@ struct TensorTrainAMEN
         }
       }
 
-      std::cout << "TensorTrainAMEN: sweep " << swp << ", max_dx: " << max_dx << ", max_res: " << max_res << ", ranks: " << crx.ranks_string() << ", CR: " << crx.compression_rate() << std::endl;
+      data_t raw_global_res = 0.0;
+      data_t global_res = 0.0;
+      bool have_global_res = false;
+      if (verbose)
+      {
+        auto raw_global_residual = crA.TensorTrainMatrix_vector_multiply(crx);
+        raw_global_residual -= cry;
+        raw_global_residual.round();
+        raw_global_res = ::boba::norm_frobenius(raw_global_residual) / norm_cry;
+
+        auto crx_rescaled = crx;
+        auto scaled_nrmsx = boba::exp(boba::sum(boba::log(nrmsx)) / static_cast<data_t>(dimension));
+        for (index_t k = 0; k < dimension; k++)
+        {
+          crx_rescaled.cores[k] = crx_rescaled.cores[k] * scaled_nrmsx;
+        }
+
+        auto global_residual = crA.TensorTrainMatrix_vector_multiply(crx_rescaled);
+        global_residual -= cry;
+        global_residual.round();
+        global_res = ::boba::norm_frobenius(global_residual) / norm_cry;
+        have_global_res = true;
+      }
+
+      if (verbose)
+      {
+        std::cout << "TensorTrainAMEN: sweep " << swp << ", max_dx: " << max_dx << ", max_res: " << max_res << ", ranks: " << crx.ranks_string() << ", CR: " << crx.compression_rate() << ", raw_global_res: " << raw_global_res << ", global_res: " << global_res << std::endl;
+      }
 
       if (last_sweep)
       {
         break;
       }
 
-      if (max_res < convergence_tolerance)
+      if ((swp + 1 >= minimum_sweeps) && (max_res < convergence_tolerance))
       {
-        last_sweep = true;
+        if (!have_global_res)
+        {
+          //
+          // Compute global residual  - TODO! move this to a function
+          //
+          auto crx_rescaled = crx;
+          auto scaled_nrmsx = boba::exp(boba::sum(boba::log(nrmsx)) / static_cast<data_t>(dimension));
+          for (index_t k = 0; k < dimension; k++)
+          {
+            crx_rescaled.cores[k] = crx_rescaled.cores[k] * scaled_nrmsx;
+          }
+
+          auto global_residual = crA.TensorTrainMatrix_vector_multiply(crx_rescaled);
+          global_residual -= cry;
+          global_residual.round();
+          global_res = ::boba::norm_frobenius(global_residual) / norm_cry;
+        }
+
+        //
+        // Only exit if the global residual is ALSO satisfied
+        //
+        if(global_res < convergence_tolerance)
+        {
+          converged = true;
+          break;
+        }
+
       }
+    }
+
+    if (!converged)
+    {
+      boba_warn("TensorTrainAMEN did not certify convergence before max_sweeps; returning the last iterate.");
     }
 
     checkpoint();
@@ -588,7 +653,6 @@ private:
   {
     BOBA_CALI_MARK
     checkpoint();
-
     auto phizyy1 = boba::tensor_contraction<1>(
       {"rz", "ry", "one"}, phizy_i, {"ry", "n", "ryp1"}, y1, {"rz", "one", "n", "ryp1"});
 
