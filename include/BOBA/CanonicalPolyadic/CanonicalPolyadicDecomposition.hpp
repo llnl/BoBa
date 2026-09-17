@@ -571,10 +571,20 @@ struct CanonicalPolyadicDecomposition
   void cpd_add(CanonicalPolyadicDecomposition const& input)
   {
     BOBA_CALI_MARK
-    detail::ignore(input);
     checkpoint();
-    boba_error("Not yet implemented");
-    // PTG - I think we just concatenate weight vectors and each of the core columns
+
+    for (size_t d = 0; d < dimension; d++)
+    {
+      boba_assert_equal(input.sizes(d), this->sizes(d), "incompatible sizes");
+    }
+
+    m_weights = ::boba::concatenate_vectors(m_weights, input.m_weights);
+    for (size_t d = 0; d < dimension; d++)
+    {
+      m_cores[d] = ::boba::concatenate_columns(m_cores[d], input.m_cores[d]);
+    }
+
+    checkpoint();
   }
 
   /// \brief this += rhs
