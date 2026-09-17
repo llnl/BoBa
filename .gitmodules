@@ -37,3 +37,12 @@
 [submodule "tpl/camp"]
 	path = tpl/camp
 	url = https://github.com/LLNL/camp.git
+[submodule "tpl/aocl-utils"]
+	path = tpl/aocl-utils
+	url = https://github.com/amd/aocl-utils.git
+[submodule "tpl/blis"]
+	path = tpl/blis
+	url = https://github.com/amd/blis.git
+[submodule "tpl/libflame"]
+	path = tpl/libflame
+	url = https://github.com/amd/libflame.git

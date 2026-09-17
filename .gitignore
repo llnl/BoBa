@@ -51,6 +51,7 @@ gpucore*
 .clangd
 caliper_lib_path*
 hdf5_lib_path*
+aocl_lib_path*
 
 # bibtex cruft
 *.4ct

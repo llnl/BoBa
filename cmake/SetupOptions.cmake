@@ -2,6 +2,11 @@
 
 
 set(BOBA_ENABLE_EIGEN On CACHE BOOL "BOBA Use Eigen3")
+set(BOBA_ENABLE_AOCL Off CACHE BOOL "BOBA Use AOCL BLIS and libFLAME for Eigen")
+set(AOCL_ROOT "" CACHE PATH "Common AOCL installation prefix")
+set(AOCL_UTILS_ROOT "" CACHE PATH "AOCL Utils installation prefix")
+set(AOCL_BLIS_ROOT "" CACHE PATH "AOCL BLIS installation prefix")
+set(AOCL_FLAME_ROOT "" CACHE PATH "AOCL libFLAME installation prefix")
 set(BOBA_EIGEN_TENSOR On CACHE BOOL "BOBA Use Eigen Tensor (unsupported)")
 set(BOBA_ENABLE_APPLE "${APPLE}" CACHE BOOL "BOBA Use Apple Accelerate")
 set(BOBA_ENABLE_CALIPER Off CACHE BOOL "BOBA Enable Caliper")

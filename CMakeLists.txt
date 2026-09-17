@@ -97,6 +97,7 @@ blt_list_append( TO boba_depends ELEMENTS fmt::fmt IF FMT_FOUND )
 blt_list_append( TO boba_depends ELEMENTS caliper IF CALIPER_FOUND )
 blt_list_append( TO boba_depends ELEMENTS hdf5-static IF HDF5_FOUND )
 blt_list_append( TO boba_depends ELEMENTS Eigen3::Eigen IF EIGEN_FOUND )
+blt_list_append( TO boba_depends ELEMENTS AOCL::FLAME IF AOCL_FOUND )
 blt_list_append( TO boba_depends ELEMENTS umpire IF UMPIRE_FOUND )
 blt_list_append( TO boba_depends ELEMENTS RAJA IF RAJA_FOUND )
 blt_list_append( TO boba_depends ELEMENTS nvToolsExt IF BOBA_ENABLE_CUDA )
@@ -125,6 +126,13 @@ blt_add_library(
   SOURCES ${boba_sources}
   DEFINES ${boba_defines}
   DEPENDS_ON ${boba_depends} ${TPL_DEPS})
+
+if(AOCL_FOUND)
+  target_compile_definitions(BOBA PUBLIC
+    EIGEN_USE_BLAS
+    EIGEN_USE_LAPACKE
+    EIGEN_LAPACKE_SYSTEM)
+endif()
 
 if(ENABLE_CUDA)
   set_property(TARGET BOBA PROPERTY CUDA_STANDARD ${CMAKE_CUDA_STANDARD})
