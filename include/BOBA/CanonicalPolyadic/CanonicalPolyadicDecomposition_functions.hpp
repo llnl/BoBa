@@ -64,6 +64,132 @@ cumulative_sum(const CanonicalPolyadicDecomposition<dimension, space, data_t>& p
 }
 
 // -------------------------------------------------------------------------------------
+// Section: Linear prefix sum
+// -------------------------------------------------------------------------------------
+
+/**
+ * \brief Computes the inclusive prefix sum in the represented tensor's linear storage order.
+ *
+ * For each input rank, the output contains one rank-one term per dimension. In term `d`,
+ * factors before `d` are replaced by their full sums, factor `d` is replaced by its
+ * inclusive prefix for `d == 0` or its exclusive prefix otherwise, and later factors
+ * are unchanged. The result therefore has rank `dimension * input.rank()` and is
+ * formed without decompressing the CPD.
+ *
+ * For example, for one rank of a three-dimensional CPD with factors `A`, `B`, and `C`,
+ * let `A_i` denote the inclusive prefix of `A`, let `B_e` and `C_e` denote the
+ * exclusive prefixes of `B` and `C`, and let `a` and `b` denote constant vectors
+ * containing the full sums of `A` and `B`. The linear prefix sum is represented by
+ * the three rank-one terms
+ *
+ * ```text
+ * A_i B C + a B_e C + a b C_e.
+ * ```
+ *
+ * The implementation below repeats this pattern once per dimension and per input rank.
+ */
+template <size_t dimension, execution_space space, typename data_t>
+CanonicalPolyadicDecomposition<dimension, space, data_t>
+linear_prefix_sum(const CanonicalPolyadicDecomposition<dimension, space, data_t>& input)
+{
+  BOBA_CALI_MARK
+
+  // The fastest-varying factor needs an inclusive prefix because its term includes
+  // the current entry. Every later factor needs an exclusive prefix because its term
+  // represents only the lower-index slices that precede the current slice.
+  auto prefix_cores = input.m_cores;
+  for (size_t d = 0; d < dimension; ++d)
+  {
+    auto core_view = prefix_cores[d].view();
+    const index_t rows = prefix_cores[d].rows();
+    const index_t cols = prefix_cores[d].cols();
+
+    if (d == 0)
+    {
+      ::boba::detail::loop<space>(0_z, cols, [=] __boba_host_device__(size_t r)
+      {
+        for (index_t i = 1; i < rows; ++i)
+        {
+          core_view({i, r}) += core_view({i - 1, r});
+        }
+      });
+    }
+    else
+    {
+      ::boba::detail::loop<space>(0_z, cols, [=] __boba_host_device__(size_t r)
+      {
+        data_t prefix{};
+        for (index_t i = 0; i < rows; ++i)
+        {
+          const data_t value = core_view({i, r});
+          core_view({i, r}) = prefix;
+          prefix += value;
+        }
+      });
+    }
+  }
+
+  // The first group of rank-one terms uses the inclusive prefix in the
+  // fastest-varying dimension and the original factors in all later dimensions.
+  // Build it from only those factors instead of copying input and then overwriting
+  // its first core.
+  CanonicalPolyadicDecomposition<dimension, space, data_t> output;
+  output.m_weights = input.m_weights;
+  output.m_cores[0] = prefix_cores[0];
+  for (size_t k = 1; k < dimension; ++k)
+  {
+    output.m_cores[k] = input.m_cores[k];
+  }
+
+  // Add one group of input.rank() terms for each remaining dimension d.
+  for (size_t d = 1; d < dimension; ++d)
+  {
+    // Build the d'th term
+    CanonicalPolyadicDecomposition<dimension, space, data_t> term;
+    term.m_weights = input.m_weights;
+
+    // All earlier dimensions have been traversed completely. Replace each earlier
+    // factor column by a constant column containing that factor's full sum.
+    for (size_t k = 0; k < d; ++k)
+    {
+      term.m_cores[k].resize(input.m_cores[k].sizes());
+      auto constant_core_view = term.m_cores[k].view();
+      auto prefix_core_view = prefix_cores[k].const_view();
+      auto input_core_view = input.m_cores[k].const_view();
+      const index_t last_row = prefix_cores[k].rows() - 1;
+      // The inclusive prefix in dimension zero already ends with the full sum. An
+      // exclusive prefix ends just before the final value, so add that value back.
+      const bool prefix_is_exclusive = k != 0;
+
+      ::boba::loop<space, 2>(constant_core_view.sizes(),
+                             [=] __boba_host_device__(Array<index_t, 2> ij)
+      {
+        const auto last_prefix = prefix_core_view({last_row, ij[1]});
+        const auto last_value = input_core_view({last_row, ij[1]});
+        constant_core_view(ij) =
+          last_prefix + (prefix_is_exclusive ? last_value : data_t{});
+      });
+    }
+
+    // The exclusive prefix at dimension d contains only entries before the current
+    // entry. Factors after d remain unchanged from the input CPD.
+    term.m_cores[d] = prefix_cores[d];
+
+    for (size_t k = d + 1; k < dimension; ++k)
+    {
+      term.m_cores[k] = input.m_cores[k];
+    }
+
+    // CPD addition concatenates weights and factor columns, increasing the rank by
+    // input.rank() for each dimension-specific term.
+    output += term;
+  }
+
+  output.rename(input.name() + "_linear_prefix_sum");
+  return output;
+}
+
+// -------------------------------------------------------------------------------------
 // Section: Norms
 // -------------------------------------------------------------------------------------
 

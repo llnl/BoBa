@@ -71,6 +71,7 @@ all: \
 	test_tensor_train_matrix \
 	test_objects \
 	test_tensor_functions \
+	test_linear_prefix_sum \
 	test_folding \
 	test_backsolve \
 	test_argparse \
@@ -240,6 +241,16 @@ test_tensor_functions${NAME_FLAG}.out: test_tensor_functions${NAME_FLAG}.o boba$
 
 test_tensor_functions${NAME_FLAG}.o: ${TESTS_DIR}/test_tensor_functions.cpp ${BOBA_INC} boba${NAME_FLAG}.o
 	${COMPILE} ${OPTS} -c ${TESTS_DIR}/test_tensor_functions.cpp -o test_tensor_functions${NAME_FLAG}.o
+
+###############################
+test_linear_prefix_sum: test_linear_prefix_sum${NAME_FLAG}.out
+	echo "Done making $@${NAME_FLAG}.out"
+
+test_linear_prefix_sum${NAME_FLAG}.out: test_linear_prefix_sum${NAME_FLAG}.o boba${NAME_FLAG}.o
+	${LINK} -o $@ $^ ${LIBS}
+
+test_linear_prefix_sum${NAME_FLAG}.o: ${TESTS_DIR}/test_linear_prefix_sum.cpp ${BOBA_INC} boba${NAME_FLAG}.o
+	${COMPILE} ${OPTS} -c ${TESTS_DIR}/test_linear_prefix_sum.cpp -o test_linear_prefix_sum${NAME_FLAG}.o
 
 ###############################
 test_folding: test_folding${NAME_FLAG}.out

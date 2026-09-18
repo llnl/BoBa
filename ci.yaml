@@ -316,6 +316,10 @@
   test_tensor_functions:
     test_tensor_functions: {}
 
+  test_linear_prefix_sum:
+    test_linear_prefix_sum:
+      skip: []
+
   test_cross:
     test_cross:
       skip: [cuda, hip]
