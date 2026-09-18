@@ -17,9 +17,7 @@ std::pair<::boba::Tensor<3, space, data_t>, data_t> compute_next_Phi(
   const ::boba::Tensor<4, space, data_t>& A_core,
   const ::boba::Tensor<3, space, data_t>& y,
   bool sweep_left_right,
-  data_t external_norm,
-  real_type_t<data_t> normalization_tolerance =
-    real_type_t<data_t>(10) * boba::epsilon<real_type_t<data_t>>())
+  data_t external_norm)
 {
   BOBA_CALI_MARK
   ::boba::Tensor<3, space, data_t> Phi_out;
@@ -62,7 +60,7 @@ std::pair<::boba::Tensor<3, space, data_t>, data_t> compute_next_Phi(
   else
   {
     phi_norm = ::boba::norm_frobenius(Phi_out);
-    if (phi_norm > normalization_tolerance)
+    if (not(is_tiny(phi_norm)))
     {
       Phi_out *= 1.0 / phi_norm;
     }
@@ -87,9 +85,7 @@ std::tuple<::boba::Tensor<3, space, data_t>, data_t> compute_next_Phi(
   ::boba::Tensor<3, space, data_t> x,
   ::boba::Tensor<3, space, data_t> y,
   bool sweep_left_right,
-  data_t external_norm,
-  real_type_t<data_t> normalization_tolerance =
-    real_type_t<data_t>(10) * boba::epsilon<real_type_t<data_t>>())
+  data_t external_norm)
 {
   BOBA_CALI_MARK
   auto rows = x.sizes(1);
@@ -97,14 +93,7 @@ std::tuple<::boba::Tensor<3, space, data_t>, data_t> compute_next_Phi(
   ::boba::Tensor<4, space, data_t> A_core({1, rows, cols, 1});
   ::boba::set_to_identity_core(A_core);
 
-  return compute_next_Phi<dimension>(
-    Phi_prev,
-    x,
-    A_core,
-    y,
-    sweep_left_right,
-    external_norm,
-    normalization_tolerance);
+  return compute_next_Phi<dimension>(Phi_prev, x, A_core, y, sweep_left_right, external_norm);
 }
 
 /**

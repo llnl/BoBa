@@ -33,9 +33,6 @@ struct TensorTrainAMENBlock
   real_type_t<data_t> local_solution_svd_tolerance_relative = 0.0;
   /// Absolute SVD tolerance used to split an updated local solution.
   real_type_t<data_t> local_solution_svd_tolerance_absolute = 0.0;
-  /// Smallest environment norm that is safe to divide out during a sweep.
-  real_type_t<data_t> environment_normalization_tolerance =
-    real_type_t<data_t>(10) * boba::epsilon<real_type_t<data_t>>();
   // Scalar AMEn-style intermediate normalization is algebraically safe for
   // diagonal block systems. For genuinely coupled block systems the current
   // per-block scalar bookkeeping does not preserve the off-diagonal projected
@@ -1458,14 +1455,7 @@ private:
   {
     try
     {
-      return compute_next_Phi<dimension_local>(
-        Phi_prev,
-        x,
-        A_core,
-        y,
-        sweep_left_right,
-        external_norm,
-        environment_normalization_tolerance);
+      return compute_next_Phi<dimension_local>(Phi_prev, x, A_core, y, sweep_left_right, external_norm);
     }
     catch (const std::exception& error)
     {
@@ -1514,13 +1504,7 @@ private:
   {
     try
     {
-      auto [phi_out, phi_norm] = compute_next_Phi<dimension_local>(
-        Phi_prev,
-        x,
-        y,
-        sweep_left_right,
-        external_norm,
-        environment_normalization_tolerance);
+      auto [phi_out, phi_norm] = compute_next_Phi<dimension_local>(Phi_prev, x, y, sweep_left_right, external_norm);
       return std::make_pair(phi_out, phi_norm);
     }
     catch (const std::exception& error)
