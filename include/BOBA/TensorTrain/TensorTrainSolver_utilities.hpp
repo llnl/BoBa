@@ -17,7 +17,9 @@ std::pair<::boba::Tensor<3, space, data_t>, data_t> compute_next_Phi(
   const ::boba::Tensor<4, space, data_t>& A_core,
   const ::boba::Tensor<3, space, data_t>& y,
   bool sweep_left_right,
-  data_t external_norm)
+  data_t external_norm,
+  real_type_t<data_t> normalization_tolerance =
+    real_type_t<data_t>(10) * boba::epsilon<real_type_t<data_t>>())
 {
   BOBA_CALI_MARK
   ::boba::Tensor<3, space, data_t> Phi_out;
@@ -60,7 +62,7 @@ std::pair<::boba::Tensor<3, space, data_t>, data_t> compute_next_Phi(
   else
   {
     phi_norm = ::boba::norm_frobenius(Phi_out);
-    if (phi_norm > 10.0 * boba::epsilon<data_t>())
+    if (phi_norm > normalization_tolerance)
     {
       Phi_out *= 1.0 / phi_norm;
     }
@@ -85,7 +87,9 @@ std::tuple<::boba::Tensor<3, space, data_t>, data_t> compute_next_Phi(
   ::boba::Tensor<3, space, data_t> x,
   ::boba::Tensor<3, space, data_t> y,
   bool sweep_left_right,
-  data_t external_norm)
+  data_t external_norm,
+  real_type_t<data_t> normalization_tolerance =
+    real_type_t<data_t>(10) * boba::epsilon<real_type_t<data_t>>())
 {
   BOBA_CALI_MARK
   auto rows = x.sizes(1);
@@ -93,7 +97,14 @@ std::tuple<::boba::Tensor<3, space, data_t>, data_t> compute_next_Phi(
   ::boba::Tensor<4, space, data_t> A_core({1, rows, cols, 1});
   ::boba::set_to_identity_core(A_core);
 
-  return compute_next_Phi<dimension>(Phi_prev, x, A_core, y, sweep_left_right, external_norm);
+  return compute_next_Phi<dimension>(
+    Phi_prev,
+    x,
+    A_core,
+    y,
+    sweep_left_right,
+    external_norm,
+    normalization_tolerance);
 }
 
 /**
@@ -222,6 +233,8 @@ struct Solve3D2MLOptions
   size_t method = 0;
   data_t tolerance_relative = 1.0e-60;
   data_t tolerance_absolute = 1.0e-60;
+  /// Maximum iterations used only by the Eigen GMRES path (`method == 0`).
+  size_t eigen_gmres_max_iterations = 30;
   index_t outer_iterations = 40;
   index_t inner_iterations = 200;
 };
@@ -265,7 +278,11 @@ boba::Tensor<3, space, data_t> solve3d_2ml(
       auto dy_vector = flatten(dy);
       auto bfun_operator = bfun3_matrix(Phi1, A, Phi2);
 
-      auto dx = detail::eigen_gmres(bfun_operator, dy_vector, options.tolerance_relative * x0_vector_norm, 30_z);
+      auto dx = detail::eigen_gmres(
+        bfun_operator,
+        dy_vector,
+        options.tolerance_relative * x0_vector_norm,
+        options.eigen_gmres_max_iterations);
 
       checkpoint();
       auto dx_tensor = reshape<3>(dx, x.sizes());

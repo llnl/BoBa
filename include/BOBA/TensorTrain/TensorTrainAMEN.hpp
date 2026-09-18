@@ -22,6 +22,18 @@ struct TensorTrainAMEN
   size_t minimum_sweeps = 1;
   bool verbose = false;
 
+  /// Relative SVD tolerance used to truncate residual-enrichment bases.
+  real_type_t<data_t> residual_enrichment_svd_tolerance_relative = 0.0;
+  /// Absolute SVD tolerance used to truncate residual-enrichment bases.
+  real_type_t<data_t> residual_enrichment_svd_tolerance_absolute = 0.0;
+  /// Relative SVD tolerance used to split an updated local solution.
+  real_type_t<data_t> local_solution_svd_tolerance_relative = 0.0;
+  /// Absolute SVD tolerance used to split an updated local solution.
+  real_type_t<data_t> local_solution_svd_tolerance_absolute = 0.0;
+  /// Smallest environment norm that is safe to divide out during a sweep.
+  real_type_t<data_t> environment_normalization_tolerance =
+    real_type_t<data_t>(10) * boba::epsilon<real_type_t<data_t>>();
+
   Solve3D2MLOptions<data_t> solve3d_2ml_options;
 
   template <typename unsupported_operator, typename unsupported_vector>
@@ -126,8 +138,8 @@ struct TensorTrainAMEN
             crznew = crzy2_matrix - crzAt_matrix;
 
             ::boba::SVD<space, data_t> svd;
-            svd.tolerance_relative = 0.0;
-            svd.tolerance_absolute = 0.0;
+            svd.tolerance_relative = residual_enrichment_svd_tolerance_relative;
+            svd.tolerance_absolute = residual_enrichment_svd_tolerance_absolute;
             svd(crznew);
             crznew = svd.V;
 
@@ -209,8 +221,8 @@ struct TensorTrainAMEN
         crx.cores[i] = cr;
 
         checkpoint();
-        std::tie(phia.cores[i], nrmsa[i - 1]) = compute_next_Phi<dimension>(phia.cores[i + 1], cr, crA.cores[i], cr, false, -1.0);
-        std::tie(phiy.cores[i], nrmsy[i - 1]) = compute_next_Phi<dimension>(phiy.cores[i + 1], cr, cry.cores[i], false, -1.0);
+        std::tie(phia.cores[i], nrmsa[i - 1]) = compute_next_Phi<dimension>(phia.cores[i + 1], cr, crA.cores[i], cr, false, -1.0, environment_normalization_tolerance);
+        std::tie(phiy.cores[i], nrmsy[i - 1]) = compute_next_Phi<dimension>(phiy.cores[i + 1], cr, cry.cores[i], false, -1.0, environment_normalization_tolerance);
 
         // Add new scales
         nrmsc = nrmsc * (nrmsy[i - 1] / (nrmsa[i - 1] * nrmsx[i - 1]));
@@ -218,8 +230,8 @@ struct TensorTrainAMEN
         if ((kickrank > 0) and (not(last_sweep)))
         {
           rz[i] = rznew;
-          std::tie(phiza.cores[i], std::ignore) = compute_next_Phi<dimension>(phiza.cores[i + 1], crz.cores[i], crA.cores[i], crx.cores[i], false, nrmsa[i - 1]);
-          std::tie(phizy.cores[i], std::ignore) = compute_next_Phi<dimension>(phizy.cores[i + 1], crz.cores[i], cry.cores[i], false, nrmsy[i - 1]);
+          std::tie(phiza.cores[i], std::ignore) = compute_next_Phi<dimension>(phiza.cores[i + 1], crz.cores[i], crA.cores[i], crx.cores[i], false, nrmsa[i - 1], environment_normalization_tolerance);
+          std::tie(phizy.cores[i], std::ignore) = compute_next_Phi<dimension>(phizy.cores[i + 1], crz.cores[i], cry.cores[i], false, nrmsy[i - 1], environment_normalization_tolerance);
         }
       }
       checkpoint();
@@ -324,8 +336,8 @@ struct TensorTrainAMEN
         auto sol_matrix = reshape_to_matrix(sol, {crx.ranks(i) * cry.sizes(i), crx.ranks(i + 1)});
 
         boba::SVD<space, data_t> svd;
-        svd.tolerance_relative = 0.0;
-        svd.tolerance_absolute = 0.0;
+        svd.tolerance_relative = local_solution_svd_tolerance_relative;
+        svd.tolerance_absolute = local_solution_svd_tolerance_absolute;
 
         boba::Matrix<space, data_t> u, s, v;
         index_t r = boba::min(crx.ranks(i) * cry.sizes(i), crx.ranks(i + 1));
@@ -416,8 +428,8 @@ struct TensorTrainAMEN
           crznew = crzy_matrix - crzAt_matrix;
 
           ::boba::SVD<space, data_t> _svd;
-          _svd.tolerance_relative = 0.0;
-          _svd.tolerance_absolute = 0.0;
+          _svd.tolerance_relative = residual_enrichment_svd_tolerance_relative;
+          _svd.tolerance_absolute = residual_enrichment_svd_tolerance_absolute;
           _svd(crznew);
           crznew = _svd.U;
 
@@ -517,8 +529,8 @@ struct TensorTrainAMEN
           auto v_tensor = boba::reshape_from_matrix<3>(v, {r, cry.sizes(i + 1), crx.ranks(i + 2)});
 
           // Recompute phi.
-          std::tie(phia.cores[i + 1], nrmsa[i]) = compute_next_Phi<dimension>(phia.cores[i], u_tensor, crA.cores[i], u_tensor, true, -1.0);
-          std::tie(phiy.cores[i + 1], nrmsy[i]) = compute_next_Phi<dimension>(phiy.cores[i], u_tensor, cry.cores[i], true, -1.0);
+          std::tie(phia.cores[i + 1], nrmsa[i]) = compute_next_Phi<dimension>(phia.cores[i], u_tensor, crA.cores[i], u_tensor, true, -1.0, environment_normalization_tolerance);
+          std::tie(phiy.cores[i + 1], nrmsy[i]) = compute_next_Phi<dimension>(phiy.cores[i], u_tensor, cry.cores[i], true, -1.0, environment_normalization_tolerance);
 
           // Add new scales
           nrmsc *= (nrmsy[i] / (nrmsa[i] * nrmsx[i]));
@@ -532,8 +544,8 @@ struct TensorTrainAMEN
             checkpoint();
             crznew_tensor = boba::reshape_from_matrix<3>(crznew, {rz[i], cry.sizes(i), rznew});
             rz[i + 1] = rznew;
-            std::tie(phiza.cores[i + 1], std::ignore) = compute_next_Phi<dimension>(phiza.cores[i], crznew_tensor, crA.cores[i], crx.cores[i], true, nrmsa[i]);
-            std::tie(phizy.cores[i + 1], std::ignore) = compute_next_Phi<dimension>(phizy.cores[i], crznew_tensor, cry.cores[i], true, nrmsy[i]);
+            std::tie(phiza.cores[i + 1], std::ignore) = compute_next_Phi<dimension>(phiza.cores[i], crznew_tensor, crA.cores[i], crx.cores[i], true, nrmsa[i], environment_normalization_tolerance);
+            std::tie(phizy.cores[i + 1], std::ignore) = compute_next_Phi<dimension>(phizy.cores[i], crznew_tensor, cry.cores[i], true, nrmsy[i], environment_normalization_tolerance);
           }
         }
         else // i==d

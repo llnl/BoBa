@@ -25,6 +25,17 @@ struct TensorTrainAMENBlock
   index_t max_allowed_ranks = 1000;
   size_t max_sweeps = 20;
   size_t minimum_sweeps = 1;
+  /// Relative SVD tolerance used to truncate residual-enrichment bases.
+  real_type_t<data_t> residual_enrichment_svd_tolerance_relative = 0.0;
+  /// Absolute SVD tolerance used to truncate residual-enrichment bases.
+  real_type_t<data_t> residual_enrichment_svd_tolerance_absolute = 0.0;
+  /// Relative SVD tolerance used to split an updated local solution.
+  real_type_t<data_t> local_solution_svd_tolerance_relative = 0.0;
+  /// Absolute SVD tolerance used to split an updated local solution.
+  real_type_t<data_t> local_solution_svd_tolerance_absolute = 0.0;
+  /// Smallest environment norm that is safe to divide out during a sweep.
+  real_type_t<data_t> environment_normalization_tolerance =
+    real_type_t<data_t>(10) * boba::epsilon<real_type_t<data_t>>();
   // Scalar AMEn-style intermediate normalization is algebraically safe for
   // diagonal block systems. For genuinely coupled block systems the current
   // per-block scalar bookkeeping does not preserve the off-diagonal projected
@@ -274,8 +285,8 @@ struct TensorTrainAMENBlock
               crznew[ki] = crzy2_matrix - crzAt_matrix;
 
               ::boba::SVD<space, data_t> svd;
-              svd.tolerance_relative = 0.0;
-              svd.tolerance_absolute = 0.0;
+              svd.tolerance_relative = residual_enrichment_svd_tolerance_relative;
+              svd.tolerance_absolute = residual_enrichment_svd_tolerance_absolute;
               svd(crznew[ki]);
               crznew[ki] = svd.V;
 
@@ -879,8 +890,8 @@ struct TensorTrainAMENBlock
           auto sol_matrix = reshape_to_matrix(sol, {crx(ki).ranks(i) * cry(ki).sizes(i), crx(ki).ranks(i + 1)});
 
           boba::SVD<space, data_t> svd;
-          svd.tolerance_relative = 0.0;
-          svd.tolerance_absolute = 0.0;
+          svd.tolerance_relative = local_solution_svd_tolerance_relative;
+          svd.tolerance_absolute = local_solution_svd_tolerance_absolute;
 
           boba::Matrix<space, data_t> u, s, v;
           index_t r = boba::min(crx(ki).ranks(i) * cry(ki).sizes(i), crx(ki).ranks(i + 1));
@@ -999,8 +1010,8 @@ struct TensorTrainAMENBlock
             crznew[ki] = crzy_matrix - crzAt_matrix;
 
             ::boba::SVD<space, data_t> _svd;
-            _svd.tolerance_relative = 0.0;
-            _svd.tolerance_absolute = 0.0;
+            _svd.tolerance_relative = residual_enrichment_svd_tolerance_relative;
+            _svd.tolerance_absolute = residual_enrichment_svd_tolerance_absolute;
             _svd(crznew[ki]);
             crznew[ki] = _svd.U;
 
@@ -1447,7 +1458,14 @@ private:
   {
     try
     {
-      return compute_next_Phi<dimension_local>(Phi_prev, x, A_core, y, sweep_left_right, external_norm);
+      return compute_next_Phi<dimension_local>(
+        Phi_prev,
+        x,
+        A_core,
+        y,
+        sweep_left_right,
+        external_norm,
+        environment_normalization_tolerance);
     }
     catch (const std::exception& error)
     {
@@ -1496,7 +1514,13 @@ private:
   {
     try
     {
-      auto [phi_out, phi_norm] = compute_next_Phi<dimension_local>(Phi_prev, x, y, sweep_left_right, external_norm);
+      auto [phi_out, phi_norm] = compute_next_Phi<dimension_local>(
+        Phi_prev,
+        x,
+        y,
+        sweep_left_right,
+        external_norm,
+        environment_normalization_tolerance);
       return std::make_pair(phi_out, phi_norm);
     }
     catch (const std::exception& error)
