@@ -224,6 +224,8 @@ struct Solve3D2MLOptions
   data_t tolerance_absolute = 1.0e-60;
   /// Maximum iterations used only by the Eigen GMRES path (`method == 0`).
   size_t eigen_gmres_max_iterations = 30;
+  /// Sparsification threshold used only by the Eigen GMRES path (`method == 0`).
+  data_t eigen_gmres_sparsity = 1.0e-3;
   index_t outer_iterations = 40;
   index_t inner_iterations = 200;
 };
@@ -271,7 +273,8 @@ boba::Tensor<3, space, data_t> solve3d_2ml(
         bfun_operator,
         dy_vector,
         options.tolerance_relative * x0_vector_norm,
-        options.eigen_gmres_max_iterations);
+        options.eigen_gmres_max_iterations,
+        options.eigen_gmres_sparsity);
 
       checkpoint();
       auto dx_tensor = reshape<3>(dx, x.sizes());

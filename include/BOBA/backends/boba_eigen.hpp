@@ -654,6 +654,7 @@ void factor_svd_eigen(
  * @param input Right-hand side vector.
  * @param tolerance_relative Relative convergence tolerance.
  * @param maximum_iterations Maximum GMRES iteration count.
+ * @param sparsity Sparsification threshold passed to Eigen.
  * @return This function does not return successfully.
  */
 template <execution_space space, typename data_t>
@@ -662,13 +663,15 @@ boba::Vector<host_space, data_t> eigen_gmres(
   const boba::Matrix<space, data_t>& matrix,
   const boba::Vector<space, data_t>& input,
   data_t tolerance_relative = 1.0e-7,
-  size_t maximum_iterations = 30)
+  size_t maximum_iterations = 30,
+  data_t sparsity = 1.0e-3)
 {
   boba::Vector<space, data_t> output;
   detail::ignore(matrix);
   detail::ignore(input);
   detail::ignore(tolerance_relative);
   detail::ignore(maximum_iterations);
+  detail::ignore(sparsity);
   boba_error("You have called eigen's GMRES routine, but BOBA_ENABLE_EIGEN is set to false.");
   return output;
 }
