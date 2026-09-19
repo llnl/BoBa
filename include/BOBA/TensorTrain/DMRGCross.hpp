@@ -18,11 +18,28 @@ namespace boba
 template <typename data_t>
 struct DMRGCross
 {
+  using real_data_t = real_type_t<data_t>;
+
   bool verbose = false;
-  index_t radd = 0;
   index_t kickrank = 2;
-  size_t nswp = 10;
-  data_t tolerance = 1.0e-7;
+  size_t max_sweeps = 10;
+  real_data_t convergence_tolerance = 1.0e-7;
+
+  /// Relative truncation tolerance for the SVD of each two-site cross block.
+  real_data_t two_site_svd_tolerance_relative = 1.0e-7;
+  /// Absolute truncation tolerance for the SVD of each two-site cross block.
+  real_data_t two_site_svd_tolerance_absolute =
+    real_data_t(100) * std::numeric_limits<real_data_t>::denorm_min();
+
+  /// Maximum number of reorthogonalization passes for enrichment vectors.
+  size_t reorthogonalization_max_iterations = 20;
+  /// Norm-reduction ratio that triggers another reorthogonalization pass.
+  real_data_t reorthogonalization_norm_reduction_threshold = 0.25;
+
+  /// Maximum number of row swaps performed by the MAXVOL selector.
+  size_t maxvol_max_iterations = 100;
+  /// Allowed excess over unit volume in the MAXVOL stopping criterion.
+  real_data_t maxvol_tolerance = 5.0e-2;
 
   /**
    * @brief Selects the row-submatrix extraction strategy during the sweep.
@@ -223,7 +240,7 @@ struct DMRGCross
     auto max_relative_error = 0.0;
 
     BOBA_CALI_SWITCH("DMRGCross_core_setup", "DMRGCross_sweep");
-    while ((sweep_count < nswp) && not_converged)
+    while ((sweep_count < max_sweeps) && not_converged)
     {
       checkpoint();
       auto left_core = approximated_tt.cores[core_id];
@@ -254,7 +271,8 @@ struct DMRGCross
       score.reshape({tt_ranks[core_id] * mode_sizes[core_id], mode_sizes[core_id + 1] * tt_ranks[core_id + 2]});
 
       ::boba::SVD<host_space, data_t> svd;
-      svd.tolerance_relative = 1.0e-7;
+      svd.tolerance_relative = two_site_svd_tolerance_relative;
+      svd.tolerance_absolute = two_site_svd_tolerance_absolute;
       svd(score);
       auto u = svd.U;
       auto s = svd.S;
@@ -275,21 +293,20 @@ struct DMRGCross
         ::boba::Matrix<host_space, data_t> ur({u.rows(), kickrank});
         ur.fill_with_zeros();
 
-        ::boba::Matrix<host_space, data_t> ur_preort({u.rows(), kickrank});
-        ur_preort.fill_with_random();
-        ur.reshape(ur_preort);
+        ::boba::Matrix<host_space, data_t> random_enrichment({u.rows(), kickrank});
+        random_enrichment.fill_with_random();
+        ur.reshape(random_enrichment);
 
-        auto u_reort = reort(u, ur);
-        u = u_reort;
-        radd = u.cols() - r;
-        if (radd > 0)
+        u = reorthogonalize(u, ur);
+        const auto rank_added = u.cols() - r;
+        if (rank_added > 0)
         {
-          ::boba::Matrix<host_space, data_t> vr({v.rows(), radd});
+          ::boba::Matrix<host_space, data_t> vr({v.rows(), rank_added});
           vr.fill_with_zeros();
           auto v_temp = concatenate_columns(v, vr);
           v = v_temp;
         }
-        r = r + radd;
+        r = r + rank_added;
       }
       else
       {
@@ -299,21 +316,21 @@ struct DMRGCross
         ::boba::Matrix<host_space, data_t> vr({v.rows(), kickrank});
         vr.fill_with_zeros();
 
-        ::boba::Matrix<host_space, data_t> ur_preort({v.rows(), kickrank});
-        ur_preort.fill_with_random();
+        ::boba::Matrix<host_space, data_t> random_enrichment({v.rows(), kickrank});
+        random_enrichment.fill_with_random();
 
-        vr.reshape(ur_preort);
-        v = reort(v, vr);
+        vr.reshape(random_enrichment);
+        v = reorthogonalize(v, vr);
 
-        radd = v.cols() - r;
-        if (radd > 0)
+        const auto rank_added = v.cols() - r;
+        if (rank_added > 0)
         {
-          ::boba::Matrix<host_space, data_t> ur({u.rows(), radd});
+          ::boba::Matrix<host_space, data_t> ur({u.rows(), rank_added});
           ur.fill_with_zeros();
           auto u_temp = concatenate_columns(u, ur);
           u = u_temp;
         }
-        r = r + radd;
+        r = r + rank_added;
       }
 
       v.transpose_in_place();
@@ -534,7 +551,7 @@ struct DMRGCross
         {
           sweep_right = not(sweep_right);
           sweep_count = sweep_count + 1;
-          if (max_relative_error < tolerance)
+          if (max_relative_error < convergence_tolerance)
           {
             not_converged = false;
           }
@@ -569,7 +586,7 @@ struct DMRGCross
    */
   template <::boba::execution_space space>
   [[nodiscard]]
-  ::boba::Matrix<host_space, data_t> reort(const ::boba::Matrix<space, data_t>& u_in, ::boba::Matrix<space, data_t> const& uadd_in)
+  ::boba::Matrix<host_space, data_t> reorthogonalize(const ::boba::Matrix<space, data_t>& u_in, ::boba::Matrix<space, data_t> const& uadd_in)
     const
   {
     BOBA_CALI_OBJECT_MARK
@@ -599,10 +616,10 @@ struct DMRGCross
     auto projection_coefficients = u.transpose() * uadd;
 
     auto unew = uadd - u * projection_coefficients;
-    bool reort_flag = true;
+    bool reorthogonalize_again = true;
     size_t reorthogonalization_iteration = 1;
 
-    while (reort_flag && (reorthogonalization_iteration <= 20))
+    while (reorthogonalize_again && (reorthogonalization_iteration <= reorthogonalization_max_iterations))
     {
       ::boba::Vector<host_space, data_t> norm_unew({unew.cols()});
       ::boba::Vector<host_space, data_t> norm_uadd({uadd.cols()});
@@ -613,6 +630,7 @@ struct DMRGCross
       auto norm_uadd_view = norm_uadd.atomic_view();
       auto unew_view = unew.const_view();
       auto uadd_view = uadd.const_view();
+      const auto norm_reduction_threshold = reorthogonalization_norm_reduction_threshold;
 
       ::boba::loop<space, 2>(unew.sizes(),
                              [=] __boba_host_device__(::boba::Array<index_t, 2> ij)
@@ -621,24 +639,24 @@ struct DMRGCross
         norm_uadd_view(ij[1]) += ::boba::pow(uadd_view(ij), 2.0);
       });
 
-      size_t reort_condition = 0;
+      size_t columns_requiring_reorthogonalization = 0;
 
-      ::boba::sum_reduce<space>(reort_condition, 0_z, norm_unew.size(), [=] __boba_host_device__(index_t i, boba::sum_reducer_operator<size_t> & local_value)
+      ::boba::sum_reduce<space>(columns_requiring_reorthogonalization, 0_z, norm_unew.size(), [=] __boba_host_device__(index_t i, boba::sum_reducer_operator<size_t> & local_value)
       {
-        if (norm_unew_view(i) <= 0.25 * norm_uadd_view(i))
+        if (norm_unew_view(i) <= norm_reduction_threshold * norm_uadd_view(i))
         {
           local_value += 1;
         }
       });
 
-      reort_flag = (reort_condition > 0);
+      reorthogonalize_again = (columns_requiring_reorthogonalization > 0);
 
       ::boba::QR<host_space, data_t> qr;
       qr(unew);
       // [unew,~]=qr(unew,0);
       unew = qr.Q;
 
-      if (reort_flag)
+      if (reorthogonalize_again)
       {
         uadd = unew;
         auto reorthogonalization_coefficients = u.transpose() * unew;
@@ -650,9 +668,9 @@ struct DMRGCross
     auto u_temp = ::boba::concatenate_columns(u, unew);
     u = u_temp;
 
-    if (reort_flag)
+    if (reorthogonalize_again)
     {
-      boba_print("Reort failed to reort!");
+      boba_print("Reorthogonalization failed to converge!");
 
       // [y,~]=qr([u,unew],0);
       ::boba::QR<host_space, data_t> qr;
@@ -699,9 +717,6 @@ struct DMRGCross
       return selected_indices;
     }
 
-    size_t max_iterations = 100;
-    data_t maxvol_tolerance = 5e-2;
-
     ::boba::LU<space, data_t> lu;
     lu.lu_type = ::boba::LU<space, data_t>::lu_types::full_pivot;
     lu(a_in);
@@ -723,7 +738,7 @@ struct DMRGCross
     auto interpolation_matrix = right_backsolve(selected_submatrix, a_in);
 
     size_t iteration_count = 0;
-    while (iteration_count <= max_iterations)
+    while (iteration_count <= maxvol_max_iterations)
     {
       auto [max_entry, max_entry_index] = interpolation_matrix.max_abs_loc_reduce();
 
