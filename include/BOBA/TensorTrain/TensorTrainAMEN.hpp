@@ -137,15 +137,9 @@ struct TensorTrainAMEN
             ::boba::SVD<space, data_t> svd;
             svd.tolerance_relative = residual_enrichment_svd_tolerance_relative;
             svd.tolerance_absolute = residual_enrichment_svd_tolerance_absolute;
+            svd.max_kept_singular_values = kickrank;
             svd(crznew);
             crznew = svd.V;
-
-            checkpoint();
-            {
-              auto fetch_col = boba::min(kickrank, crznew.cols());
-              auto crznew_temp = crznew;
-              crznew = crznew_temp.get_submatrix({0, crznew.rows()}, {0, fetch_col});
-            }
           }
           else
           {
@@ -427,14 +421,9 @@ struct TensorTrainAMEN
           ::boba::SVD<space, data_t> _svd;
           _svd.tolerance_relative = residual_enrichment_svd_tolerance_relative;
           _svd.tolerance_absolute = residual_enrichment_svd_tolerance_absolute;
+          _svd.max_kept_singular_values = kickrank;
           _svd(crznew);
           crznew = _svd.U;
-
-          {
-            auto fetch_col = boba::min(kickrank, crznew.cols());
-            auto crznew_temp = crznew;
-            crznew = crznew_temp.get_submatrix({0, crznew.rows()}, {0, fetch_col});
-          }
 
           QR<space, data_t> qr;
           qr(crznew);
