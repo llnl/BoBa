@@ -9,7 +9,7 @@
 #include <Eigen/QR>
 #include <Eigen/SVD>
 #include <Eigen/Sparse>
-#include <Eigen/SparseLU>
+#include <unsupported/Eigen/IterativeSolvers>
 #endif
 
 namespace boba
@@ -210,14 +210,11 @@ boba::Vector<host_space, data_t> eigen_gmres(
   auto input_eigen = ::boba::get_eigen_map(input);
   auto output_eigen = ::boba::get_eigen_map(output);
 
-  ::boba::detail::ignore(tolerance_relative);
-  ::boba::detail::ignore(maximum_iterations);
-
   auto matrix_eigen = ::boba::get_eigen_map(matrix).sparseView(sparsity);
 
-  ::Eigen::SparseLU<Eigen::SparseMatrix<data_t>> esolver;
-  esolver.analyzePattern(matrix_eigen);
-  esolver.factorize(matrix_eigen);
+  ::Eigen::DGMRES<Eigen::SparseMatrix<data_t>> esolver(matrix_eigen);
+  esolver.setTolerance(tolerance_relative);
+  esolver.setMaxIterations(static_cast<long>(maximum_iterations));
   output_eigen = esolver.solve(input_eigen);
   return output;
 }
