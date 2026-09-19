@@ -293,12 +293,11 @@ struct DMRGCross
         ::boba::Matrix<host_space, data_t> ur({u.rows(), kickrank});
         ur.fill_with_zeros();
 
-        ::boba::Matrix<host_space, data_t> ur_preort({u.rows(), kickrank});
-        ur_preort.fill_with_random();
-        ur.reshape(ur_preort);
+        ::boba::Matrix<host_space, data_t> random_enrichment({u.rows(), kickrank});
+        random_enrichment.fill_with_random();
+        ur.reshape(random_enrichment);
 
-        auto u_reort = reort(u, ur);
-        u = u_reort;
+        u = reorthogonalize(u, ur);
         const auto rank_added = u.cols() - r;
         if (rank_added > 0)
         {
@@ -317,11 +316,11 @@ struct DMRGCross
         ::boba::Matrix<host_space, data_t> vr({v.rows(), kickrank});
         vr.fill_with_zeros();
 
-        ::boba::Matrix<host_space, data_t> ur_preort({v.rows(), kickrank});
-        ur_preort.fill_with_random();
+        ::boba::Matrix<host_space, data_t> random_enrichment({v.rows(), kickrank});
+        random_enrichment.fill_with_random();
 
-        vr.reshape(ur_preort);
-        v = reort(v, vr);
+        vr.reshape(random_enrichment);
+        v = reorthogonalize(v, vr);
 
         const auto rank_added = v.cols() - r;
         if (rank_added > 0)
@@ -587,7 +586,7 @@ struct DMRGCross
    */
   template <::boba::execution_space space>
   [[nodiscard]]
-  ::boba::Matrix<host_space, data_t> reort(const ::boba::Matrix<space, data_t>& u_in, ::boba::Matrix<space, data_t> const& uadd_in)
+  ::boba::Matrix<host_space, data_t> reorthogonalize(const ::boba::Matrix<space, data_t>& u_in, ::boba::Matrix<space, data_t> const& uadd_in)
     const
   {
     BOBA_CALI_OBJECT_MARK
@@ -617,10 +616,10 @@ struct DMRGCross
     auto projection_coefficients = u.transpose() * uadd;
 
     auto unew = uadd - u * projection_coefficients;
-    bool reort_flag = true;
+    bool reorthogonalize_again = true;
     size_t reorthogonalization_iteration = 1;
 
-    while (reort_flag && (reorthogonalization_iteration <= reorthogonalization_max_iterations))
+    while (reorthogonalize_again && (reorthogonalization_iteration <= reorthogonalization_max_iterations))
     {
       ::boba::Vector<host_space, data_t> norm_unew({unew.cols()});
       ::boba::Vector<host_space, data_t> norm_uadd({uadd.cols()});
@@ -640,9 +639,9 @@ struct DMRGCross
         norm_uadd_view(ij[1]) += ::boba::pow(uadd_view(ij), 2.0);
       });
 
-      size_t reort_condition = 0;
+      size_t columns_requiring_reorthogonalization = 0;
 
-      ::boba::sum_reduce<space>(reort_condition, 0_z, norm_unew.size(), [=] __boba_host_device__(index_t i, boba::sum_reducer_operator<size_t> & local_value)
+      ::boba::sum_reduce<space>(columns_requiring_reorthogonalization, 0_z, norm_unew.size(), [=] __boba_host_device__(index_t i, boba::sum_reducer_operator<size_t> & local_value)
       {
         if (norm_unew_view(i) <= norm_reduction_threshold * norm_uadd_view(i))
         {
@@ -650,14 +649,14 @@ struct DMRGCross
         }
       });
 
-      reort_flag = (reort_condition > 0);
+      reorthogonalize_again = (columns_requiring_reorthogonalization > 0);
 
       ::boba::QR<host_space, data_t> qr;
       qr(unew);
       // [unew,~]=qr(unew,0);
       unew = qr.Q;
 
-      if (reort_flag)
+      if (reorthogonalize_again)
       {
         uadd = unew;
         auto reorthogonalization_coefficients = u.transpose() * unew;
@@ -669,9 +668,9 @@ struct DMRGCross
     auto u_temp = ::boba::concatenate_columns(u, unew);
     u = u_temp;
 
-    if (reort_flag)
+    if (reorthogonalize_again)
     {
-      boba_print("Reort failed to reort!");
+      boba_print("Reorthogonalization failed to converge!");
 
       // [y,~]=qr([u,unew],0);
       ::boba::QR<host_space, data_t> qr;
