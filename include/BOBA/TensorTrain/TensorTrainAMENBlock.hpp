@@ -25,6 +25,14 @@ struct TensorTrainAMENBlock
   index_t max_allowed_ranks = 1000;
   size_t max_sweeps = 20;
   size_t minimum_sweeps = 1;
+  /// Relative SVD tolerance used to truncate residual-enrichment bases.
+  real_type_t<data_t> residual_enrichment_svd_tolerance_relative = 0.0;
+  /// Absolute SVD tolerance used to truncate residual-enrichment bases.
+  real_type_t<data_t> residual_enrichment_svd_tolerance_absolute = 0.0;
+  /// Relative SVD tolerance used to split an updated local solution.
+  real_type_t<data_t> local_solution_svd_tolerance_relative = 0.0;
+  /// Absolute SVD tolerance used to split an updated local solution.
+  real_type_t<data_t> local_solution_svd_tolerance_absolute = 0.0;
   // Scalar AMEn-style intermediate normalization is algebraically safe for
   // diagonal block systems. For genuinely coupled block systems the current
   // per-block scalar bookkeeping does not preserve the off-diagonal projected
@@ -258,7 +266,6 @@ struct TensorTrainAMENBlock
                   "rl-crzAt");
               }
 
-              auto crzAt_matrix = boba::reshape_to_matrix(crzAt, {rz[ki][i], cry(ki).sizes(i) * rz[ki][i + 1]});
               auto crzy2 = project_phizy_block(
                 phizy[ki].cores[i],
                 cry(ki).cores[i],
@@ -270,18 +277,15 @@ struct TensorTrainAMENBlock
               {
                 crzy2 *= nrmsc[ki];
               }
-              auto crzy2_matrix = boba::reshape_to_matrix(crzy2, {rz[ki][i], cry(ki).sizes(i) * rz[ki][i + 1]});
-              crznew[ki] = crzy2_matrix - crzAt_matrix;
+              crzy2 -= crzAt;
+              crznew[ki] = boba::reshape_to_matrix(crzy2, {rz[ki][i], cry(ki).sizes(i) * rz[ki][i + 1]});
 
               ::boba::SVD<space, data_t> svd;
-              svd.tolerance_relative = 0.0;
-              svd.tolerance_absolute = 0.0;
+              svd.tolerance_relative = residual_enrichment_svd_tolerance_relative;
+              svd.tolerance_absolute = residual_enrichment_svd_tolerance_absolute;
+              svd.max_kept_singular_values = kickrank;
               svd(crznew[ki]);
               crznew[ki] = svd.V;
-
-              auto fetch_col = boba::min(kickrank, crznew[ki].cols());
-              auto crznew_temp = crznew[ki];
-              crznew[ki] = crznew_temp.get_submatrix({0, crznew[ki].rows()}, {0, fetch_col});
             }
             else
             {
@@ -879,8 +883,8 @@ struct TensorTrainAMENBlock
           auto sol_matrix = reshape_to_matrix(sol, {crx(ki).ranks(i) * cry(ki).sizes(i), crx(ki).ranks(i + 1)});
 
           boba::SVD<space, data_t> svd;
-          svd.tolerance_relative = 0.0;
-          svd.tolerance_absolute = 0.0;
+          svd.tolerance_relative = local_solution_svd_tolerance_relative;
+          svd.tolerance_absolute = local_solution_svd_tolerance_absolute;
 
           boba::Matrix<space, data_t> u, s, v;
           index_t r = boba::min(crx(ki).ranks(i) * cry(ki).sizes(i), crx(ki).ranks(i + 1));
@@ -987,7 +991,6 @@ struct TensorTrainAMENBlock
                 "lr-crzAt");
             }
 
-            auto crzAt_matrix = boba::reshape_to_matrix(crzAt, {rz[ki][i] * cry(ki).sizes(i), rz[ki][i + 1]});
             auto crzy = project_phizy_block(
               phizy[ki].cores[i],
               y1,
@@ -995,18 +998,15 @@ struct TensorTrainAMENBlock
               ki,
               i,
               "lr-crz-project");
-            auto crzy_matrix = boba::reshape_to_matrix(crzy, {rz[ki][i] * cry(ki).sizes(i), rz[ki][i + 1]});
-            crznew[ki] = crzy_matrix - crzAt_matrix;
+            crzy -= crzAt;
+            crznew[ki] = boba::reshape_to_matrix(crzy, {rz[ki][i] * cry(ki).sizes(i), rz[ki][i + 1]});
 
             ::boba::SVD<space, data_t> _svd;
-            _svd.tolerance_relative = 0.0;
-            _svd.tolerance_absolute = 0.0;
+            _svd.tolerance_relative = residual_enrichment_svd_tolerance_relative;
+            _svd.tolerance_absolute = residual_enrichment_svd_tolerance_absolute;
+            _svd.max_kept_singular_values = kickrank;
             _svd(crznew[ki]);
             crznew[ki] = _svd.U;
-
-            auto fetch_col = boba::min(kickrank, crznew[ki].cols());
-            auto crznew_temp = crznew[ki];
-            crznew[ki] = crznew_temp.get_submatrix({0, crznew[ki].rows()}, {0, fetch_col});
 
             QR<space, data_t> qr;
             qr(crznew[ki]);

@@ -22,6 +22,15 @@ struct TensorTrainAMEN
   size_t minimum_sweeps = 1;
   bool verbose = false;
 
+  /// Relative SVD tolerance used to truncate residual-enrichment bases.
+  real_type_t<data_t> residual_enrichment_svd_tolerance_relative = 0.0;
+  /// Absolute SVD tolerance used to truncate residual-enrichment bases.
+  real_type_t<data_t> residual_enrichment_svd_tolerance_absolute = 0.0;
+  /// Relative SVD tolerance used to split an updated local solution.
+  real_type_t<data_t> local_solution_svd_tolerance_relative = 0.0;
+  /// Absolute SVD tolerance used to split an updated local solution.
+  real_type_t<data_t> local_solution_svd_tolerance_absolute = 0.0;
+
   Solve3D2MLOptions<data_t> solve3d_2ml_options;
 
   template <typename unsupported_operator, typename unsupported_vector>
@@ -118,25 +127,18 @@ struct TensorTrainAMEN
             checkpoint();
             auto crxi = crx.cores[i];
             auto crzAt = bfun3(phiza.cores[i], crA.cores[i], phiza.cores[i + 1], crxi);
-            auto crzAt_matrix = boba::reshape_to_matrix(crzAt, {rz[i], cry.sizes(i) * rz[i + 1]});
             checkpoint();
             auto crzy2 = project_phizy(phizy.cores[i], cry.cores[i], phizy.cores[i + 1]);
             crzy2 *= nrmsc;
-            auto crzy2_matrix = boba::reshape_to_matrix(crzy2, {rz[i], cry.sizes(i) * rz[i + 1]});
-            crznew = crzy2_matrix - crzAt_matrix;
+            crzy2 -= crzAt;
+            crznew = boba::reshape_to_matrix(crzy2, {rz[i], cry.sizes(i) * rz[i + 1]});
 
             ::boba::SVD<space, data_t> svd;
-            svd.tolerance_relative = 0.0;
-            svd.tolerance_absolute = 0.0;
+            svd.tolerance_relative = residual_enrichment_svd_tolerance_relative;
+            svd.tolerance_absolute = residual_enrichment_svd_tolerance_absolute;
+            svd.max_kept_singular_values = kickrank;
             svd(crznew);
             crznew = svd.V;
-
-            checkpoint();
-            {
-              auto fetch_col = boba::min(kickrank, crznew.cols());
-              auto crznew_temp = crznew;
-              crznew = crznew_temp.get_submatrix({0, crznew.rows()}, {0, fetch_col});
-            }
           }
           else
           {
@@ -324,8 +326,8 @@ struct TensorTrainAMEN
         auto sol_matrix = reshape_to_matrix(sol, {crx.ranks(i) * cry.sizes(i), crx.ranks(i + 1)});
 
         boba::SVD<space, data_t> svd;
-        svd.tolerance_relative = 0.0;
-        svd.tolerance_absolute = 0.0;
+        svd.tolerance_relative = local_solution_svd_tolerance_relative;
+        svd.tolerance_absolute = local_solution_svd_tolerance_absolute;
 
         boba::Matrix<space, data_t> u, s, v;
         index_t r = boba::min(crx.ranks(i) * cry.sizes(i), crx.ranks(i + 1));
@@ -405,27 +407,19 @@ struct TensorTrainAMEN
           auto uvT = boba::reshape_from_matrix<3>(u * v.transpose(), {crx.ranks(i), cry.sizes(i), crx.ranks(i + 1)});
           checkpoint();
           auto crzAt = bfun3(phiza.cores[i], crA.cores[i], phiza.cores[i + 1], uvT);
-          checkpoint();
-          auto crzAt_matrix = boba::reshape_to_matrix(crzAt, {rz[i] * cry.sizes(i), rz[i + 1]});
 
           auto crzy = project_phizy(phizy.cores[i], y1, phizy.cores[i + 1]);
 
           checkpoint();
-          auto crzy_matrix = boba::reshape_to_matrix(crzy, {rz[i] * cry.sizes(i), rz[i + 1]});
-
-          crznew = crzy_matrix - crzAt_matrix;
+          crzy -= crzAt;
+          crznew = boba::reshape_to_matrix(crzy, {rz[i] * cry.sizes(i), rz[i + 1]});
 
           ::boba::SVD<space, data_t> _svd;
-          _svd.tolerance_relative = 0.0;
-          _svd.tolerance_absolute = 0.0;
+          _svd.tolerance_relative = residual_enrichment_svd_tolerance_relative;
+          _svd.tolerance_absolute = residual_enrichment_svd_tolerance_absolute;
+          _svd.max_kept_singular_values = kickrank;
           _svd(crznew);
           crznew = _svd.U;
-
-          {
-            auto fetch_col = boba::min(kickrank, crznew.cols());
-            auto crznew_temp = crznew;
-            crznew = crznew_temp.get_submatrix({0, crznew.rows()}, {0, fetch_col});
-          }
 
           QR<space, data_t> qr;
           qr(crznew);

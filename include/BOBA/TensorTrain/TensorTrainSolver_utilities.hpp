@@ -60,7 +60,7 @@ std::pair<::boba::Tensor<3, space, data_t>, data_t> compute_next_Phi(
   else
   {
     phi_norm = ::boba::norm_frobenius(Phi_out);
-    if (phi_norm > 10.0 * boba::epsilon<data_t>())
+    if (not(is_tiny(phi_norm)))
     {
       Phi_out *= 1.0 / phi_norm;
     }
@@ -222,6 +222,10 @@ struct Solve3D2MLOptions
   size_t method = 0;
   data_t tolerance_relative = 1.0e-60;
   data_t tolerance_absolute = 1.0e-60;
+  /// Maximum iterations used only by the Eigen GMRES path (`method == 0`).
+  size_t eigen_gmres_max_iterations = 30;
+  /// Sparsification threshold used only by the Eigen GMRES path (`method == 0`).
+  data_t eigen_gmres_sparsity = 1.0e-3;
   index_t outer_iterations = 40;
   index_t inner_iterations = 200;
 };
@@ -265,7 +269,12 @@ boba::Tensor<3, space, data_t> solve3d_2ml(
       auto dy_vector = flatten(dy);
       auto bfun_operator = bfun3_matrix(Phi1, A, Phi2);
 
-      auto dx = detail::eigen_gmres(bfun_operator, dy_vector, options.tolerance_relative * x0_vector_norm, 30_z);
+      auto dx = detail::eigen_gmres(
+        bfun_operator,
+        dy_vector,
+        options.tolerance_relative * x0_vector_norm,
+        options.eigen_gmres_max_iterations,
+        options.eigen_gmres_sparsity);
 
       checkpoint();
       auto dx_tensor = reshape<3>(dx, x.sizes());
