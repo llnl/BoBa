@@ -21,9 +21,11 @@ using boba::operator""_z;
 
 #define pass_or_fail(check, error, tolerance)                                                         \
   {                                                                                                   \
+    /* Use the tolerance's declared type for both operands so the comparison uses one numeric type. */ \
     const auto typed_tolerance = (tolerance);                                                         \
     using tolerance_type = std::remove_cvref_t<decltype(typed_tolerance)>;                            \
     const auto typed_error = static_cast<tolerance_type>(error);                                      \
+    /* Reject non-finite inputs explicitly instead of treating them as ordinary tolerance failures. */ \
     const bool error_is_finite = std::isfinite(typed_error);                                          \
     const bool tolerance_is_finite = std::isfinite(typed_tolerance);                                  \
     bool this_check = false;                                                                          \
