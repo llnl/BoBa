@@ -4,6 +4,7 @@
 
 #include "BOBA/boba.hpp"
 
+#include <cmath>
 #include <iostream>
 
 /**
@@ -18,21 +19,38 @@ using boba::operator""_z;
   Some useful common functions
 */
 
-#define pass_or_fail(check, error, tolerance)                                                                      \
-  {                                                                                                                \
-    /* take the declared type of error with decyltype, remove any &, and ensure tolerance is the same type */      \
-    auto typed_error = static_cast<typename std::remove_reference<decltype(tolerance)>::type>(error);              \
-    bool this_check = boba::abs(typed_error) < tolerance;                                                          \
-    std::cout << " checking " << #error << " = " << std::scientific << typed_error << " < " << tolerance << " ? "; \
-    std::cout << (this_check ? ("pass") : ("fail")) << std::endl;                                                  \
-    check = check && this_check;                                                                                   \
-    std::cout << " cumulative check = " << (check ? ("pass") : ("fail")) << std::endl;                             \
-    bool fail_immediately = boba::is_env_nonempty("FAIL_IMMEDIATELY");                                             \
-    bool fail_never = boba::is_env_nonempty("FAIL_NEVER");                                                         \
-    if (not(check) and fail_immediately and not(fail_never))                                                       \
-    {                                                                                                              \
-      boba_error("Check failed!");                                                                                 \
-    }                                                                                                              \
+#define pass_or_fail(check, error, tolerance)                                                         \
+  {                                                                                                   \
+    const auto typed_tolerance = (tolerance);                                                         \
+    using tolerance_type = std::remove_cvref_t<decltype(typed_tolerance)>;                            \
+    const auto typed_error = static_cast<tolerance_type>(error);                                      \
+    const bool error_is_finite = std::isfinite(typed_error);                                          \
+    const bool tolerance_is_finite = std::isfinite(typed_tolerance);                                  \
+    bool this_check = false;                                                                          \
+    if (!error_is_finite)                                                                             \
+    {                                                                                                 \
+      std::cout << " checking " << #error << " ? fail: error is non-finite ("                       \
+                << typed_error << ")" << std::endl;                                                  \
+    }                                                                                                 \
+    if (!tolerance_is_finite)                                                                         \
+    {                                                                                                 \
+      std::cout << " checking " << #tolerance << " ? fail: tolerance is non-finite ("               \
+                << typed_tolerance << ")" << std::endl;                                              \
+    }                                                                                                 \
+    if (error_is_finite && tolerance_is_finite)                                                       \
+    {                                                                                                 \
+      this_check = boba::abs(typed_error) < typed_tolerance;                                          \
+      std::cout << " checking " << #error << " = " << std::scientific << typed_error << " < "        \
+                << typed_tolerance << " ? " << (this_check ? "pass" : "fail") << std::endl;          \
+    }                                                                                                 \
+    check = check && this_check;                                                                      \
+    std::cout << " cumulative check = " << (check ? ("pass") : ("fail")) << std::endl;                \
+    bool fail_immediately = boba::is_env_nonempty("FAIL_IMMEDIATELY");                                \
+    bool fail_never = boba::is_env_nonempty("FAIL_NEVER");                                            \
+    if (not(check) and fail_immediately and not(fail_never))                                          \
+    {                                                                                                 \
+      boba_error("Check failed!");                                                                    \
+    }                                                                                                 \
   }
 
 #define pass_or_fail_bool(check, condition)                                            \

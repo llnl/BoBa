@@ -350,6 +350,8 @@ void run_block_test(
   double max_solution_error = 0.0;
   bool saw_rank_growth = false;
   constexpr double tiny_norm = 1.0e-14;
+  double residual_tolerance = boba::max(1000.0 * parameters.convergence_tolerance, 1.0e-8);
+  double solution_tolerance = boba::max(100.0 * parameters.convergence_tolerance, 1.0e-10);
   for (size_t blk = 0; blk < n_blocks; blk++)
   {
     auto residual_vec = rhs(blk);
@@ -369,20 +371,13 @@ void run_block_test(
     auto solution_error_norm = boba::norm_difference_frobenius(solution(blk), exact_solution_tt_host(blk));
     auto relative_residual = (rhs_norm > tiny_norm) ? (residual_norm / rhs_norm) : residual_norm;
     auto relative_solution_error = (exact_norm > tiny_norm) ? (solution_error_norm / exact_norm) : solution_error_norm;
-    pass_or_fail_bool(check, std::isfinite(relative_residual));
-    pass_or_fail_bool(check, std::isfinite(relative_solution_error));
-    if (!std::isfinite(relative_residual))
-    {
-      relative_residual = std::numeric_limits<double>::infinity();
-    }
-    if (!std::isfinite(relative_solution_error))
-    {
-      relative_solution_error = std::numeric_limits<double>::infinity();
-    }
 
     std::cout << "Block " << blk << " relative residual: " << relative_residual << std::endl;
     std::cout << "Block " << blk << " relative solution error: " << relative_solution_error << std::endl;
     std::cout << "Block " << blk << " solution ranks: " << solution(blk).ranks_string() << std::endl;
+
+    pass_or_fail(check, relative_residual, residual_tolerance);
+    pass_or_fail(check, relative_solution_error, solution_tolerance);
 
     max_residual = boba::max(max_residual, relative_residual);
     max_solution_error = boba::max(max_solution_error, relative_solution_error);
@@ -396,11 +391,6 @@ void run_block_test(
   std::cout << "Max relative residual across all blocks: " << max_residual << std::endl;
   std::cout << "Max relative solution error across all blocks: " << max_solution_error << std::endl;
 
-  // Check convergence
-  double residual_tolerance = boba::max(1000.0 * parameters.convergence_tolerance, 1.0e-8);
-  double solution_tolerance = boba::max(100.0 * parameters.convergence_tolerance, 1.0e-10);
-  pass_or_fail(check, max_residual, residual_tolerance);
-  pass_or_fail(check, max_solution_error, solution_tolerance);
   if (parameters.exact_solution_rank > 1)
   {
     pass_or_fail_bool(check, saw_rank_growth);

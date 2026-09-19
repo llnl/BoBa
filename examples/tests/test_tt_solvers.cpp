@@ -215,8 +215,6 @@ void run_dimension_with_solver(
   boba_print(error_norm_relative);
   boba_print(residual_norm_relative);
 
-  pass_or_fail_bool(check, std::isfinite(error_norm_relative));
-  pass_or_fail_bool(check, std::isfinite(residual_norm_relative));
   pass_or_fail(check, error_norm_relative, 0.3 * double(64 + 1) / double(parameters.N + 1));
   pass_or_fail(check, residual_norm_relative, boba::max(1000.0 * parameters.convergence_tolerance, 1.0e-6));
 }
