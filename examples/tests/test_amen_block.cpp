@@ -369,13 +369,15 @@ void run_block_test(
     auto solution_error_norm = boba::norm_difference_frobenius(solution(blk), exact_solution_tt_host(blk));
     auto relative_residual = (rhs_norm > tiny_norm) ? (residual_norm / rhs_norm) : residual_norm;
     auto relative_solution_error = (exact_norm > tiny_norm) ? (solution_error_norm / exact_norm) : solution_error_norm;
+    pass_or_fail_bool(check, std::isfinite(relative_residual));
+    pass_or_fail_bool(check, std::isfinite(relative_solution_error));
     if (!std::isfinite(relative_residual))
     {
-      relative_residual = 0.0;
+      relative_residual = std::numeric_limits<double>::infinity();
     }
     if (!std::isfinite(relative_solution_error))
     {
-      relative_solution_error = 0.0;
+      relative_solution_error = std::numeric_limits<double>::infinity();
     }
 
     std::cout << "Block " << blk << " relative residual: " << relative_residual << std::endl;

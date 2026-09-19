@@ -212,7 +212,7 @@ boba::Vector<host_space, data_t> eigen_gmres(
 
   auto matrix_eigen = ::boba::get_eigen_map(matrix).sparseView(sparsity);
 
-  ::Eigen::DGMRES<Eigen::SparseMatrix<data_t>> esolver(matrix_eigen);
+  ::Eigen::GMRES<Eigen::SparseMatrix<data_t>> esolver(matrix_eigen);
   esolver.setTolerance(tolerance_relative);
   esolver.setMaxIterations(static_cast<long>(maximum_iterations));
   output_eigen = esolver.solve(input_eigen);
