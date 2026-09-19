@@ -127,12 +127,11 @@ struct TensorTrainAMEN
             checkpoint();
             auto crxi = crx.cores[i];
             auto crzAt = bfun3(phiza.cores[i], crA.cores[i], phiza.cores[i + 1], crxi);
-            auto crzAt_matrix = boba::reshape_to_matrix(crzAt, {rz[i], cry.sizes(i) * rz[i + 1]});
             checkpoint();
             auto crzy2 = project_phizy(phizy.cores[i], cry.cores[i], phizy.cores[i + 1]);
             crzy2 *= nrmsc;
-            auto crzy2_matrix = boba::reshape_to_matrix(crzy2, {rz[i], cry.sizes(i) * rz[i + 1]});
-            crznew = crzy2_matrix - crzAt_matrix;
+            crzy2 -= crzAt;
+            crznew = boba::reshape_to_matrix(crzy2, {rz[i], cry.sizes(i) * rz[i + 1]});
 
             ::boba::SVD<space, data_t> svd;
             svd.tolerance_relative = residual_enrichment_svd_tolerance_relative;
@@ -408,15 +407,12 @@ struct TensorTrainAMEN
           auto uvT = boba::reshape_from_matrix<3>(u * v.transpose(), {crx.ranks(i), cry.sizes(i), crx.ranks(i + 1)});
           checkpoint();
           auto crzAt = bfun3(phiza.cores[i], crA.cores[i], phiza.cores[i + 1], uvT);
-          checkpoint();
-          auto crzAt_matrix = boba::reshape_to_matrix(crzAt, {rz[i] * cry.sizes(i), rz[i + 1]});
 
           auto crzy = project_phizy(phizy.cores[i], y1, phizy.cores[i + 1]);
 
           checkpoint();
-          auto crzy_matrix = boba::reshape_to_matrix(crzy, {rz[i] * cry.sizes(i), rz[i + 1]});
-
-          crznew = crzy_matrix - crzAt_matrix;
+          crzy -= crzAt;
+          crznew = boba::reshape_to_matrix(crzy, {rz[i] * cry.sizes(i), rz[i + 1]});
 
           ::boba::SVD<space, data_t> _svd;
           _svd.tolerance_relative = residual_enrichment_svd_tolerance_relative;
