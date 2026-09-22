@@ -92,6 +92,7 @@ all: \
 	test_block_operator \
 	test_amen_block \
 	test_io \
+	test_htucker \
 	test_orthogonalize \
 	test_sum_and_round \
 	test_static_views \
@@ -580,6 +581,15 @@ test_io${NAME_FLAG}.out: test_io${NAME_FLAG}.o boba${NAME_FLAG}.o
 
 test_io${NAME_FLAG}.o: ${TESTS_DIR}/test_io.cpp ${BOBA_INC} boba${NAME_FLAG}.o
 	${COMPILE} ${OPTS} -c ${TESTS_DIR}/test_io.cpp -o test_io${NAME_FLAG}.o
+###############################
+test_htucker: test_htucker${NAME_FLAG}.out
+	echo "Done making $@${NAME_FLAG}.out"
+
+test_htucker${NAME_FLAG}.out: test_htucker${NAME_FLAG}.o boba${NAME_FLAG}.o
+	${LINK} -o $@ $^ ${LIBS}
+
+test_htucker${NAME_FLAG}.o: ${TESTS_DIR}/test_htucker.cpp ${BOBA_INC} boba${NAME_FLAG}.o
+	${COMPILE} ${OPTS} -c ${TESTS_DIR}/test_htucker.cpp -o test_htucker${NAME_FLAG}.o
 ###############################
 test_sum_and_round: test_sum_and_round${NAME_FLAG}.out
 	echo "Done making $@${NAME_FLAG}.out"

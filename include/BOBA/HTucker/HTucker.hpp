@@ -383,17 +383,10 @@ public:
    * @param[in] rhs source HierarchicalTucker object to copy from
    */
   template <execution_space rhs_space>
-  HierarchicalTucker(HierarchicalTucker<dimension, rhs_space, data_t> const& rhs)
-      : m_name(rhs.m_name),
-        svd_tolerance_relative(rhs.svd_tolerance_relative),
-        svd_tolerance_absolute(rhs.svd_tolerance_absolute),
-        is_orthog(rhs.is_orthog),
-        transfer_tensors(rhs.transfer_tensors),
-        basis_matrices(rhs.basis_matrices),
-        ranks(rhs.ranks),
-        sizes(rhs.sizes),
-        dim_tree(rhs.dim_tree)
+    requires(space != rhs_space)
+  HierarchicalTucker(const HierarchicalTucker<dimension, rhs_space, data_t>& rhs)
   {
+    *this = rhs;
   }
 
   /**
@@ -404,17 +397,39 @@ public:
    * @return reference to this object after assignment
    */
   template <execution_space rhs_space>
-  HierarchicalTucker& operator=(HierarchicalTucker<dimension, rhs_space, data_t> const& rhs)
+    requires(space != rhs_space)
+  HierarchicalTucker& operator=(const HierarchicalTucker<dimension, rhs_space, data_t>& rhs)
   {
-    m_name = rhs.m_name;
-    svd_tolerance_relative = rhs.svd_tolerance_relative;
-    svd_tolerance_absolute = rhs.svd_tolerance_absolute;
-    is_orthog = rhs.is_orthog;
-    transfer_tensors = rhs.transfer_tensors;
-    basis_matrices = rhs.basis_matrices;
-    ranks = rhs.ranks;
-    sizes = rhs.sizes;
-    dim_tree = rhs.dim_tree;
+    const auto& rhs_transfer_tensors = rhs.get_transfer_tensors();
+    const auto& rhs_basis_matrices = rhs.get_basis_matrices();
+
+    ::boba::Array<B_type, num_nodes> new_transfer_tensors;
+    ::boba::Array<U_type, num_nodes> new_basis_matrices;
+
+    for (size_t node = 0; node < num_nodes; ++node)
+    {
+      if (rhs_transfer_tensors[node].has_value())
+      {
+        new_transfer_tensors[node].emplace(rhs_transfer_tensors[node].value());
+      }
+
+      if (rhs_basis_matrices[node].has_value())
+      {
+        new_basis_matrices[node].emplace(rhs_basis_matrices[node].value());
+      }
+    }
+
+    m_name = rhs.name();
+    svd_tolerance_relative = rhs.get_svd_relative_tolerance();
+    svd_tolerance_absolute = rhs.get_svd_absolute_tolerance();
+    is_orthog = rhs.get_is_orthog();
+
+    transfer_tensors = std::move(new_transfer_tensors);
+    basis_matrices = std::move(new_basis_matrices);
+    ranks = rhs.get_ranks();
+    sizes = rhs.get_sizes();
+    dim_tree = rhs.get_dim_tree();
+
     return *this;
   }
 
@@ -706,22 +721,6 @@ public:
   HierarchicalTucker_type operator*(Scalar scalar) const
   {
     HierarchicalTucker_type output{*this};
-    output *= scalar;
-    return output;
-  }
-
-  /**
-   * @brief Defines scalar * HierarchicalTucker.
-   *
-   * @param scalar Scalar multiplier.
-   * @param rhs An HierarchicalTucker to be scaled.
-   * @return New HierarchicalTucker object representing the scaled tensor.
-   */
-  template <typename Scalar>
-    requires std::is_convertible_v<Scalar, data_t>
-  friend HierarchicalTucker_type operator*(Scalar scalar, HierarchicalTucker_type const& rhs)
-  {
-    HierarchicalTucker_type output{rhs};
     output *= scalar;
     return output;
   }
@@ -1157,9 +1156,9 @@ public:
 
         auto B_contracted = ::boba::tensor_contraction<1>({"i", "j", "l"}, node_transfer_tensor_conj, {"k", "l"}, node_gramian, {"i", "j", "k"});
 
-        auto left_gramian = ::boba::tensor_contraction<2>({"m", "j", "k"}, node_transfer_tensor_conj, {"i", "j", "k"}, B_contracted, {"m", "i"});
+        auto left_gramian = ::boba::tensor_contraction<2>({"m", "j", "k"}, node_transfer_tensor, {"i", "j", "k"}, B_contracted, {"m", "i"});
 
-        auto right_gramian = ::boba::tensor_contraction<2>({"i", "n", "k"}, node_transfer_tensor_conj, {"i", "j", "k"}, B_contracted, {"n", "j"});
+        auto right_gramian = ::boba::tensor_contraction<2>({"i", "n", "k"}, node_transfer_tensor, {"i", "j", "k"}, B_contracted, {"n", "j"});
 
         gramians[children[0]].emplace(std::move(left_gramian));
         gramians[children[1]].emplace(std::move(right_gramian));

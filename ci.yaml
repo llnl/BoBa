@@ -39,6 +39,10 @@
     tutorial_6_htucker:
       skip: [hip, cuda]
 
+  test_htucker:
+    test_htucker:
+      skip: [hip, cuda]
+
   tutorial_7_quantized_tensor_trains:
     tutorial_7_quantized_tensor_trains:
       skip: []
