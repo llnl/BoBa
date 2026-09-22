@@ -84,16 +84,20 @@ struct TensorTrainAMENBlock
    * block AMEn implementation, block mode sizes are allowed to differ across
    * rows and columns as long as each nonzero block maps between compatible sizes.
    *
+   * \tparam random_generator_t Type satisfying the C++
+   *          UniformRandomBitGenerator requirements.
    * \param[in] crA Square block operator.
    * \param[in] cry Block right-hand side.
    * \param[in] tt_initial_guess Initial block TT iterate.
+   * \param[in,out] random_generator Generator used for residual enrichment.
    * \return Final block TT solution, returned in host space.
    */
-  template <size_t dimension, execution_space space>
+  template <size_t dimension, execution_space space, typename random_generator_t>
   ::boba::BlockVector<::boba::TensorTrain<dimension, host_space, data_t>> solve(
     const ::boba::BlockOperator<::boba::TensorTrainMatrix<dimension, space, data_t>>& crA,
     const ::boba::BlockVector<::boba::TensorTrain<dimension, space, data_t>>& cry,
-    const ::boba::BlockVector<::boba::TensorTrain<dimension, space, data_t>>& tt_initial_guess)
+    const ::boba::BlockVector<::boba::TensorTrain<dimension, space, data_t>>& tt_initial_guess,
+    random_generator_t& random_generator)
   {
     BOBA_CALI_MARK
     checkpoint();
@@ -184,7 +188,7 @@ struct TensorTrainAMENBlock
         auto rank_right = (d == dimension - 1) ? 1 : z_rank;
 
         crz[ki].cores[d].resize({rank_left, cry(ki).sizes(d), rank_right});
-        crz[ki].cores[d].fill_with_random();
+        crz[ki].cores[d].fill_with_random(random_generator);
       }
     }
 
@@ -1356,6 +1360,29 @@ struct TensorTrainAMENBlock
       host_crx(ki) = crx(ki);
     }
     return host_crx;
+  }
+
+  /**
+   * \brief Solves a block TT system using the process-wide default generator.
+   *
+   * Calling `boba::random::set_seed()` resets the sequence used for residual
+   * enrichment.
+   *
+   * \tparam dimension Tensor dimension.
+   * \tparam space Execution space.
+   * \param[in] crA Square block operator.
+   * \param[in] cry Block right-hand side.
+   * \param[in] tt_initial_guess Initial block TT iterate.
+   * \return Final block TT solution, returned in host space.
+   */
+  template <size_t dimension, execution_space space>
+  ::boba::BlockVector<::boba::TensorTrain<dimension, host_space, data_t>> solve(
+    const ::boba::BlockOperator<::boba::TensorTrainMatrix<dimension, space, data_t>>& crA,
+    const ::boba::BlockVector<::boba::TensorTrain<dimension, space, data_t>>& cry,
+    const ::boba::BlockVector<::boba::TensorTrain<dimension, space, data_t>>& tt_initial_guess)
+  {
+    auto& random_generator = ::boba::random::default_context();
+    return solve(crA, cry, tt_initial_guess, random_generator);
   }
 
 private:

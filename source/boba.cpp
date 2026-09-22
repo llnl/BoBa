@@ -14,6 +14,43 @@
 namespace boba
 {
 
+namespace random
+{
+
+RandomContext::RandomContext()
+    : RandomContext(static_cast<seed_type>(std::random_device{}()))
+{
+}
+
+RandomContext::RandomContext(seed_type seed)
+    : seed_(seed), engine_(seed)
+{
+}
+
+void RandomContext::set_seed(seed_type seed)
+{
+  seed_ = seed;
+  engine_.seed(seed);
+}
+
+seed_type RandomContext::current_seed() const
+{
+  return seed_;
+}
+
+RandomContext::result_type RandomContext::operator()()
+{
+  return engine_();
+}
+
+RandomContext& default_context()
+{
+  static RandomContext context;
+  return context;
+}
+
+} // namespace random
+
 namespace detail
 {
 

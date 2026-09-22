@@ -719,44 +719,58 @@ struct Tensor
   }
 
   /**
-   * @brief Fills this Tensor with random values between lower_value and upper_value
-   * For floats and doubles, the random value is in the range of (lower_value, upper_value).
-   * For ints and size_t, the random value is in the range [0, upper_value - 1]
-   * For complex floats and doubles, this is not defined
-   * @param[in] lower_value
-   * @param[in] upper_value
+   * @brief Fills this Tensor from a caller-owned random-number generator.
+   *
+   * Floating-point values are sampled uniformly from
+   * `[lower_value, upper_value)`. Integral values are sampled uniformly from
+   * `[lower_value, upper_value]`. Explicit bounds are not supported for complex
+   * values.
+   *
+   * Reusing a generator advances one continuous sequence across calls. Two
+   * generators initialized to the same state produce identical fills for
+   * tensors with the same type and shape when using the same standard-library
+   * implementation. For a non-host tensor, values are generated on the host
+   * and copied to the tensor.
+   *
+   * @code{.cpp}
+   * std::mt19937 generator(1729);
+   * tensor.fill_with_random(-1.0, 1.0, generator);
+   * @endcode
+   *
+   * @tparam random_generator_t Type satisfying the C++
+   *         UniformRandomBitGenerator requirements.
+   * @param[in] lower_value Lower distribution bound.
+   * @param[in] upper_value Upper distribution bound.
+   * @param[in,out] random_generator Generator whose state is advanced by this
+   *                call.
    */
 
-  void fill_with_random(data_t lower_value, data_t upper_value)
+  template <typename random_generator_t>
+  void fill_with_random(data_t lower_value,
+                        data_t upper_value,
+                        random_generator_t& random_generator)
   {
     BOBA_CALI_OBJECT_BEGIN("tensor_fill_with_random");
     if constexpr (space == host_space)
     {
       if constexpr (std::is_same_v<data_t, size_t> or std::is_same_v<data_t, int>)
       {
-        // Seed and construct random number generator
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        auto M = min(sizes());
         // Define distribution that generates integers in [lower_value, upper_value]
         std::uniform_int_distribution<data_t> distrib(lower_value, upper_value);
         // Write to data
         std::generate(data(), data() + size(), [&]
         {
-          return distrib(gen);
+          return distrib(random_generator);
         });
       }
       else if constexpr (std::is_same_v<data_t, double> or std::is_same_v<data_t, float>)
       {
-        // Seed and construct random number generator
-        std::random_device rd;
-        std::mt19937 gen(rd());
         // Define distribution from (0.0, 1.0)
         std::uniform_real_distribution<data_t> distrib(lower_value, upper_value);
         // Write to data
         std::generate(data(), data() + size(), [&]
         {
-          return distrib(gen);
+          return distrib(random_generator);
         });
       }
       else
@@ -767,7 +781,7 @@ struct Tensor
     else
     {
       Tensor<dimension, host_space, data_t> host_tensor(this->sizes());
-      host_tensor.fill_with_random(lower_value, upper_value);
+      host_tensor.fill_with_random(lower_value, upper_value, random_generator);
       host_tensor.rename(this->name());
       *this = host_tensor;
     }
@@ -775,24 +789,59 @@ struct Tensor
   }
 
   /**
-   * @brief Fills this Tensor with random values
-   * For floats and doubles, the random value is in the range of (0.0, 1.0).
-   * For complex floats and doubles, the random value is a complex number such that |x| < 1.0
-   * For ints and size_t, the random value is between [0, min(sizes()))
+   * @brief Fills this Tensor using the process-wide default generator.
+   *
+   * Floating-point values are sampled from
+   * `[lower_value, upper_value)`, while integral values are sampled from
+   * `[lower_value, upper_value]`. This overload advances the shared generator;
+   * concurrent callers must synchronize access themselves.
+   *
+   * @param[in] lower_value Lower distribution bound.
+   * @param[in] upper_value Upper distribution bound.
+   */
+  void fill_with_random(data_t lower_value, data_t upper_value)
+  {
+    auto& random_generator = ::boba::random::default_context();
+    fill_with_random(lower_value, upper_value, random_generator);
+  }
+
+  /**
+   * @brief Fills this Tensor from a caller-owned generator using default bounds.
+   *
+   * Floating-point values are sampled uniformly from `[0, 1)`. Integral
+   * values are sampled uniformly from `[0, min(sizes())]`. Complex values have
+   * independently generated radius and angle inputs in `[0, 1)`, producing
+   * values with magnitude less than one.
+   *
+   * Reusing a generator advances one continuous sequence across calls. Two
+   * generators initialized to the same state produce identical fills for
+   * tensors with the same type and shape when using the same standard-library
+   * implementation.
+   *
+   * @code{.cpp}
+   * std::mt19937 generator(1729);
+   * tensor.fill_with_random(generator);
+   * @endcode
+   *
+   * @tparam random_generator_t Type satisfying the C++
+   *         UniformRandomBitGenerator requirements.
+   * @param[in,out] random_generator Generator whose state is advanced by this
+   *                call.
    */
 
-  void fill_with_random()
+  template <typename random_generator_t>
+  void fill_with_random(random_generator_t& random_generator)
   {
     BOBA_CALI_OBJECT_BEGIN("tensor_fill_with_random");
     if constexpr (space == host_space)
     {
       if constexpr (std::is_same_v<data_t, size_t> or std::is_same_v<data_t, int>)
       {
-        fill_with_random(0, min(sizes()));
+        fill_with_random(0, min(sizes()), random_generator);
       }
       else if constexpr (std::is_same_v<data_t, double> or std::is_same_v<data_t, float>)
       {
-        fill_with_random(0, 1.0);
+        fill_with_random(0, 1.0, random_generator);
       }
       else
       {
@@ -800,8 +849,8 @@ struct Tensor
         // Set k'th complex value to x_k = R_k*cos(theta_k) + i*R_k*sin(theta_k);
         boba::Tensor<1, host_space, real_data_t> theta({size()});
         boba::Tensor<1, host_space, real_data_t> radius({size()});
-        theta.fill_with_random();
-        radius.fill_with_random();
+        theta.fill_with_random(random_generator);
+        radius.fill_with_random(random_generator);
 
         auto this_view = view();
         auto theta_view = theta.const_view();
@@ -821,11 +870,25 @@ struct Tensor
     else
     {
       Tensor<dimension, host_space, data_t> host_tensor(this->sizes());
-      host_tensor.fill_with_random();
+      host_tensor.fill_with_random(random_generator);
       host_tensor.rename(this->name());
       *this = host_tensor;
     }
     BOBA_CALI_OBJECT_END("tensor_fill_with_random");
+  }
+
+  /**
+   * @brief Fills this Tensor using the process-wide default generator.
+   *
+   * This overload advances the shared generator. Calling
+   * `boba::random::set_seed()` resets its sequence. Concurrent callers must
+   * synchronize access themselves. The same type-dependent bounds as
+   * `fill_with_random(random_generator_t&)` are used.
+   */
+  void fill_with_random()
+  {
+    auto& random_generator = ::boba::random::default_context();
+    fill_with_random(random_generator);
   }
 
   void multiply_scalar(data_t x)

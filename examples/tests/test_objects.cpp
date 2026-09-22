@@ -384,6 +384,69 @@ void test_array_size()
 }
 
 template <boba::execution_space space>
+void test_seeded_random_fill()
+{
+  boba::Tensor<2, space, double> first({4, 5});
+  boba::Tensor<2, space, double> second({4, 5});
+
+  std::mt19937 first_generator(1729);
+  std::mt19937 second_generator(1729);
+  first.fill_with_random(first_generator);
+  second.fill_with_random(second_generator);
+  boba_always_assert_equal(
+    ::boba::norm_difference_inf(first, second), 0.0, "Seeded random fills differ");
+
+  first.fill_with_random(-2.0, 3.0, first_generator);
+  second.fill_with_random(-2.0, 3.0, second_generator);
+  boba_always_assert_equal(
+    ::boba::norm_difference_inf(first, second), 0.0, "Seeded bounded random fills differ");
+
+  boba::Tensor<2, space, double> first_default({4, 5});
+  boba::Tensor<2, space, double> second_default({4, 5});
+  boba::Tensor<2, space, double> first_replay({4, 5});
+  boba::Tensor<2, space, double> second_replay({4, 5});
+
+  boba::random::set_seed(1729);
+  boba_always_assert_equal(
+    boba::random::current_seed(), 1729_z, "The default random seed was not retained");
+  first_default.fill_with_random();
+  second_default.fill_with_random();
+
+  boba_always_assert_gt(
+    ::boba::norm_difference_inf(first_default, second_default),
+    0.0,
+    "Successive default generator calls produced identical fills");
+
+  boba::random::set_seed(1729);
+  first_replay.fill_with_random();
+  second_replay.fill_with_random();
+  boba_always_assert_equal(
+    ::boba::norm_difference_inf(first_default, first_replay),
+    0.0,
+    "Resetting the default seed did not reproduce the first fill");
+  boba_always_assert_equal(
+    ::boba::norm_difference_inf(second_default, second_replay),
+    0.0,
+    "Resetting the default seed did not reproduce the second fill");
+
+  boba::random::RandomContext first_context(2718);
+  boba::random::RandomContext second_context(2718);
+  first_replay.fill_with_random(first_context);
+  second_replay.fill_with_random(second_context);
+  boba_always_assert_equal(
+    ::boba::norm_difference_inf(first_replay, second_replay),
+    0.0,
+    "Matching random contexts produced different fills");
+
+  first_replay.fill_with_random(first_context);
+  second_replay.fill_with_random(second_context);
+  boba_always_assert_equal(
+    ::boba::norm_difference_inf(first_replay, second_replay),
+    0.0,
+    "Matching random contexts diverged after advancing their state");
+}
+
+template <boba::execution_space space>
 void test_array_structured_binding()
 {
   {
@@ -1686,6 +1749,9 @@ int main(int argc, char* argv[])
 
   checkpoint();
   test_array<boba::default_execution_space>();
+
+  checkpoint();
+  test_seeded_random_fill<boba::default_execution_space>();
 
   checkpoint();
   test_matrix_0<boba::default_execution_space>();

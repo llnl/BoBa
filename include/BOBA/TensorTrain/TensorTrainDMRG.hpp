@@ -32,11 +32,26 @@ struct TensorTrainDMRG
     return cry;
   }
 
-  template <size_t dimension, execution_space space>
+  /**
+   * @brief Solves a TT linear system using caller-owned randomness.
+   * @tparam dimension Tensor dimension.
+   * @tparam space Execution space.
+   * @tparam random_generator_t Type satisfying the C++
+   *         UniformRandomBitGenerator requirements.
+   * @param crA Square TT matrix.
+   * @param cry Right-hand-side TT.
+   * @param tt_initial_guess Initial TT iterate.
+   * @param[in,out] random_generator Generator used for rank enrichment.
+   * @param verb Enables progress output.
+   * @return The computed TT solution in host space.
+   */
+  template <size_t dimension, execution_space space, typename random_generator_t>
+    requires(std::uniform_random_bit_generator<random_generator_t>)
   ::boba::TensorTrain<dimension, host_space, data_t> solve(
     const ::boba::TensorTrainMatrix<dimension, space, data_t>& crA,
     const ::boba::TensorTrain<dimension, space, data_t>& cry,
     const ::boba::TensorTrain<dimension, space, data_t>& tt_initial_guess,
+    random_generator_t& random_generator,
     const bool verb = false)
   {
     BOBA_CALI_MARK
@@ -514,7 +529,7 @@ struct TensorTrainDMRG
         if ((!last_sweep) and ((dir + dirfilter) != 0))
         {
           boba::Matrix<space, data_t> u_kick({u.rows(), kickrank});
-          u_kick.fill_with_random();
+          u_kick.fill_with_random(random_generator);
           auto u_kicked = boba::concatenate_columns(u, u_kick);
           QR<space, data_t> qr;
           qr(u_kicked);
@@ -551,7 +566,7 @@ struct TensorTrainDMRG
         if ((!last_sweep) and ((dir + dirfilter) != 0))
         {
           boba::Matrix<space, data_t> v_kick({v.rows(), kickrank});
-          v_kick.fill_with_random();
+          v_kick.fill_with_random(random_generator);
           auto v_kicked = boba::concatenate_columns(v, v_kick);
           QR<space, data_t> qr;
           qr(v_kicked);
@@ -630,6 +645,31 @@ struct TensorTrainDMRG
 
     checkpoint();
     return crx;
+  }
+
+  /**
+   * @brief Solves a TT system using the process-wide default generator.
+   *
+   * Calling `boba::random::set_seed()` resets the sequence used for rank
+   * enrichment.
+   *
+   * @tparam dimension Tensor dimension.
+   * @tparam space Execution space.
+   * @param crA Square TT matrix.
+   * @param cry Right-hand-side TT.
+   * @param tt_initial_guess Initial TT iterate.
+   * @param verb Enables progress output.
+   * @return The computed TT solution in host space.
+   */
+  template <size_t dimension, execution_space space>
+  ::boba::TensorTrain<dimension, host_space, data_t> solve(
+    const ::boba::TensorTrainMatrix<dimension, space, data_t>& crA,
+    const ::boba::TensorTrain<dimension, space, data_t>& cry,
+    const ::boba::TensorTrain<dimension, space, data_t>& tt_initial_guess,
+    const bool verb = false)
+  {
+    auto& random_generator = ::boba::random::default_context();
+    return solve(crA, cry, tt_initial_guess, random_generator, verb);
   }
 };
 

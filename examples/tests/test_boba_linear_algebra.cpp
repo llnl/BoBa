@@ -354,7 +354,8 @@ void test_randomized_svd(::boba::Matrix<space, data_t>& test_matrix, ::boba::Mat
   ::boba::TicToc<tictoc_units> timer;
   ::boba::SVD<space, data_t> svd;
   svd.svd_type = ::boba::SVD<boba::default_execution_space, data_t>::svd_types::randomized;
-  svd(test_matrix);
+  ::boba::random::RandomContext random_generator(1729);
+  svd(test_matrix, random_generator);
   timer.end();
 
   boba::Matrix<space, data_t> USVt = svd.reform_matrix();

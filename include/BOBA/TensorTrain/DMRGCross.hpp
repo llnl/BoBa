@@ -40,7 +40,6 @@ struct DMRGCross
   size_t maxvol_max_iterations = 100;
   /// Allowed excess over unit volume in the MAXVOL stopping criterion.
   real_data_t maxvol_tolerance = 5.0e-2;
-
   /**
    * @brief Selects the row-submatrix extraction strategy during the sweep.
    */
@@ -80,15 +79,22 @@ struct DMRGCross
    * @tparam dimension Tensor dimension.
    * @tparam space Initial-guess execution space.
    * @tparam lambda_t Callable type used to evaluate tensor entries.
+   * @tparam random_generator_t Type satisfying the C++
+   *         UniformRandomBitGenerator requirements.
    * @param tt_initial_guess Initial tensor-train guess.
    * @param function_to_approximate Callable that evaluates the target tensor entrywise.
+   * @param[in,out] random_generator Generator used for rank-kick fills.
    * @return A host-space tensor train approximation.
    */
-  template <size_t dimension, execution_space space, typename lambda_t>
+  template <size_t dimension,
+            execution_space space,
+            typename lambda_t,
+            typename random_generator_t>
   [[nodiscard]]
   ::boba::TensorTrain<dimension, host_space, data_t> apply(
     const ::boba::TensorTrain<dimension, space, data_t>& tt_initial_guess,
-    lambda_t&& function_to_approximate)
+    lambda_t&& function_to_approximate,
+    random_generator_t& random_generator)
   {
     BOBA_CALI_BEGIN("DMRGCross_setup");
     checkpoint();
@@ -99,7 +105,6 @@ struct DMRGCross
     auto mode_sizes = approximated_tt.sizes();
     auto tt_ranks = approximated_tt.ranks();
     size_t sweep_count = 1;
-
     checkpoint();
     ::boba::Array<::boba::Matrix<space, data_t>, dimension + 1> transfer_matrices;
     transfer_matrices[0].resize({1, 1});
@@ -294,7 +299,7 @@ struct DMRGCross
         ur.fill_with_zeros();
 
         ::boba::Matrix<host_space, data_t> random_enrichment({u.rows(), kickrank});
-        random_enrichment.fill_with_random();
+        random_enrichment.fill_with_random(random_generator);
         ur.reshape(random_enrichment);
 
         u = reorthogonalize(u, ur);
@@ -317,7 +322,7 @@ struct DMRGCross
         vr.fill_with_zeros();
 
         ::boba::Matrix<host_space, data_t> random_enrichment({v.rows(), kickrank});
-        random_enrichment.fill_with_random();
+        random_enrichment.fill_with_random(random_generator);
 
         vr.reshape(random_enrichment);
         v = reorthogonalize(v, vr);
@@ -572,6 +577,32 @@ struct DMRGCross
 
     BOBA_CALI_END("DMRGCross_sweep");
     return approximated_tt;
+  }
+
+  /**
+   * @brief Applies DMRG cross using the process-wide default generator.
+   *
+   * Calling `boba::random::set_seed()` resets the sequence used for rank-kick
+   * fills.
+   *
+   * @tparam dimension Tensor dimension.
+   * @tparam space Initial-guess execution space.
+   * @tparam lambda_t Callable type used to evaluate tensor entries.
+   * @param tt_initial_guess Initial tensor-train guess.
+   * @param function_to_approximate Callable that evaluates the target tensor entrywise.
+   * @return A host-space tensor train approximation.
+   */
+  template <size_t dimension, execution_space space, typename lambda_t>
+  [[nodiscard]]
+  ::boba::TensorTrain<dimension, host_space, data_t> apply(
+    const ::boba::TensorTrain<dimension, space, data_t>& tt_initial_guess,
+    lambda_t&& function_to_approximate)
+  {
+    auto& random_generator = ::boba::random::default_context();
+    return apply(
+      tt_initial_guess,
+      std::forward<lambda_t>(function_to_approximate),
+      random_generator);
   }
 
   /**

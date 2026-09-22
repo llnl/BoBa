@@ -764,17 +764,23 @@ struct CanonicalPolyadicDecomposition
 
   /**
    * \brief Performs ALS_step_direct repeatedly to generate this CPD approximation at a fixed rank.
-   * Since this algorithm uses random initialization, it is not deterministic.
+   * Results are reproducible when the supplied generator starts in the same
+   * state.
    * If one ALS run does not satisfy the convergence tolerances within `ALS_iters`,
    * the decomposition is reinitialized and retried up to `ALS_restarts` times.
    *
+   * \tparam random_generator_t Type satisfying the C++
+   *          UniformRandomBitGenerator requirements.
    * \param[in] input Tensor to approximate.
    * \param[in] rank Rank to which this CPD will approximate `input`.
+   * \param[in,out] random_generator Generator used for all initializations.
    * \return The iteration count of the converged ALS run, or `ALS_iters` if all restarts fail.
    */
 
+  template <typename random_generator_t>
   size_t compress(const boba::Tensor<dimension, space, data_t>& input,
-                  size_t rank)
+                  size_t rank,
+                  random_generator_t& random_generator)
   {
     BOBA_CALI_MARK
     checkpoint();
@@ -795,7 +801,7 @@ struct CanonicalPolyadicDecomposition
       for (size_t d = 0; d < dimension; d++)
       {
         m_cores[d].resize({sizes(d), rank});
-        m_cores[d].fill_with_random();
+        m_cores[d].fill_with_random(random_generator);
       }
       m_weights.resize({rank});
       m_weights.fill_with(1.0);
@@ -849,6 +855,23 @@ struct CanonicalPolyadicDecomposition
     }
 
     return ALS_iters;
+  }
+
+  /**
+   * \brief Compresses a tensor using the process-wide default generator.
+   *
+   * Calling `boba::random::set_seed()` resets the sequence used for random
+   * factor initialization.
+   *
+   * \param[in] input Tensor to approximate.
+   * \param[in] rank Rank to which this CPD will approximate `input`.
+   * \return The iteration count of the converged ALS run, or `ALS_iters` if all restarts fail.
+   */
+  size_t compress(const boba::Tensor<dimension, space, data_t>& input,
+                  size_t rank)
+  {
+    auto& random_generator = ::boba::random::default_context();
+    return compress(input, rank, random_generator);
   }
 
   /**
