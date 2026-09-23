@@ -301,11 +301,12 @@ boba::Tensor<3, space, data_t> solve3d_2ml(
 
       checkpoint();
       auto dy_vector = flatten(dy);
+      vector_t dx_initial(dy_vector.sizes());
+      dx_initial.fill_with_zeros();
       vector_t dx(dy_vector.sizes());
-      dx.fill_with_zeros();
 
       checkpoint();
-      solver.solve(dy_vector, dx, dx);
+      solver.solve(dy_vector, dx_initial, dx);
 
       checkpoint();
       auto dx_tensor = reshape<3>(dx, x.sizes());
@@ -335,11 +336,12 @@ boba::Tensor<3, space, data_t> solve3d_2ml(
       solver.absolute_threshold = options.tolerance_absolute;
 
       checkpoint();
+      vector_t dx_initial(x0.sizes());
+      dx_initial.fill_with_zeros();
       vector_t dx(x0.sizes());
-      dx.fill_with_zeros();
 
       checkpoint();
-      solver.solve(dy, dx, dx);
+      solver.solve(dy, dx_initial, dx);
 
       checkpoint();
       x += dx; // x = x0 + dx

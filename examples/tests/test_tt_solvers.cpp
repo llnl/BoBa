@@ -199,17 +199,24 @@ void run_dimension_with_solver(
   auto solution_decompress = solution.decompress();
   auto error = solution_decompress - exact;
 
+  boba::TensorTrain<dimension, space, double> solution_in_execution_space = solution;
+  auto residual = A_operator * solution_in_execution_space;
+  residual -= ttb;
+
   auto solution_norm = ::boba::norm_frobenius(solution);
   auto exact_norm = ::boba::norm_frobenius(exact);
   auto error_norm_abs = ::boba::norm_frobenius(error);
   auto error_norm_relative = error_norm_abs / exact_norm;
+  auto residual_norm_relative = ::boba::norm_frobenius(residual) / ::boba::norm_frobenius(ttb);
 
   boba_print(solution_norm);
   boba_print(exact_norm);
   boba_print(error_norm_abs);
   boba_print(error_norm_relative);
+  boba_print(residual_norm_relative);
 
   pass_or_fail(check, error_norm_relative, 0.3 * double(64 + 1) / double(parameters.N + 1));
+  pass_or_fail(check, residual_norm_relative, boba::max(1000.0 * parameters.convergence_tolerance, 1.0e-6));
 }
 
 template <size_t dimension>
