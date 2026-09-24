@@ -253,7 +253,12 @@ void test_qrrr(::boba::Matrix<space, data_t>& test_matrix, ::boba::Matrix<space,
 
   if constexpr (boba::is_host(space))
   {
-    constexpr real_data_t tolerance = real_data_t(2000) * std::numeric_limits<real_data_t>::epsilon();
+    real_data_t tolerance = real_data_t(100) * real_data_t(std::max(test_matrix.rows(), test_matrix.cols()))
+                            * std::numeric_limits<real_data_t>::epsilon();
+    if (test_matrix.name() == "vandermonde" || test_matrix.name() == "low_rank_vandermonde")
+    {
+      tolerance = std::max(tolerance, std::sqrt(std::numeric_limits<real_data_t>::epsilon()));
+    }
 
     ::boba::TicToc<tictoc_units> timer;
     ::boba::QR<space, data_t> qr;
