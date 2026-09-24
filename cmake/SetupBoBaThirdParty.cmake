@@ -12,6 +12,23 @@ endif()
 
 set(TPL_DEPS)
 
+# AOCL is an optional CPU-only Eigen BLAS/LAPACK backend.
+if(BOBA_ENABLE_AOCL)
+    if(NOT BOBA_ENABLE_EIGEN)
+        message(FATAL_ERROR "BOBA_ENABLE_AOCL requires BOBA_ENABLE_EIGEN")
+    endif()
+    if(BOBA_ENABLE_CUDA OR BOBA_ENABLE_HIP)
+        message(FATAL_ERROR "BOBA_ENABLE_AOCL is currently CPU-only")
+    endif()
+
+    find_package(OpenMP REQUIRED)
+    list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
+    find_package(AOCL REQUIRED)
+    set(AOCL_FOUND TRUE CACHE BOOL "" FORCE)
+else()
+    set(AOCL_FOUND FALSE CACHE BOOL "" FORCE)
+endif()
+
 #------------------------------------------------------------------------------
 # Create global variable to toggle between GPU targets
 #------------------------------------------------------------------------------
