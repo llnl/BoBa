@@ -91,6 +91,9 @@ tpls['umpire'] = {}
 tpls['eigen'] = {}
 tpls['Caliper'] = {}
 tpls['metal_cpp_compute'] = {}
+tpls['aocl-utils'] = {}
+tpls['blis'] = {}
+tpls['libflame'] = {}
 
 for tpl in tpls.keys():
     tpls[tpl]['cmake'] = {}
@@ -150,6 +153,9 @@ tpls['eigen']['enable'] = args.eigen
 tpls['Caliper']['enable'] = args.Caliper
 tpls['hdf5']['enable'] = args.hdf5
 tpls['metal_cpp_compute']['enable'] = args.metal_cpp_compute
+tpls['aocl-utils']['enable'] = args.aocl_utils
+tpls['blis']['enable'] = args.blis
+tpls['libflame']['enable'] = args.libflame
 tpls['BOBA'] = {}
 tpls['BOBA']['enable'] = 'On'
 
@@ -162,6 +168,8 @@ boba_cmake_options['BOBA_ENABLE_RAJA'] = tpls['RAJA']['enable']
 boba_cmake_options['BOBA_ENABLE_UMPIRE'] = tpls['umpire']['enable']
 boba_cmake_options['BOBA_ENABLE_METAL'] = tpls['metal_cpp_compute']['enable']
 boba_cmake_options['BOBA_ENABLE_CAMP'] = tpls['camp']['enable']
+boba_cmake_options['BOBA_ENABLE_AOCL'] = 'On' if all(
+    tpls[name]['enable'] == 'On' for name in ['aocl-utils', 'blis', 'libflame']) else 'Off'
 
 boba_cmake_options['BOBA_ENABLE_MPI'] = args.mpi
 boba_cmake_options['BOBA_CHECKPOINTS'] = args.checkpoints
@@ -224,6 +232,9 @@ if dirpath.exists():
 with open(dirpath, 'r') as file:
     cmake_data = json.load(file)
 
+if dirpath.stem.endswith('_cpu'):
+    arch = 'cpu'
+
 if 'cmake_path' in cmake_data.keys():
     cmake_path = cmake_data['cmake_path']
 else:
@@ -242,6 +253,7 @@ export_suffix["eigen"] = "share/eigen3/cmake"
 export_suffix["RAJA"] = "lib/cmake/raja"
 export_suffix["umpire"] = "lib/cmake/umpire"
 export_suffix["metal_cpp_compute"] = "lib/cmake/metal_cpp_compute"
+export_suffix["aocl-utils"] = "lib/CMake"
 
 tpl_cmake_dirs = {}
 
@@ -267,7 +279,7 @@ if 'camp' in tpl_cmake_dirs:
 if 'eigen' in tpl_cmake_dirs:
     cmake_data['libraries']['eigen']['cmake']['Eigen3_ROOT'] = tpl_cmake_dirs['eigen']['tpl_export_string']
 
-def build_tpl(cmake_dict, tpl, architecture):
+def build_cmake_tpl(cmake_dict, tpl, architecture):
 
     is_boba = (tpl == 'BOBA')
     force = args.force or is_boba
@@ -467,12 +479,109 @@ def build_tpl(cmake_dict, tpl, architecture):
     phase = 'install'
     command_runner(tpl, phase, ['make', 'install', '-j', build_parallelism], use_alternate_command_runner)
 
+
+def _aocl_paths(tpl, architecture):
+    install_dir = os.path.join(tpl_install_base, f'{tpl}_{architecture}')
+    build_dir = os.path.join(tpl_build_base, f'{tpl}_{architecture}')
+    source_dir = os.path.join(tpl_clone_base, tpl)
+    return source_dir, build_dir, install_dir
+
+
+def _set_aocl_root(name, value):
+    cmake_data['libraries']['BOBA']['cmake'][name] = value
+
+
+def build_blis_tpl(cmake_dict, tpl, architecture):
+    source_dir, build_dir, install_dir = _aocl_paths(tpl, architecture)
+    options = cmake_dict[tpl].get('cmake', {})
+    if no_build:
+        _set_aocl_root('AOCL_BLIS_ROOT', install_dir)
+        return
+    safe_rmdir(build_dir)
+    safe_rmdir(install_dir)
+    safe_mkdir(build_dir)
+    safe_mkdir(install_dir)
+
+    cc = options.get('CMAKE_C_COMPILER', os.environ.get('CC', 'cc'))
+    cxx = options.get('CMAKE_CXX_COMPILER', os.environ.get('CXX', 'c++'))
+    config = options.get('BLIS_CONFIG', 'zen6')
+    threading = options.get('BLIS_THREADING', 'openmp')
+    os.chdir(source_dir)
+    command_runner(tpl, 'configure', [
+        f'CC={cc}', f'CXX={cxx}', './configure', f'--prefix={install_dir}',
+        f'--enable-threading={threading}', '--enable-cblas', '--enable-blas',
+        '--enable-shared', '--enable-static', config], use_alternate_command_runner)
+    os.chdir(source_dir)
+    command_runner(tpl, 'make', ['make', '-j', '32'], use_alternate_command_runner)
+    command_runner(tpl, 'install', ['make', 'install'], use_alternate_command_runner)
+    _set_aocl_root('AOCL_BLIS_ROOT', install_dir)
+
+
+def build_libflame_tpl(cmake_dict, tpl, architecture):
+    source_dir, build_dir, install_dir = _aocl_paths(tpl, architecture)
+    blis_root = cmake_data['libraries']['BOBA']['cmake']['AOCL_BLIS_ROOT']
+    utils_root = cmake_data['libraries']['BOBA']['cmake']['AOCL_UTILS_ROOT']
+    options = dict(cmake_dict[tpl].get('cmake', {}))
+    options.update({
+        'CMAKE_INSTALL_PREFIX': install_dir,
+        'CMAKE_INSTALL_LIBDIR': f'{install_dir}/lib',
+        'BUILD_SHARED_LIBS': 'ON',
+        'ENABLE_MULTITHREADING': 'ON',
+        'AOCL_BLAS_LIB': f'{blis_root}/lib/libblis-mt.so',
+        'AOCL_BLAS_INCLUDE_DIR': f'{blis_root}/include/blis',
+        'AOCL_UTILS_LIB': f'{utils_root}/lib/libaoclutils.so',
+        'AOCL_UTILS_INCLUDE_DIR': f'{utils_root}/include',
+        'CMAKE_PREFIX_PATH': utils_root,
+    })
+    if no_build:
+        _set_aocl_root('AOCL_FLAME_ROOT', install_dir)
+        return
+    safe_rmdir(build_dir)
+    safe_rmdir(install_dir)
+    safe_mkdir(build_dir)
+    cmake_command = [f'-D{key}={value}' for key, value in options.items()]
+    cmake_command.extend([f'-B{build_dir}', f'-S{source_dir}'])
+    os.chdir(current_directory)
+    command_runner(tpl, 'cmake', [cmake_path] + cmake_command, use_alternate_command_runner)
+    os.chdir(build_dir)
+    command_runner(tpl, 'make', ['make', '-j', '32'], use_alternate_command_runner)
+    command_runner(tpl, 'install', ['make', 'install'], use_alternate_command_runner)
+    _set_aocl_root('AOCL_FLAME_ROOT', install_dir)
+
+
+def write_aocl_lib_path_info(architecture):
+    roots = [
+        cmake_data['libraries']['BOBA']['cmake']['AOCL_FLAME_ROOT'],
+        cmake_data['libraries']['BOBA']['cmake']['AOCL_BLIS_ROOT'],
+        cmake_data['libraries']['BOBA']['cmake']['AOCL_UTILS_ROOT'],
+    ]
+    paths = ':'.join([os.path.join(root, 'lib') for root in roots[:2]] +
+                     [os.path.join(roots[2], 'lib64')])
+    path_file = os.path.join(current_directory, f'aocl_lib_path_info_{architecture}')
+    with open(path_file, 'w') as file:
+        file.write('#!/bin/bash\n')
+        file.write('# Source this file before using the AOCL-backed BoBa build.\n')
+        file.write(f'export LD_LIBRARY_PATH=${{LD_LIBRARY_PATH}}:{paths}\n')
+
+
+builders = {
+    'aocl-utils': build_cmake_tpl,
+    'blis': build_blis_tpl,
+    'libflame': build_libflame_tpl,
+}
+
 for tpl in cmake_data['libraries'].keys():
     if tpl == 'BOBA':
         continue
     if tpls[tpl]['enable'] == 'On':
         tpl_splash(tpl)
-        build_tpl(cmake_data['libraries'], tpl, arch)
+        builders.get(tpl, build_cmake_tpl)(cmake_data['libraries'], tpl, arch)
+        if tpl == 'aocl-utils':
+            _set_aocl_root('AOCL_UTILS_ROOT',
+                           os.path.join(tpl_install_base, f'{tpl}_{arch}'))
+
+if all(tpls[name]['enable'] == 'On' for name in ['aocl-utils', 'blis', 'libflame']):
+    write_aocl_lib_path_info(arch)
 
 #
 # Intellisense
@@ -496,4 +605,4 @@ if not(args.ci):
 #
 if install_boba:
     tpl_splash("BoBa")
-    build_tpl(cmake_data['libraries'], 'BOBA', arch)
+    build_cmake_tpl(cmake_data['libraries'], 'BOBA', arch)
