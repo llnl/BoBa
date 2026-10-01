@@ -14,6 +14,12 @@ def get_machine():
         return ('msu_h200', 'MSU', 'cuda_h100')
 
     #
+    # LANL Venadito
+    #
+    if machine.startswith('vt-rfe'):
+        return ('venadito', 'LANL', 'cuda_h100')
+
+    #
     # LLNL machines
     # 
     if 'matrix' in machine:

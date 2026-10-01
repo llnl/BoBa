@@ -185,7 +185,13 @@ if system in ['TOSS4']:
 if machine in ['matrix']:
     recipe = f'{boba_dir}/recipes/boba_build_matrix.json'
 
-use_alternate_command_runner = False # TODO - this alt runner was needed for a LANL machine we no longer support
+#
+# LANL Venadito
+#
+use_alternate_command_runner = False
+if machine in ['venadito']:
+    recipe = f'{boba_dir}/recipes/boba_build_venadito.json'
+    use_alternate_command_runner = True
 
 #
 # ATS 4
