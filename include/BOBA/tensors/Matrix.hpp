@@ -157,7 +157,7 @@ struct Matrix : Tensor<2, space, _data_t>
    * \return Matrix with every element negated.
    */
   [[nodiscard]]
-  Matrix operator-()
+  Matrix operator-() const
   {
     Matrix output{*this};
     output *= -1.0;
@@ -437,13 +437,13 @@ struct Matrix : Tensor<2, space, _data_t>
    * Computes the Matrix 1-norm of this Matrix, ||A||_1.
    */
 
-  data_t matrix_one_norm()
+  data_t matrix_one_norm() const
   {
     BOBA_CALI_OBJECT_MARK
 
-    auto rows = this->rows();
-    auto cols = this->cols();
-    auto this_view = this->view();
+    const auto rows = this->rows();
+    const auto cols = this->cols();
+    const auto this_view = this->const_view();
 
     if (this->size() == 0)
     {
@@ -469,13 +469,13 @@ struct Matrix : Tensor<2, space, _data_t>
    * Computes the Matrix infinity-norm of this Matrix, ||A||_inf.
    */
 
-  data_t matrix_inf_norm()
+  data_t matrix_inf_norm() const
   {
     BOBA_CALI_OBJECT_MARK
 
-    auto rows = this->rows();
-    auto cols = this->cols();
-    auto this_view = this->view();
+    const auto rows = this->rows();
+    const auto cols = this->cols();
+    const auto this_view = this->const_view();
 
     if (this->size() == 0)
     {
@@ -664,11 +664,11 @@ struct Matrix : Tensor<2, space, _data_t>
  */
 
 template <execution_space space, typename data_t>
-::boba::Matrix<space, data_t> diagonalize(::boba::Vector<space, data_t> diagonal)
+::boba::Matrix<space, data_t> diagonalize(::boba::Vector<space, data_t> const& diagonal)
 {
   BOBA_CALI_OBJECT_MARK
   ::boba::Matrix<space, data_t> new_matrix({diagonal.size(), diagonal.size()});
-  auto diagonal_view = diagonal.view();
+  const auto diagonal_view = diagonal.const_view();
   auto new_matrix_view = new_matrix.view();
   new_matrix.fill_with_zeros();
   ::boba::detail::loop<space>(0, new_matrix.rows(), [=] __boba_host_device__(index_t i)
@@ -685,12 +685,12 @@ template <execution_space space, typename data_t>
  */
 
 template <execution_space space, typename data_t>
-::boba::Vector<space, data_t> diagonalize(::boba::Matrix<space, data_t> input)
+::boba::Vector<space, data_t> diagonalize(::boba::Matrix<space, data_t> const& input)
 {
   BOBA_CALI_OBJECT_MARK
-  auto length = boba::min(input.rows(), input.cols());
+  const auto length = boba::min(input.rows(), input.cols());
   ::boba::Vector<space, data_t> new_vector({length});
-  auto input_view = input.const_view();
+  const auto input_view = input.const_view();
   auto new_vector_view = new_vector.view();
   ::boba::detail::loop<space>(0, new_vector.size(), [=] __boba_host_device__(index_t i)
   {

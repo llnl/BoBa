@@ -501,7 +501,7 @@ struct QuantizedTensorTrainMatrix
    * negation operator
    */
 
-  QuantizedTensorTrainMatrix operator-()
+  QuantizedTensorTrainMatrix operator-() const
   {
     BOBA_CALI_MARK
     QuantizedTensorTrainMatrix output{*this};

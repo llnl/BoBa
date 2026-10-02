@@ -1065,11 +1065,12 @@ void test_matrix(const size_t rows, const size_t cols)
     auto S2_rows = ::boba::sum_of_i2(rows - 1);
     auto S2_cols = ::boba::sum_of_i2(cols - 1);
 
-    double norm_1 = test.matrix_one_norm();
+    const matrix_type const_test = test;
+    double norm_1 = const_test.matrix_one_norm();
     double expected_norm_1 = S_rows * cols + rows * (cols - 1);
     boba_always_assert_equal(norm_1, expected_norm_1, "Norm evaluation is wrong");
 
-    double norm_inf = test.matrix_inf_norm();
+    double norm_inf = const_test.matrix_inf_norm();
     double expected_norm_inf = (rows - 1) * cols * cols + S_cols;
     boba_always_assert_equal(norm_inf, expected_norm_inf, "Norm evaluation is wrong");
 

@@ -1022,7 +1022,7 @@ struct Tensor
    * negation operator
    */
 
-  Tensor operator-()
+  Tensor operator-() const
   {
     BOBA_CALI_MARK
     Tensor output{*this};

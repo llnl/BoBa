@@ -607,7 +607,7 @@ struct TuckerMatrix
    * negation operator
    */
 
-  TuckerMatrix operator-()
+  TuckerMatrix operator-() const
   {
     BOBA_CALI_MARK
     TuckerMatrix output{*this};

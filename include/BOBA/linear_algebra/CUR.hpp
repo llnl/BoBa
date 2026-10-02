@@ -167,7 +167,7 @@ struct CUR
    * \return Matrix reconstructed as `C * U * R`.
    */
   [[nodiscard]]
-  Matrix<space, data_t> reform_matrix()
+  Matrix<space, data_t> reform_matrix() const
   {
     BOBA_CALI_BEGIN("CUR_reform");
     checkpoint();

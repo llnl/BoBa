@@ -37,7 +37,7 @@ TensorTrain<dimension, space, data_t> compress_to_TensorTrain(
  */
 
 template <size_t dimension, execution_space space, typename data_t>
-TensorTrain<dimension, space, data_t> make_tt_from_vectors(Array<Vector<space, data_t>, dimension> vectors)
+TensorTrain<dimension, space, data_t> make_tt_from_vectors(Array<Vector<space, data_t>, dimension> const& vectors)
 {
   BOBA_CALI_MARK
   Array<size_t, dimension> sizes;
@@ -63,7 +63,7 @@ TensorTrain<dimension, space, data_t> make_tt_from_vectors(Array<Vector<space, d
 
 template <size_t dimension, execution_space space, typename data_t>
 QuantizedTensorTrain<space, data_t> compress_to_QuantizedTensorTrain(
-  Tensor<dimension, space, data_t> tensor,
+  Tensor<dimension, space, data_t> const& tensor,
   size_t base = 2,
   data_t svd_tolerance_relative = -1.0,
   data_t svd_tolerance_absolute = -1.0)

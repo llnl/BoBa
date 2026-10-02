@@ -503,7 +503,7 @@ struct Tucker
    * negation operator
    */
 
-  Tucker operator-()
+  Tucker operator-() const
   {
     BOBA_CALI_MARK
     Tucker output{*this};

@@ -39,7 +39,7 @@ TensorTrainMatrix<dimension, space, data_t> compress_to_TensorTrainMatrix(
  */
 
 template <size_t dimension, execution_space space, typename data_t>
-TensorTrainMatrix<dimension, space, data_t> make_ttm_from_matrices(Array<Matrix<space, data_t>, dimension> matrices)
+TensorTrainMatrix<dimension, space, data_t> make_ttm_from_matrices(Array<Matrix<space, data_t>, dimension> const& matrices)
 {
   Array<size_t, dimension> rows;
   Array<size_t, dimension> cols;

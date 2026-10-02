@@ -37,7 +37,7 @@ Tucker<dimension, space, data_t> compress_to_tucker(
  */
 
 template <size_t dimension, execution_space space, typename data_t>
-Tucker<dimension, space, data_t> make_tucker_from_vectors(Array<Vector<space, data_t>, dimension> vectors)
+Tucker<dimension, space, data_t> make_tucker_from_vectors(Array<Vector<space, data_t>, dimension> const& vectors)
 {
   BOBA_CALI_MARK
   Array<size_t, dimension> sizes;
@@ -62,7 +62,7 @@ Tucker<dimension, space, data_t> make_tucker_from_vectors(Array<Vector<space, da
  */
 
 template <size_t dimension, execution_space space, typename data_t>
-Tucker<dimension, space, data_t> tt_to_tucker(TensorTrain<dimension, space, data_t> input)
+Tucker<dimension, space, data_t> tt_to_tucker(TensorTrain<dimension, space, data_t> const& input)
 {
   BOBA_CALI_MARK
   Tucker<dimension, space, data_t> output(input.sizes());
@@ -82,7 +82,7 @@ Tucker<dimension, space, data_t> tt_to_tucker(TensorTrain<dimension, space, data
  */
 
 template <size_t dimension, execution_space space, typename data_t>
-TensorTrain<dimension, space, data_t> tucker_to_TensorTrain(Tucker<dimension, space, data_t> input)
+TensorTrain<dimension, space, data_t> tucker_to_TensorTrain(Tucker<dimension, space, data_t> const& input)
 {
   BOBA_CALI_MARK
   TensorTrain<dimension, space, data_t> output(input.sizes());
@@ -101,7 +101,7 @@ TensorTrain<dimension, space, data_t> tucker_to_TensorTrain(Tucker<dimension, sp
  */
 
 template <size_t dimension, execution_space space, typename data_t>
-TuckerMatrix<dimension, space, data_t> TensorTrainMatrix_to_TuckerMatrix(TensorTrainMatrix<dimension, space, data_t> input)
+TuckerMatrix<dimension, space, data_t> TensorTrainMatrix_to_TuckerMatrix(TensorTrainMatrix<dimension, space, data_t> const& input)
 {
   BOBA_CALI_MARK
   TuckerMatrix<dimension, space, data_t> output(input.core_rows(), input.core_cols());
@@ -121,7 +121,7 @@ TuckerMatrix<dimension, space, data_t> TensorTrainMatrix_to_TuckerMatrix(TensorT
  */
 
 template <size_t dimension, execution_space space, typename data_t>
-TensorTrainMatrix<dimension, space, data_t> TuckerMatrix_to_TensorTrainMatrix(TuckerMatrix<dimension, space, data_t> input)
+TensorTrainMatrix<dimension, space, data_t> TuckerMatrix_to_TensorTrainMatrix(TuckerMatrix<dimension, space, data_t> const& input)
 {
   BOBA_CALI_MARK
   TensorTrainMatrix<dimension, space, data_t> output(input.rows(), input.cols());

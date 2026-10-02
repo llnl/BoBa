@@ -777,7 +777,7 @@ struct TensorTrain
    * negation operator
    */
 
-  TensorTrain operator-()
+  TensorTrain operator-() const
   {
     BOBA_CALI_MARK
     TensorTrain output{*this};
@@ -1196,7 +1196,7 @@ struct TensorTrain
   // -------------------------------------------------------------------------------------
 
   TensorTrain<dimension, space, _data_t> extract_rank_one_TensorTrain(
-    const std::vector<size_t> rank_indices)
+    const std::vector<size_t>& rank_indices) const
   {
     BOBA_CALI_MARK
 

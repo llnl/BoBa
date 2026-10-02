@@ -134,7 +134,7 @@ struct LU
    * \return Matrix reconstructed as `P^T * L * U * Q^T` for full pivoting or `P^T * L * U` for partial pivoting.
    */
   [[nodiscard]]
-  Matrix<space, data_t> reform_matrix()
+  Matrix<space, data_t> reform_matrix() const
   {
     BOBA_CALI_MARK
     checkpoint();

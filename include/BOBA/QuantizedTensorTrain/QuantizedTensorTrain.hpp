@@ -497,7 +497,7 @@ struct QuantizedTensorTrain
    * negation operator
    */
 
-  QuantizedTensorTrain operator-()
+  QuantizedTensorTrain operator-() const
   {
     BOBA_CALI_MARK
     QuantizedTensorTrain output{*this};
@@ -870,7 +870,7 @@ struct QuantizedTensorTrain
   // Section: Extract rank one terms
   // -------------------------------------------------------------------------------------
 
-  QuantizedTensorTrain<space, data_t> extract_rank_one_TensorTrain()
+  QuantizedTensorTrain<space, data_t> extract_rank_one_TensorTrain() const
   {
     BOBA_CALI_MARK
 
@@ -883,7 +883,7 @@ struct QuantizedTensorTrain
   }
 
   QuantizedTensorTrain<space, data_t> extract_rank_one_TensorTrain(
-    const std::vector<size_t> rank_indices)
+    const std::vector<size_t>& rank_indices) const
   {
     BOBA_CALI_MARK
 

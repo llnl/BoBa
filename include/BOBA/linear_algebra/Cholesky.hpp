@@ -127,7 +127,7 @@ struct Cholesky
    * \return Matrix reconstructed as `L * L^H` for complex data or `L * L^T` for real data.
    */
   [[nodiscard]]
-  Matrix<space, data_t> reform_matrix()
+  Matrix<space, data_t> reform_matrix() const
   {
     BOBA_CALI_MARK
     checkpoint();

@@ -211,7 +211,7 @@ struct NNMF
    * \return Updated `H` factor.
    */
   [[nodiscard]]
-  Matrix<space, data_t> generate_H_new(Matrix<space, data_t>& W_old, Matrix<space, data_t>& H_old, Matrix<space, data_t>& V)
+  Matrix<space, data_t> generate_H_new(Matrix<space, data_t> const& W_old, Matrix<space, data_t> const& H_old, Matrix<space, data_t> const& V) const
   {
     BOBA_CALI_MARK
     checkpoint();
@@ -227,7 +227,7 @@ struct NNMF
       checkpoint();
       auto update_numerator_view = update_numerator.const_view();
       auto update_denominator_view = update_denominator.const_view();
-      auto H_old_view = H_old.view();
+      auto H_old_view = H_old.const_view();
 
       ::boba::loop<space, 1>(H_old.size(),
                              [=] __boba_host_device__(size_t i)
@@ -267,7 +267,7 @@ struct NNMF
    * \return Updated `W` factor.
    */
   [[nodiscard]]
-  Matrix<space, data_t> generate_W_new(Matrix<space, data_t>& W_old, Matrix<space, data_t>& H_new, Matrix<space, data_t>& V)
+  Matrix<space, data_t> generate_W_new(Matrix<space, data_t> const& W_old, Matrix<space, data_t> const& H_new, Matrix<space, data_t> const& V) const
   {
     BOBA_CALI_MARK
     checkpoint();
@@ -283,7 +283,7 @@ struct NNMF
       checkpoint();
       auto update_numerator_view = update_numerator.const_view();
       auto update_denominator_view = update_denominator.const_view();
-      auto W_old_view = W_old.view();
+      auto W_old_view = W_old.const_view();
 
       ::boba::loop<space, 1>(W_old.size(),
                              [=] __boba_host_device__(size_t i)

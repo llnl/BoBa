@@ -150,7 +150,7 @@ struct SVD
    * \return Matrix reconstructed as `U * diag(S) * V^H`.
    */
   [[nodiscard]]
-  Matrix<space, data_t> reform_matrix()
+  Matrix<space, data_t> reform_matrix() const
   {
     BOBA_CALI_MARK
     checkpoint();

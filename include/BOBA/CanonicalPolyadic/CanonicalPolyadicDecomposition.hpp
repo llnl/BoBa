@@ -671,29 +671,22 @@ struct CanonicalPolyadicDecomposition
    * \return Khatri-Rao product result.
    */
 
-  Matrix<space, data_t> CPD_KhatriRao(size_t skip)
+  Matrix<space, data_t> CPD_KhatriRao(size_t skip) const
   {
-    // Build mats, skipping the 'skip' index
-    std::vector<::boba::Matrix<space, data_t>> mats;
-
-    for (size_t i = 0; i < dimension; ++i)
-    {
-      if (i != skip)
-      {
-        mats.push_back(m_cores[i]);
-      }
-    }
-    if (mats.size() == 0)
+    if (dimension <= 1)
     {
       return ::boba::Matrix<space, data_t>();
     }
 
-    auto output = mats[0];
+    const size_t first = skip == 0 ? 1 : 0;
+    auto output = m_cores[first];
 
-    for (size_t i = 1; i < mats.size(); i++)
+    for (size_t i = first + 1; i < dimension; i++)
     {
-      auto temp = output;
-      output = boba::mode_n_tensor_product(temp, mats[i], 0);
+      if (i != skip)
+      {
+        output = boba::mode_n_tensor_product(output, m_cores[i], 0);
+      }
     }
 
     auto output_view = output.view();

@@ -604,7 +604,7 @@ struct TensorTrainSplitMatrix
    * negation operator
    */
 
-  TensorTrainSplitMatrix operator-()
+  TensorTrainSplitMatrix operator-() const
   {
     BOBA_CALI_MARK
     TensorTrainSplitMatrix output{*this};

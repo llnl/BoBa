@@ -174,7 +174,7 @@ struct Vector : Tensor<1, space, _data_t>
    * \return A Vector with every element negated.
    */
   [[nodiscard]]
-  Vector operator-()
+  Vector operator-() const
   {
     Vector output{*this};
     output *= -1.0;

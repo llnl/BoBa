@@ -661,7 +661,7 @@ struct TensorTrainMatrix
    * negation operator
    */
 
-  TensorTrainMatrix operator-()
+  TensorTrainMatrix operator-() const
   {
     BOBA_CALI_MARK
     TensorTrainMatrix output{*this};
@@ -1758,7 +1758,7 @@ struct TensorTrainMatrix
   // Section: Get matrix
   // -------------------------------------------------------------------------------------
 
-  boba::Matrix<space, data_t> get_matrix(size_t core_dim, size_t rank_left, size_t rank_right)
+  boba::Matrix<space, data_t> get_matrix(size_t core_dim, size_t rank_left, size_t rank_right) const
   {
     BOBA_CALI_MARK
 

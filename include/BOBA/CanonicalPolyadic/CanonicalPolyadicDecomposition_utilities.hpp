@@ -42,7 +42,7 @@ CanonicalPolyadicDecomposition<dimension, space, data_t> compress_to_cpd(
  */
 
 template <size_t dimension, execution_space space, typename data_t>
-CanonicalPolyadicDecomposition<dimension, space, data_t> make_cpd_from_vectors(Array<Vector<space, data_t>, dimension> vectors)
+CanonicalPolyadicDecomposition<dimension, space, data_t> make_cpd_from_vectors(Array<Vector<space, data_t>, dimension> const& vectors)
 {
   BOBA_CALI_MARK
   Array<size_t, dimension> sizes;

@@ -36,7 +36,7 @@ auto norm_frobenius(TuckerMatrix<dimension, space, data_t> const& tucker_matrix)
  */
 
 template <size_t dimension, execution_space space, typename data_t>
-TuckerMatrix<dimension, space, data_t> make_TuckerMatrix_from_matrices(Array<Matrix<space, data_t>, dimension> matrices)
+TuckerMatrix<dimension, space, data_t> make_TuckerMatrix_from_matrices(Array<Matrix<space, data_t>, dimension> const& matrices)
 {
   Array<size_t, dimension> rows;
   Array<size_t, dimension> cols;
