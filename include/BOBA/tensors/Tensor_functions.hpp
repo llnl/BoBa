@@ -1943,6 +1943,41 @@ data_t max_pointwise_relative_difference(
 // -------------------------------------------------------------------------------------
 
 /**
+ * \brief Applies a vector as a right diagonal matrix, `output = input * diag(vector)`.
+ *
+ * This out-of-place overload fuses copying and column scaling into one pass.
+ * Use `apply_as_diagonal_right_in_place` when the input may be modified.
+ *
+ * \param[in] vector Values used to scale the matrix columns.
+ * \param[in] input Matrix whose columns are scaled.
+ * \param[out] output Scaled matrix, resized to match \p input.
+ */
+template <execution_space space, typename vectordata_t, typename matrixdata_t>
+void apply_as_diagonal_right(
+  const ::boba::Vector<space, vectordata_t>& vector,
+  const ::boba::Matrix<space, matrixdata_t>& input,
+  ::boba::Matrix<space, matrixdata_t>& output)
+{
+  BOBA_CALI_MARK
+  checkpoint();
+
+  boba_always_assert_equal(input.cols(), vector.size(), "incompatible dimensions");
+  output.resize(input.sizes());
+
+  const auto input_view = input.const_view();
+  const auto vector_view = vector.const_view();
+  auto output_view = output.view();
+  checkpoint();
+  ::boba::loop<space, 2>(output.sizes(),
+                         [=] __boba_host_device__(Array<index_t, 2> rc)
+  {
+    const index_t col = rc[1];
+    output_view(rc) = input_view(rc) * vector_view({col});
+  });
+  checkpoint();
+}
+
+/**
  * \brief
  * Apply a vector as if it were a diagonal matrix, C = A*diagonalize(v).
  */

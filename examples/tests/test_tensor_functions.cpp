@@ -55,6 +55,43 @@ void test_tensor_product_identity(bool& check)
   pass_or_fail(check, error, 1.0e-8);
 }
 
+void test_apply_as_diagonal_right(bool& check)
+{
+  using matrix_t = boba::Matrix<space, double>;
+  using vector_t = boba::Vector<space, double>;
+  using host_matrix_t = boba::Matrix<boba::execution_space::CPU, double>;
+
+  host_matrix_t input_host({2, 3});
+  input_host({0, 0}) = 1.0;
+  input_host({1, 0}) = 2.0;
+  input_host({0, 1}) = 3.0;
+  input_host({1, 1}) = 4.0;
+  input_host({0, 2}) = 5.0;
+  input_host({1, 2}) = 6.0;
+
+  boba::Vector<boba::execution_space::CPU, double> diagonal_host({3});
+  diagonal_host({0}) = 2.0;
+  diagonal_host({1}) = 3.0;
+  diagonal_host({2}) = 4.0;
+
+  const matrix_t input(input_host);
+  const vector_t diagonal(diagonal_host);
+  matrix_t output;
+  boba::apply_as_diagonal_right(diagonal, input, output);
+
+  const host_matrix_t output_host(output);
+  bool local_check = output_host.sizes() == input_host.sizes();
+  for (boba::index_t row = 0; row < input_host.rows(); ++row)
+  {
+    for (boba::index_t col = 0; col < input_host.cols(); ++col)
+    {
+      const double expected = input_host({row, col}) * diagonal_host({col});
+      local_check = local_check && boba::abs(output_host({row, col}) - expected) < 1.0e-13;
+    }
+  }
+  pass_or_fail_bool(check, local_check);
+}
+
 template <typename object_type>
 void test_positive_negative_parts(bool& check)
 {
@@ -357,6 +394,8 @@ int main(int argc, char* argv[])
   compare_square_and_product<boba::Vector<space, double>>(check);
   checkpoint();
   compare_square_and_product<boba::Tensor<3, space, double>>(check);
+  checkpoint();
+  test_apply_as_diagonal_right(check);
   checkpoint();
   test_positive_negative_parts<boba::Matrix<space, double>>(check);
   checkpoint();

@@ -1,30 +1,63 @@
-#include "test_tensor_completion.hpp"
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+/**
+ * \file
+ * \brief Demonstrates CP-APR tensor completion on a histogram of sampled points.
+ *
+ * Let `P` be the number of samples, `D` the tensor order, `R` the CP rank,
+ * `K` the number of outer sweeps, `L` the maximum inner updates per mode,
+ * `N_nz` the number of occupied bins, and `G` the total number of bins.
+ * Binning the points costs `O(P * D)`; the dense staging histogram used by this
+ * miniapp also costs `O(G)` time and memory.
+ *
+ * The dominant sparse CP-APR work is `O(K * L * N_nz * R * D^2)`, while the
+ * dense path costs `O(K * L * G * R * D^2)`. Thus, for fixed rank, order, and
+ * iteration limits, sparse fitting scales linearly with occupied bins and at
+ * worst linearly with samples because `N_nz <= P`. Repeated samples in an
+ * occupied bin increase its count without increasing the sparse fitting cost.
+ */
+
+#include "BOBA/boba.hpp"
 #include "common.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdlib>
 #include <iomanip>
-#include <limits>
-#include <numeric>
 #include <random>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace
 {
 
-using host_matrix = boba::Matrix<tensor_completion_space, double>;
-using host_vector = boba::Vector<tensor_completion_space, double>;
+constexpr boba::execution_space space = boba::execution_space::CPU;
 
 template <std::size_t dimension>
-using dense_tensor = boba::Tensor<dimension, tensor_completion_space, double>;
+using tensor_shape = boba::Array<boba::index_t, dimension>;
 
 template <std::size_t dimension>
-using sparse_tensor = boba::SparseTensor<dimension, tensor_completion_space, double>;
+using dense_tensor = boba::Tensor<dimension, space, double>;
+
+template <std::size_t dimension>
+using sparse_tensor = boba::SparseTensor<dimension, space, double>;
+
+template <std::size_t dimension>
+using CPAPRModel = boba::CanonicalPolyadicDecomposition<dimension, space, double>;
+
+struct GaussianHistogramConfig
+{
+  std::vector<int> dims;
+  std::vector<double> lower_bounds;
+  std::vector<double> upper_bounds;
+  unsigned seed = 12345;
+};
+
+constexpr double kEstimateTolerance = 0.5;
 
 struct CommandLineOptions
 {
@@ -51,23 +84,6 @@ constexpr auto clamp_into_range = [](double value, double low, double high)
   return value;
 };
 
-constexpr auto clamp_min = [](double x, double eps)
-{
-  return (x < eps) ? eps : x;
-};
-
-const auto format_parse_error = [](const ::boba::argparser& args)
-{
-  std::ostringstream out;
-  args.print_error(out);
-  std::string message = out.str();
-  while (!message.empty() && (message.back() == '\n' || message.back() == '\r'))
-  {
-    message.pop_back();
-  }
-  return message;
-};
-
 const auto format_int_values = [](const std::vector<int>& values)
 {
   std::ostringstream out;
@@ -90,7 +106,7 @@ const auto print_usage = [](const char* program)
     std::string("Usage: ") + program +
     " [--samples N] [--rank R] [--bin-width W] [--dims D1 D2 ... Dk] [--dense-apr] [--verbose-bins]");
   boba_print("Defaults: --samples 2500 --rank 5 --bin-width 1.0 --dims 20 20 20 20 20 20");
-  boba_print("Supported tensor order for this BoBa CPD driver: 1 through 8");
+  boba_print("Supported tensor order: 1 through 8");
 };
 
 CommandLineOptions parse_args(int argc, char** argv)
@@ -104,7 +120,7 @@ CommandLineOptions parse_args(int argc, char** argv)
   args.add_optional_argument(options.dense_apr, "", "--dense-apr", "Use dense APR input path.");
   args.add_optional_argument(options.verbose_bins, "", "--verbose-bins", "Print bin details.");
 
-  const auto result = args.parse();
+  args.parse();
   if (options.sample_count == 0)
   {
     throw std::invalid_argument("invalid value for --samples: 0");
@@ -182,7 +198,7 @@ std::string format_dims(const boba::Array<index_t, dimension>& dims)
 }
 
 template <std::size_t dimension>
-coo_index<dimension> to_coo_dims(const std::vector<int>& dims)
+tensor_shape<dimension> to_tensor_shape(const std::vector<int>& dims)
 {
   if (dims.size() != dimension)
   {
@@ -195,213 +211,6 @@ coo_index<dimension> to_coo_dims(const std::vector<int>& dims)
     sizes[mode] = static_cast<boba::index_t>(dims[mode]);
   }
   return sizes;
-}
-
-void column_sum_normalize(host_matrix& A)
-{
-  auto A_view = A.view();
-  for (boba::index_t r = 0; r < A.cols(); ++r)
-  {
-    double sum = 0.0;
-    ::boba::sum_reduce<tensor_completion_space>(sum, 0_z, static_cast<std::size_t>(A.rows()), [=] __boba_host_device__(std::size_t i, boba::sum_reducer_operator<double>& local_sum)
-    {
-      local_sum += A_view({static_cast<boba::index_t>(i), r});
-    });
-
-    if (sum <= 0.0)
-    {
-      const double uniform = 1.0 / static_cast<double>(A.rows());
-      ::boba::detail::loop<tensor_completion_space>(0_z, static_cast<std::size_t>(A.rows()), [=] __boba_host_device__(std::size_t i)
-      {
-        A_view({static_cast<boba::index_t>(i), r}) = uniform;
-      });
-      continue;
-    }
-
-    const double inverse = 1.0 / sum;
-    ::boba::detail::loop<tensor_completion_space>(0_z, static_cast<std::size_t>(A.rows()), [=] __boba_host_device__(std::size_t i)
-    {
-      A_view({static_cast<boba::index_t>(i), r}) *= inverse;
-    });
-  }
-}
-
-host_vector col_sums(const host_matrix& B)
-{
-  host_vector lambda({B.cols()});
-  lambda.fill_with_zeros();
-
-  auto lambda_view = lambda.view();
-  auto B_view = B.const_view();
-  for (boba::index_t r = 0; r < B.cols(); ++r)
-  {
-    double sum = 0.0;
-    ::boba::sum_reduce<tensor_completion_space>(sum, 0_z, static_cast<std::size_t>(B.rows()), [=] __boba_host_device__(std::size_t i, boba::sum_reducer_operator<double>& local_sum)
-    {
-      local_sum += B_view({static_cast<boba::index_t>(i), r});
-    });
-    lambda_view(r) = sum;
-  }
-
-  return lambda;
-}
-
-void unabsorb_and_normalize(const host_matrix& B, const host_vector& lambda, host_matrix& A_out)
-{
-  A_out.resize({B.rows(), B.cols()});
-  A_out.fill_with_zeros();
-
-  auto A_view = A_out.view();
-  auto B_view = B.const_view();
-  auto lambda_view = lambda.const_view();
-  for (boba::index_t r = 0; r < B.cols(); ++r)
-  {
-    const double lam = lambda_view(r);
-    if (lam > 0.0)
-    {
-      const double inverse = 1.0 / lam;
-      ::boba::detail::loop<tensor_completion_space>(0_z, static_cast<std::size_t>(B.rows()), [=] __boba_host_device__(std::size_t i)
-      {
-        const auto row = static_cast<boba::index_t>(i);
-        A_view({row, r}) = B_view({row, r}) * inverse;
-      });
-    }
-    else
-    {
-      const double uniform = 1.0 / static_cast<double>(B.rows());
-      ::boba::detail::loop<tensor_completion_space>(0_z, static_cast<std::size_t>(B.rows()), [=] __boba_host_device__(std::size_t i)
-      {
-        A_view({static_cast<boba::index_t>(i), r}) = uniform;
-      });
-    }
-  }
-
-  column_sum_normalize(A_out);
-}
-
-double inf_norm_mat_min_B_1minusPhi(const host_matrix& B, const host_matrix& Phi)
-{
-  double norm = 0.0;
-  auto B_view = B.const_view();
-  auto Phi_view = Phi.const_view();
-  ::boba::max_reduce<tensor_completion_space>(norm, 0_z, static_cast<std::size_t>(B.rows() * B.cols()), [=] __boba_host_device__(std::size_t flat, boba::max_reducer_operator<double>& local_norm)
-  {
-    const auto [i, r] = B_view.multiindex(flat);
-    const double b = B_view({i, r});
-    const double g = 1.0 - Phi_view({i, r});
-    local_norm.max(std::abs(std::min(b, g)));
-  });
-
-  return norm;
-}
-
-template <std::size_t dimension, typename index_t>
-void build_w_for_index(
-  const boba::Array<index_t, dimension>& idx,
-  std::size_t mode_to_skip,
-  const CPAPRModel<dimension>& model,
-  std::vector<double>& w_out)
-{
-  const auto cores = model.get_core_const_views();
-  w_out.assign(model.rank(), 1.0);
-
-  for (std::size_t mode = 0; mode < dimension; ++mode)
-  {
-    if (mode == mode_to_skip)
-    {
-      continue;
-    }
-
-    const auto row = static_cast<boba::index_t>(idx[mode]);
-    for (boba::index_t r = 0; r < model.m_cores[mode].cols(); ++r)
-    {
-      w_out[static_cast<std::size_t>(r)] *= cores[mode]({row, r});
-    }
-  }
-}
-
-template <std::size_t dimension>
-void compute_Phi_mode_n(
-  const sparse_tensor<dimension>& tensor,
-  std::size_t mode,
-  const CPAPRModel<dimension>& model,
-  const host_matrix& B,
-  double epsilon,
-  host_matrix& Phi_out)
-{
-  Phi_out.resize({B.rows(), B.cols()});
-  Phi_out.fill_with_zeros();
-
-  auto Phi_view = Phi_out.view();
-  auto B_view = B.const_view();
-  auto tensor_view = tensor.const_view();
-  auto values_view = tensor.values_tensor().const_view();
-  std::vector<double> w;
-
-  const auto nnz = tensor.number_nonzeros();
-  for (boba::index_t entry = 0; entry < nnz; ++entry)
-  {
-    const auto idx = tensor_view.entry_multiindex(entry);
-    const auto i_n = idx[mode];
-    build_w_for_index(idx, mode, model, w);
-
-    double model_prediction = 0.0;
-    for (boba::index_t r = 0; r < B.cols(); ++r)
-    {
-      model_prediction += w[static_cast<std::size_t>(r)] * B_view({i_n, r});
-    }
-
-    model_prediction = clamp_min(model_prediction, epsilon);
-    const double hatv = values_view(entry) / model_prediction;
-    for (boba::index_t r = 0; r < B.cols(); ++r)
-    {
-      Phi_view({i_n, r}) += hatv * w[static_cast<std::size_t>(r)];
-    }
-  }
-}
-
-template <std::size_t dimension>
-void compute_Phi_mode_n(
-  const dense_tensor<dimension>& tensor,
-  std::size_t mode,
-  const CPAPRModel<dimension>& model,
-  const host_matrix& B,
-  double epsilon,
-  host_matrix& Phi_out)
-{
-  Phi_out.resize({B.rows(), B.cols()});
-  Phi_out.fill_with_zeros();
-
-  auto Phi_view = Phi_out.view();
-  auto B_view = B.const_view();
-  std::vector<double> w;
-
-  for (boba::index_t flat = 0; flat < tensor.size(); ++flat)
-  {
-    const double value = tensor.const_data()[flat];
-    if (value <= 0.0)
-    {
-      continue;
-    }
-
-    const auto multiindex = tensor.multiindex(flat);
-    const auto i_n = multiindex[mode];
-    build_w_for_index(multiindex, mode, model, w);
-
-    double model_prediction = 0.0;
-    for (boba::index_t r = 0; r < B.cols(); ++r)
-    {
-      model_prediction += w[static_cast<std::size_t>(r)] * B_view({i_n, r});
-    }
-
-    model_prediction = clamp_min(model_prediction, epsilon);
-    const double hatv = value / model_prediction;
-
-    for (boba::index_t r = 0; r < B.cols(); ++r)
-    {
-      Phi_view({i_n, r}) += hatv * w[static_cast<std::size_t>(r)];
-    }
-  }
 }
 
 template <std::size_t dimension>
@@ -506,12 +315,12 @@ void print_empty_estimated_counts(const sparse_tensor<dimension>& tensor, const 
 }
 
 template <std::size_t dimension>
-bool model_is_finite(const CPAPRModel<dimension>& model)
+bool model_is_valid_probability_model(const CPAPRModel<dimension>& model)
 {
   auto weights_view = model.weights().const_view();
   for (boba::index_t r = 0; r < model.weights().size(); ++r)
   {
-    if (!std::isfinite(weights_view(r)))
+    if (!std::isfinite(weights_view(r)) || weights_view(r) < 0.0)
     {
       return false;
     }
@@ -520,14 +329,21 @@ bool model_is_finite(const CPAPRModel<dimension>& model)
   for (std::size_t mode = 0; mode < dimension; ++mode)
   {
     auto factor_view = model.m_cores[mode].const_view();
-    for (boba::index_t i = 0; i < model.m_cores[mode].rows(); ++i)
+    for (boba::index_t r = 0; r < model.m_cores[mode].cols(); ++r)
     {
-      for (boba::index_t r = 0; r < model.m_cores[mode].cols(); ++r)
+      double column_sum = 0.0;
+      for (boba::index_t i = 0; i < model.m_cores[mode].rows(); ++i)
       {
-        if (!std::isfinite(factor_view({i, r})))
+        const double value = factor_view({i, r});
+        if (!std::isfinite(value) || value < 0.0)
         {
           return false;
         }
+        column_sum += value;
+      }
+      if (std::abs(column_sum - 1.0) > 1.0e-10)
+      {
+        return false;
       }
     }
   }
@@ -552,7 +368,7 @@ sparse_tensor<dimension> generate_gaussian_binned_tensor(
     throw std::invalid_argument("histogram bounds must match tensor order");
   }
 
-  const auto dims = to_coo_dims<dimension>(config.dims);
+  const auto dims = to_tensor_shape<dimension>(config.dims);
   const auto indexer = boba::Multiindexer<dimension>(dims);
   const std::size_t order = dimension;
   for (std::size_t mode = 0; mode < dimension; ++mode)
@@ -568,7 +384,6 @@ sparse_tensor<dimension> generate_gaussian_binned_tensor(
   std::mt19937 generator(config.seed);
 
   std::vector<double> means(order, 0.0);
-  std::vector<double> sigmas(order, 0.0);
   for (std::size_t mode = 0; mode < order; ++mode)
   {
     const double low = config.lower_bounds[mode];
@@ -578,7 +393,6 @@ sparse_tensor<dimension> generate_gaussian_binned_tensor(
       throw std::invalid_argument("upper bound must exceed lower bound");
     }
     means[mode] = 0.5 * (low + high);
-    sigmas[mode] = 1.0;
   }
 
   for (std::size_t sample = 0; sample < sample_count; ++sample)
@@ -586,10 +400,10 @@ sparse_tensor<dimension> generate_gaussian_binned_tensor(
     auto idx = boba::filled_array<dimension>(boba::index_t(0));
     for (std::size_t mode = 0; mode < order; ++mode)
     {
-      std::normal_distribution<double> dist(means[mode], sigmas[mode]);
       const double low = config.lower_bounds[mode];
       const double high = config.upper_bounds[mode];
-      const double coord = clamp_into_range(dist(generator), low, high);
+      std::normal_distribution<double> distribution(means[mode], 1.0);
+      const double coord = clamp_into_range(distribution(generator), low, high);
       const double width = (high - low) / static_cast<double>(dims[mode]);
       int bin = static_cast<int>(std::floor((coord - low) / width));
       bin = std::max(0, std::min(bin, static_cast<int>(dims[mode] - 1)));
@@ -639,7 +453,7 @@ dense_tensor<dimension> dense_tensor_from_sparse(const sparse_tensor<dimension>&
   auto values_view = tensor.values_tensor().const_view();
   auto dense_view = dense.view();
 
-  ::boba::detail::loop<tensor_completion_space>(
+  ::boba::detail::loop<space>(
     0_z,
     static_cast<std::size_t>(tensor.number_nonzeros()),
     [=] __boba_host_device__(std::size_t entry)
@@ -658,7 +472,7 @@ double sparse_tensor_entropy(const sparse_tensor<dimension>& tensor)
   auto values_view = tensor.values_tensor().const_view();
   const auto nnz = static_cast<std::size_t>(tensor.number_nonzeros());
   double mass = 0.0;
-  ::boba::sum_reduce<tensor_completion_space>(mass, 0_z, nnz, [=] __boba_host_device__(std::size_t entry, boba::sum_reducer_operator<double>& local_mass)
+  ::boba::sum_reduce<space>(mass, 0_z, nnz, [=] __boba_host_device__(std::size_t entry, boba::sum_reducer_operator<double>& local_mass)
   {
     local_mass += values_view(static_cast<boba::index_t>(entry));
   });
@@ -668,7 +482,7 @@ double sparse_tensor_entropy(const sparse_tensor<dimension>& tensor)
   }
 
   double entropy = 0.0;
-  ::boba::sum_reduce<tensor_completion_space>(entropy, 0_z, nnz, [=] __boba_host_device__(std::size_t entry, boba::sum_reducer_operator<double>& local_entropy)
+  ::boba::sum_reduce<space>(entropy, 0_z, nnz, [=] __boba_host_device__(std::size_t entry, boba::sum_reducer_operator<double>& local_entropy)
   {
     const double probability = values_view(static_cast<boba::index_t>(entry)) / mass;
     if (probability > 0.0)
@@ -680,10 +494,11 @@ double sparse_tensor_entropy(const sparse_tensor<dimension>& tensor)
 }
 
 template <std::size_t dimension>
-double tensor_entropy(const CPAPRModel<dimension>& model, const coo_index<dimension>& dims)
+double tensor_entropy(const CPAPRModel<dimension>& model, const tensor_shape<dimension>& dims)
 {
   const auto indexer = boba::Multiindexer<dimension>(dims);
   const auto bins = static_cast<std::size_t>(indexer.size());
+  std::vector<double> estimates(bins, 0.0);
   double max_estimate = 0.0;
   for (std::size_t flat = 0; flat < bins; ++flat)
   {
@@ -691,6 +506,7 @@ double tensor_entropy(const CPAPRModel<dimension>& model, const coo_index<dimens
     const double estimate = raw_tensor_entry_estimate(model, idx);
     if (std::isfinite(estimate) && estimate > 0.0)
     {
+      estimates[flat] = estimate;
       max_estimate = std::max(max_estimate, estimate);
     }
   }
@@ -701,14 +517,9 @@ double tensor_entropy(const CPAPRModel<dimension>& model, const coo_index<dimens
   }
 
   double scaled_mass = 0.0;
-  for (std::size_t flat = 0; flat < bins; ++flat)
+  for (double estimate : estimates)
   {
-    const auto idx = indexer.multiindex(static_cast<boba::index_t>(flat));
-    const double estimate = raw_tensor_entry_estimate(model, idx);
-    if (std::isfinite(estimate) && estimate > 0.0)
-    {
-      scaled_mass += estimate / max_estimate;
-    }
+    scaled_mass += estimate / max_estimate;
   }
 
   if (!(scaled_mass > 0.0) || !std::isfinite(scaled_mass))
@@ -717,14 +528,12 @@ double tensor_entropy(const CPAPRModel<dimension>& model, const coo_index<dimens
   }
 
   double entropy = 0.0;
-  for (std::size_t flat = 0; flat < bins; ++flat)
+  for (double estimate : estimates)
   {
-    const auto idx = indexer.multiindex(static_cast<boba::index_t>(flat));
-    const double estimate = raw_tensor_entry_estimate(model, idx);
-    if (std::isfinite(estimate) && estimate > 0.0)
+    if (estimate > 0.0)
     {
       const double probability = (estimate / max_estimate) / scaled_mass;
-      if (probability > 0.0 && std::isfinite(probability))
+      if (probability > 0.0)
       {
         entropy -= probability * std::log(probability);
       }
@@ -734,250 +543,48 @@ double tensor_entropy(const CPAPRModel<dimension>& model, const coo_index<dimens
   return entropy;
 }
 
-template <std::size_t dimension>
-CPAPRModel<dimension> initialize_random_stochastic_from_dims(
-  const coo_index<dimension>& dims,
-  int rank,
-  unsigned seed)
+void test_cp_apr_solver_reuse(bool& check)
 {
-  std::mt19937 generator(seed);
-  std::uniform_real_distribution<double> dist(0.0, 1.0);
+  constexpr std::size_t dimension = 2;
+  const tensor_shape<dimension> sizes{2, 3};
+  dense_tensor<dimension> counts(sizes);
+  counts.fill_with(1.0);
 
-  CPAPRModel<dimension> model(dims);
-  model.rename("tensor_completion_cpd");
-  model.m_weights.resize({static_cast<boba::index_t>(rank)});
-  model.m_weights.fill_with(1.0);
-
+  CPAPRModel<dimension> initial_model(sizes);
+  initial_model.m_weights.resize(2);
+  initial_model.m_weights.fill_with(1.0);
   for (std::size_t mode = 0; mode < dimension; ++mode)
   {
-    model.m_cores[mode].resize(
-      {static_cast<boba::index_t>(dims[mode]), static_cast<boba::index_t>(rank)});
-
-    auto factor_view = model.m_cores[mode].view();
-    for (boba::index_t i = 0; i < model.m_cores[mode].rows(); ++i)
-    {
-      for (boba::index_t r = 0; r < model.m_cores[mode].cols(); ++r)
-      {
-        factor_view({i, r}) = dist(generator) + 1.0e-6;
-      }
-    }
-    column_sum_normalize(model.m_cores[mode]);
+    initial_model.m_cores[mode].resize({sizes[mode], 2});
+    initial_model.m_cores[mode].fill_with(
+      1.0 / static_cast<double>(sizes[mode]));
   }
 
-  return model;
-}
+  boba::CPAPRParameters<double> parameters;
+  parameters.max_outer_iterations = 2;
+  parameters.max_inner_iterations = 2;
+  parameters.tolerance = 1.0e-8;
 
-template <std::size_t dimension>
-CPAPRModel<dimension> initialize_random_stochastic(const sparse_tensor<dimension>& tensor, int rank, unsigned seed)
-{
-  return initialize_random_stochastic_from_dims<dimension>(tensor.sizes(), rank, seed);
-}
+  const auto expected = boba::cp_apr_fit(counts, initial_model, parameters);
+  boba::CPAPRSolver<dimension, space, double> solver(parameters);
+  const auto actual = solver.fit(counts, initial_model);
+  const auto reused = solver.fit(counts, initial_model);
 
-template <std::size_t dimension>
-CPAPRModel<dimension> initialize_random_stochastic(const dense_tensor<dimension>& tensor, int rank, unsigned seed)
-{
-  auto dims = boba::filled_array<dimension>(boba::index_t(0));
-  for (std::size_t mode = 0; mode < dimension; ++mode)
-  {
-    dims[mode] = tensor.sizes(static_cast<boba::index_t>(mode));
-  }
-  return initialize_random_stochastic_from_dims<dimension>(dims, rank, seed);
-}
-
-template <std::size_t dimension>
-CPAPRModel<dimension> cp_apr_fit(
-  const sparse_tensor<dimension>& tensor,
-  CPAPRParams params,
-  CPAPRModel<dimension> model)
-{
-  host_matrix Phi;
-
-  for (int k = 1; k <= params.kmax; ++k)
-  {
-    bool is_converged = true;
-
-    for (std::size_t mode = 0; mode < dimension; ++mode)
-    {
-      const auto extent = tensor.sizes(static_cast<boba::index_t>(mode));
-      host_matrix S({extent, static_cast<boba::index_t>(model.rank())});
-      S.fill_with_zeros();
-
-      host_matrix B({extent, static_cast<boba::index_t>(model.rank())});
-      auto B_view = B.view();
-      auto factor_view = model.m_cores[mode].const_view();
-      auto lambda_view = model.m_weights.const_view();
-      ::boba::loop<tensor_completion_space, 2>(
-        {static_cast<std::size_t>(extent), static_cast<std::size_t>(B.cols())},
-        [=] __boba_host_device__(::boba::Array<std::size_t, 2> ij)
-      {
-        const auto i = static_cast<boba::index_t>(ij[0]);
-        const auto r = static_cast<boba::index_t>(ij[1]);
-        B_view({i, r}) = factor_view({i, r}) * lambda_view(r);
-      });
-
-      compute_Phi_mode_n(tensor, mode, model, B, params.epsilon, Phi);
-
-      if (k > 1)
-      {
-        auto S_view = S.view();
-        auto Phi_view = Phi.const_view();
-        ::boba::loop<tensor_completion_space, 2>(
-          {static_cast<std::size_t>(extent), static_cast<std::size_t>(B.cols())},
-          [=] __boba_host_device__(::boba::Array<std::size_t, 2> ij)
-        {
-          const auto i = static_cast<boba::index_t>(ij[0]);
-          const auto r = static_cast<boba::index_t>(ij[1]);
-          if (factor_view({i, r}) < params.kappa_tol && Phi_view({i, r}) > 1.0)
-          {
-            S_view({i, r}) = params.kappa;
-          }
-        });
-      }
-
-      auto S_view = S.const_view();
-      ::boba::loop<tensor_completion_space, 2>(
-        {static_cast<std::size_t>(extent), static_cast<std::size_t>(B.cols())},
-        [=] __boba_host_device__(::boba::Array<std::size_t, 2> ij)
-      {
-        const auto i = static_cast<boba::index_t>(ij[0]);
-        const auto r = static_cast<boba::index_t>(ij[1]);
-        B_view({i, r}) = (factor_view({i, r}) + S_view({i, r})) * lambda_view(r);
-      });
-
-      for (int ell = 1; ell <= params.ellmax; ++ell)
-      {
-        compute_Phi_mode_n(tensor, mode, model, B, params.epsilon, Phi);
-
-        const double kkt = inf_norm_mat_min_B_1minusPhi(B, Phi);
-        if (kkt < params.tau)
-        {
-          break;
-        }
-
-        is_converged = false;
-        auto Phi_view = Phi.const_view();
-        ::boba::loop<tensor_completion_space, 2>(
-          {static_cast<std::size_t>(extent), static_cast<std::size_t>(B.cols())},
-          [=] __boba_host_device__(::boba::Array<std::size_t, 2> ij)
-        {
-          const auto i = static_cast<boba::index_t>(ij[0]);
-          const auto r = static_cast<boba::index_t>(ij[1]);
-          B_view({i, r}) *= Phi_view({i, r});
-        });
-      }
-
-      model.m_weights = col_sums(B);
-      unabsorb_and_normalize(B, model.m_weights, model.m_cores[mode]);
-    }
-
-    if (is_converged)
-    {
-      break;
-    }
-  }
-
-  return model;
-}
-
-template <std::size_t dimension>
-CPAPRModel<dimension> cp_apr_fit(
-  const dense_tensor<dimension>& tensor,
-  CPAPRParams params,
-  CPAPRModel<dimension> model)
-{
-  host_matrix Phi;
-
-  for (int k = 1; k <= params.kmax; ++k)
-  {
-    bool is_converged = true;
-
-    for (std::size_t mode = 0; mode < dimension; ++mode)
-    {
-      const auto extent = tensor.sizes(static_cast<boba::index_t>(mode));
-      host_matrix S({extent, static_cast<boba::index_t>(model.rank())});
-      S.fill_with_zeros();
-
-      host_matrix B({extent, static_cast<boba::index_t>(model.rank())});
-      auto B_view = B.view();
-      auto factor_view = model.m_cores[mode].const_view();
-      auto lambda_view = model.m_weights.const_view();
-      ::boba::loop<tensor_completion_space, 2>(
-        {static_cast<std::size_t>(extent), static_cast<std::size_t>(B.cols())},
-        [=] __boba_host_device__(::boba::Array<std::size_t, 2> ij)
-      {
-        const auto i = static_cast<boba::index_t>(ij[0]);
-        const auto r = static_cast<boba::index_t>(ij[1]);
-        B_view({i, r}) = factor_view({i, r}) * lambda_view(r);
-      });
-
-      compute_Phi_mode_n(tensor, mode, model, B, params.epsilon, Phi);
-
-      if (k > 1)
-      {
-        auto S_view = S.view();
-        auto Phi_view = Phi.const_view();
-        ::boba::loop<tensor_completion_space, 2>(
-          {static_cast<std::size_t>(extent), static_cast<std::size_t>(B.cols())},
-          [=] __boba_host_device__(::boba::Array<std::size_t, 2> ij)
-        {
-          const auto i = static_cast<boba::index_t>(ij[0]);
-          const auto r = static_cast<boba::index_t>(ij[1]);
-          if (factor_view({i, r}) < params.kappa_tol && Phi_view({i, r}) > 1.0)
-          {
-            S_view({i, r}) = params.kappa;
-          }
-        });
-      }
-
-      auto S_view = S.const_view();
-      ::boba::loop<tensor_completion_space, 2>(
-        {static_cast<std::size_t>(extent), static_cast<std::size_t>(B.cols())},
-        [=] __boba_host_device__(::boba::Array<std::size_t, 2> ij)
-      {
-        const auto i = static_cast<boba::index_t>(ij[0]);
-        const auto r = static_cast<boba::index_t>(ij[1]);
-        B_view({i, r}) = (factor_view({i, r}) + S_view({i, r})) * lambda_view(r);
-      });
-
-      for (int ell = 1; ell <= params.ellmax; ++ell)
-      {
-        compute_Phi_mode_n(tensor, mode, model, B, params.epsilon, Phi);
-
-        const double kkt = inf_norm_mat_min_B_1minusPhi(B, Phi);
-        if (kkt < params.tau)
-        {
-          break;
-        }
-
-        is_converged = false;
-        auto Phi_view = Phi.const_view();
-        ::boba::loop<tensor_completion_space, 2>(
-          {static_cast<std::size_t>(extent), static_cast<std::size_t>(B.cols())},
-          [=] __boba_host_device__(::boba::Array<std::size_t, 2> ij)
-        {
-          const auto i = static_cast<boba::index_t>(ij[0]);
-          const auto r = static_cast<boba::index_t>(ij[1]);
-          B_view({i, r}) *= Phi_view({i, r});
-        });
-      }
-
-      model.m_weights = col_sums(B);
-      unabsorb_and_normalize(B, model.m_weights, model.m_cores[mode]);
-    }
-
-    if (is_converged)
-    {
-      break;
-    }
-  }
-
-  return model;
+  pass_or_fail(
+    check,
+    boba::norm_difference_frobenius(expected.decompress(), actual.decompress()),
+    1.0e-12);
+  pass_or_fail(
+    check,
+    boba::norm_difference_frobenius(actual.decompress(), reused.decompress()),
+    1.0e-12);
 }
 
 template <std::size_t dimension>
 int run_tensor_completion(const CommandLineOptions& options)
 {
   bool check = true;
+  test_cp_apr_solver_reuse(check);
 
   GaussianHistogramConfig generator_config;
   generator_config.dims = options.dims;
@@ -992,24 +599,28 @@ int run_tensor_completion(const CommandLineOptions& options)
   const sparse_tensor<dimension> observed_tensor =
     generate_gaussian_binned_tensor<dimension>(options.sample_count, generator_config);
 
-  CPAPRParams params;
-  params.kmax = 150;
-  params.ellmax = 15;
-  params.tau = 1.0e-5;
-  params.kappa = 1.0e-2;
-  params.kappa_tol = 1.0e-10;
-  params.epsilon = 1.0e-10;
-  params.seed = 20260323;
+  boba::CPAPRParameters<double> parameters;
+  parameters.max_outer_iterations = 150;
+  parameters.max_inner_iterations = 15;
+  parameters.tolerance = 1.0e-5;
 
-  auto model = initialize_random_stochastic<dimension>(observed_tensor, options.rank, params.seed);
+  std::mt19937 random_generator(20260323);
+  boba::CPAPRSolver<dimension, space, double> solver(parameters);
+  CPAPRModel<dimension> model;
   if (options.dense_apr)
   {
     const auto dense_observed_tensor = dense_tensor_from_sparse<dimension>(observed_tensor);
-    model = cp_apr_fit(dense_observed_tensor, params, std::move(model));
+    model = solver.fit(
+      dense_observed_tensor,
+      static_cast<std::size_t>(options.rank),
+      random_generator);
   }
   else
   {
-    model = cp_apr_fit(observed_tensor, params, std::move(model));
+    model = solver.fit(
+      observed_tensor,
+      static_cast<std::size_t>(options.rank),
+      random_generator);
   }
 
   const auto observed_dims = observed_tensor.sizes();
@@ -1026,7 +637,8 @@ int run_tensor_completion(const CommandLineOptions& options)
   pass_or_fail_bool(check, observed_tensor_entropy >= 0.0);
   pass_or_fail_bool(check, std::isfinite(completed_tensor_entropy));
   pass_or_fail_bool(check, completed_tensor_entropy >= 0.0);
-  pass_or_fail_bool(check, model_is_finite(model));
+  pass_or_fail_bool(check, model_is_valid_probability_model(model));
+  pass_or_fail(check, model.weights().sum_reduce() - observed_mass, 1.0e-10);
 
   if (options.verbose_bins)
   {

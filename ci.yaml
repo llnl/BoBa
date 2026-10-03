@@ -964,6 +964,9 @@
     test_tensor_completion_3d:
       inputs: "--samples 800 --rank 5 --bin-width 0.5 --dims 20 20 20"
       skip: [cuda, hip]
+    test_tensor_completion_3d_dense:
+      inputs: "--samples 300 --rank 4 --bin-width 0.5 --dims 10 10 10 --dense-apr"
+      skip: [cuda, hip]
     test_tensor_completion_4d:
       inputs: "--samples 800 --rank 5 --bin-width 0.5 --dims 12 12 12 12"
       skip: [cuda, hip, debug, ubsan, asan]

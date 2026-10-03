@@ -689,13 +689,7 @@ struct CanonicalPolyadicDecomposition
       }
     }
 
-    auto output_view = output.view();
-    auto weights_view = m_weights.const_view();
-    ::boba::loop<space, 2>(output.sizes(),
-                           [=] __boba_host_device__(Array<index_t, 2> ij)
-    {
-      output_view(ij) *= weights_view(ij[1]);
-    });
+    apply_as_diagonal_right_in_place(m_weights, output);
 
     return output;
   }
