@@ -1391,6 +1391,7 @@ private:
     const ::boba::Matrix<space_local, data_t>& matrix,
     const ::boba::Vector<space_local, data_t>& rhs)
   {
+    BOBA_CALI_MARK
     if constexpr (space_local == execution_space::CPU)
     {
       auto rhs_matrix = reshape_to_matrix(rhs, {rhs.size(), 1});
@@ -1410,6 +1411,7 @@ private:
     const ::boba::BlockOperator<::boba::TensorTrainMatrix<dimension_local, space_local, data_t>>& crA,
     const ::boba::BlockVector<::boba::TensorTrain<dimension_local, space_local, data_t>>& crx)
   {
+    BOBA_CALI_MARK
     ::boba::BlockVector<::boba::TensorTrain<dimension_local, space_local, data_t>> output(crA.block_rows);
 
     for (size_t row = 0; row < crA.block_rows; row++)
