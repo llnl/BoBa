@@ -1081,9 +1081,6 @@ struct TensorTrain
     boba::Vector<space, data_t> out;
     out.rename("out");
 
-    // auto this_cores_views = this->get_core_const_views();
-    // auto in_cores_views = input.get_core_const_views();
-
     for (size_t d = dimension; d > 0; d--)
     {
       auto contracted_cores = tensor_contraction<1>(
@@ -1099,7 +1096,6 @@ struct TensorTrain
       temp.reshape(contracted_cores);
 
       out = temp * in;
-
       in = out;
     }
     checkpoint();

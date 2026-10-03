@@ -192,6 +192,9 @@ namespace detail
  * @param tolerance_relative Relative convergence tolerance.
  * @param maximum_iterations Maximum GMRES iteration count.
  * @param sparsity Sparsification threshold passed to Eigen.
+ * @param initial_guess Optional initial iterate.
+ * @param iterations_used Optional output for the iteration count.
+ * @param estimated_error Optional output for Eigen's residual estimate.
  * @return Host-space solution vector.
  */
 template <execution_space space, typename data_t>
@@ -201,7 +204,10 @@ boba::Vector<host_space, data_t> eigen_gmres(
   const boba::Vector<space, data_t>& input,
   data_t tolerance_relative = 1.0e-7,
   size_t maximum_iterations = 30,
-  data_t sparsity = 1.0e-3)
+  data_t sparsity = 1.0e-3,
+  const boba::Vector<space, data_t>* initial_guess = nullptr,
+  size_t* iterations_used = nullptr,
+  data_t* estimated_error = nullptr)
 {
   BOBA_CALI_MARK
   boba_always_assert_equal(space, host_space, "eigen_gmres only useable for host data.");
@@ -215,7 +221,23 @@ boba::Vector<host_space, data_t> eigen_gmres(
   ::Eigen::GMRES<Eigen::SparseMatrix<data_t>> esolver(matrix_eigen);
   esolver.setTolerance(tolerance_relative);
   esolver.setMaxIterations(static_cast<long>(maximum_iterations));
-  output_eigen = esolver.solve(input_eigen);
+  if (initial_guess != nullptr)
+  {
+    boba_always_assert_equal(initial_guess->size(), input.size(), "GMRES initial guess must match the right-hand side size.");
+    output_eigen = esolver.solveWithGuess(input_eigen, ::boba::get_eigen_map(*initial_guess));
+  }
+  else
+  {
+    output_eigen = esolver.solve(input_eigen);
+  }
+  if (iterations_used != nullptr)
+  {
+    *iterations_used = static_cast<size_t>(esolver.iterations());
+  }
+  if (estimated_error != nullptr)
+  {
+    *estimated_error = esolver.error();
+  }
   return output;
 }
 
@@ -257,8 +279,11 @@ void ls_solve_qr_eigen(Matrix<execution_space::CPU, data_t> const& matrix_A,
   auto A_map = ::boba::get_const_eigen_map(matrix_A);
   auto rhs_map = ::boba::get_const_eigen_map(matrix_B);
   auto output_map = ::boba::get_eigen_map(matrix_C);
+  BOBA_CALI_BEGIN("qr_factorization");
   Eigen::ColPivHouseholderQR<EigenMatrix> solver(A_map);
+  BOBA_CALI_SWITCH("qr_factorization", "qr_solve");
   output_map = solver.solve(rhs_map);
+  BOBA_CALI_END("qr_solve");
 }
 
 /**
@@ -278,8 +303,11 @@ void ls_solve_cod_eigen(Matrix<execution_space::CPU, data_t> const& matrix_A,
   auto A_map = ::boba::get_const_eigen_map(matrix_A);
   auto rhs_map = ::boba::get_const_eigen_map(matrix_B);
   auto output_map = ::boba::get_eigen_map(matrix_C);
+  BOBA_CALI_BEGIN("cod_factorization");
   Eigen::CompleteOrthogonalDecomposition<EigenMatrix> solver(A_map);
+  BOBA_CALI_SWITCH("cod_factorization", "cod_solve");
   output_map = solver.solve(rhs_map);
+  BOBA_CALI_END("cod_solve");
 }
 
 /**
@@ -452,8 +480,11 @@ void ls_solve_lu_eigen(Matrix<execution_space::CPU, data_t> const& matrix_A,
   auto A_map = ::boba::get_const_eigen_map(matrix_A);
   auto rhs_map = ::boba::get_const_eigen_map(matrix_B);
   auto output_map = ::boba::get_eigen_map(matrix_C);
+  BOBA_CALI_BEGIN("lu_factorization");
   Eigen::PartialPivLU<EigenMatrix> solver(A_map);
+  BOBA_CALI_SWITCH("lu_factorization", "lu_solve");
   output_map = solver.solve(rhs_map);
+  BOBA_CALI_END("lu_solve");
 }
 
 /**
@@ -664,7 +695,10 @@ boba::Vector<host_space, data_t> eigen_gmres(
   const boba::Vector<space, data_t>& input,
   data_t tolerance_relative = 1.0e-7,
   size_t maximum_iterations = 30,
-  data_t sparsity = 1.0e-3)
+  data_t sparsity = 1.0e-3,
+  const boba::Vector<space, data_t>* initial_guess = nullptr,
+  size_t* iterations_used = nullptr,
+  data_t* estimated_error = nullptr)
 {
   boba::Vector<space, data_t> output;
   detail::ignore(matrix);
@@ -672,6 +706,9 @@ boba::Vector<host_space, data_t> eigen_gmres(
   detail::ignore(tolerance_relative);
   detail::ignore(maximum_iterations);
   detail::ignore(sparsity);
+  detail::ignore(initial_guess);
+  detail::ignore(iterations_used);
+  detail::ignore(estimated_error);
   boba_error("You have called eigen's GMRES routine, but BOBA_ENABLE_EIGEN is set to false.");
   return output;
 }
