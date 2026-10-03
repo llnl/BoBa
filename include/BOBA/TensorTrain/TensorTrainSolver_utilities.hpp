@@ -196,6 +196,149 @@ boba::Matrix<space, data_t> bfun3_matrix(
   return reshape_to_matrix(Phi1APhi2, {rows, cols});
 }
 
+/**
+ * @brief Squared Frobenius norm of the projected one-site matrix from bfun3.
+ *
+ * Contracts the tensor network with its conjugate.  The largest intermediates
+ * depend only on operator bond dimensions; the projected dense matrix is never
+ * formed.
+ */
+template <::boba::execution_space space, typename data_t>
+data_t bfun3_matrix_norm_frobenius_squared(
+  const boba::Tensor<3, space, data_t>& Phi1,
+  const boba::Tensor<4, space, data_t>& A,
+  const boba::Tensor<3, space, data_t>& Phi2)
+{
+  BOBA_CALI_MARK
+  auto Phi1_conj = ::boba::get_conj(Phi1);
+  auto A_conj = ::boba::get_conj(A);
+  auto Phi2_conj = ::boba::get_conj(Phi2);
+
+  auto left_gram = ::boba::tensor_contraction<2>(
+    {"ry", "rx", "ra"}, Phi1,
+    {"ry", "rx", "rap"}, Phi1_conj,
+    {"ra", "rap"});
+  auto operator_gram = ::boba::tensor_contraction<2>(
+    {"ra", "row", "col", "rb"}, A,
+    {"rap", "row", "col", "rbp"}, A_conj,
+    {"ra", "rb", "rap", "rbp"});
+  auto right_gram = ::boba::tensor_contraction<2>(
+    {"rx", "rb", "ry"}, Phi2,
+    {"rx", "rbp", "ry"}, Phi2_conj,
+    {"rb", "rbp"});
+  auto left_operator_gram = ::boba::tensor_contraction<2>(
+    {"ra", "rap"}, left_gram,
+    {"ra", "rb", "rap", "rbp"}, operator_gram,
+    {"rb", "rbp"});
+  return ::boba::inner_product(left_operator_gram, right_gram);
+}
+
+/**
+ * @brief Squared Euclidean norm of every row of the projected bfun3 matrix.
+ *
+ * The returned tensor has the projected row shape (left rank, physical row,
+ * right rank).  Column indices are contracted against a conjugate copy, while
+ * row indices remain free.
+ */
+template <::boba::execution_space space, typename data_t>
+boba::Tensor<3, space, data_t> bfun3_matrix_row_norms_squared(
+  const boba::Tensor<3, space, data_t>& Phi1,
+  const boba::Tensor<4, space, data_t>& A,
+  const boba::Tensor<3, space, data_t>& Phi2)
+{
+  BOBA_CALI_MARK
+  auto Phi1_conj = ::boba::get_conj(Phi1);
+  auto A_conj = ::boba::get_conj(A);
+  auto Phi2_conj = ::boba::get_conj(Phi2);
+
+  boba::Tensor<3, space, data_t> left_row_gram(
+    {Phi1.sizes(0), Phi1.sizes(2), Phi1.sizes(2)});
+  auto left_view = left_row_gram.view();
+  auto phi1_view = Phi1.const_view();
+  auto phi1_conj_view = Phi1_conj.const_view();
+  const auto left_rows = Phi1.sizes(0);
+  const auto left_cols = Phi1.sizes(1);
+  const auto left_bond = Phi1.sizes(2);
+  ::boba::loop<space, 1>(left_rows * left_bond * left_bond,
+                         [=] __boba_host_device__(index_t idx)
+  {
+    const auto row_left = idx / (left_bond * left_bond);
+    const auto remainder = idx - row_left * left_bond * left_bond;
+    const auto ra = remainder / left_bond;
+    const auto rap = remainder - ra * left_bond;
+    data_t value = 0;
+    for (index_t col_left = 0; col_left < left_cols; col_left++)
+    {
+      value += phi1_view({row_left, col_left, ra}) *
+               phi1_conj_view({row_left, col_left, rap});
+    }
+    left_view({row_left, ra, rap}) = value;
+  });
+
+  boba::Tensor<5, space, data_t> operator_row_gram(
+    {A.sizes(0), A.sizes(1), A.sizes(3), A.sizes(0), A.sizes(3)});
+  auto operator_view = operator_row_gram.view();
+  auto A_view = A.const_view();
+  auto A_conj_view = A_conj.const_view();
+  const auto bond_left = A.sizes(0);
+  const auto physical_rows = A.sizes(1);
+  const auto physical_cols = A.sizes(2);
+  const auto bond_right = A.sizes(3);
+  const auto operator_gram_size =
+    bond_left * physical_rows * bond_right * bond_left * bond_right;
+  ::boba::loop<space, 1>(operator_gram_size,
+                         [=] __boba_host_device__(index_t idx)
+  {
+    auto remainder = idx;
+    const auto rbp = remainder % bond_right;
+    remainder /= bond_right;
+    const auto rap = remainder % bond_left;
+    remainder /= bond_left;
+    const auto rb = remainder % bond_right;
+    remainder /= bond_right;
+    const auto row = remainder % physical_rows;
+    const auto ra = remainder / physical_rows;
+    data_t value = 0;
+    for (index_t col = 0; col < physical_cols; col++)
+    {
+      value += A_view({ra, row, col, rb}) * A_conj_view({rap, row, col, rbp});
+    }
+    operator_view({ra, row, rb, rap, rbp}) = value;
+  });
+
+  boba::Tensor<3, space, data_t> right_row_gram(
+    {Phi2.sizes(1), Phi2.sizes(1), Phi2.sizes(2)});
+  auto right_view = right_row_gram.view();
+  auto phi2_view = Phi2.const_view();
+  auto phi2_conj_view = Phi2_conj.const_view();
+  const auto right_cols = Phi2.sizes(0);
+  const auto right_bond = Phi2.sizes(1);
+  const auto right_rows = Phi2.sizes(2);
+  ::boba::loop<space, 1>(right_bond * right_bond * right_rows,
+                         [=] __boba_host_device__(index_t idx)
+  {
+    const auto rb = idx / (right_bond * right_rows);
+    const auto remainder = idx - rb * right_bond * right_rows;
+    const auto rbp = remainder / right_rows;
+    const auto row_right = remainder - rbp * right_rows;
+    data_t value = 0;
+    for (index_t col_right = 0; col_right < right_cols; col_right++)
+    {
+      value += phi2_view({col_right, rb, row_right}) *
+               phi2_conj_view({col_right, rbp, row_right});
+    }
+    right_view({rb, rbp, row_right}) = value;
+  });
+  auto left_operator_row_gram = ::boba::tensor_contraction<2>(
+    {"row_left", "ra", "rap"}, left_row_gram,
+    {"ra", "row", "rb", "rap", "rbp"}, operator_row_gram,
+    {"row_left", "row", "rb", "rbp"});
+  return ::boba::tensor_contraction<2>(
+    {"row_left", "row", "rb", "rbp"}, left_operator_row_gram,
+    {"rb", "rbp", "row_right"}, right_row_gram,
+    {"row_left", "row", "row_right"});
+}
+
 /*
  * @brief A helper struct corresponding to the operator needed by to solve3d_2ml
  */

@@ -86,6 +86,41 @@ auto norm_frobenius(TensorTrain<dimension, space, data_t> const& train)
   return boba::sqrt(abs_product);
 }
 
+/**
+ * \brief Frobenius norm of a right-orthogonal tensor train.
+ *
+ * If cores 1,...,dimension-1 are right-orthogonal, their self-contractions are
+ * identity matrices, so the tensor norm is the Frobenius norm of core zero.
+ * TensorTrain::round() creates exactly this canonical form, with core zero as
+ * the orthogonality center.
+ *
+ * This routine has a distinct name because it does not verify its
+ * right-orthogonality precondition.
+ */
+template <size_t dimension, execution_space space, typename data_t>
+auto norm_frobenius_right_orthogonal(
+  TensorTrain<dimension, space, data_t> const& train)
+{
+  BOBA_CALI_MARK
+  return ::boba::norm_frobenius(train.cores[0]);
+}
+
+/**
+ * \brief Frobenius norm of a left-orthogonal tensor train.
+ *
+ * If cores 0,...,dimension-2 are left-orthogonal, the tensor norm is the
+ * Frobenius norm of the final core.  TensorTrain::orthogonalize() establishes
+ * this form without SVD truncation.  This routine does not verify its
+ * left-orthogonality precondition.
+ */
+template <size_t dimension, execution_space space, typename data_t>
+auto norm_frobenius_left_orthogonal(
+  TensorTrain<dimension, space, data_t> const& train)
+{
+  BOBA_CALI_MARK
+  return ::boba::norm_frobenius(train.cores[dimension - 1]);
+}
+
 // -------------------------------------------------------------------------------------
 // Section: Multiply
 // -------------------------------------------------------------------------------------

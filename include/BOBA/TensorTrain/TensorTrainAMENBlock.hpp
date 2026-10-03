@@ -5,6 +5,101 @@
 namespace boba
 {
 
+/**
+ * Matrix-free action of a coupled block-AMEn site operator.
+ *
+ * The input and output are concatenated dense vectors, but each nonzero block
+ * is applied through bfun3 rather than materializing its projected matrix.
+ */
+template <execution_space space, typename data_t>
+struct CoupledSolve3DGMRESOperator
+{
+  using tensor3_t = ::boba::Tensor<3, space, data_t>;
+  using tensor4_t = ::boba::Tensor<4, space, data_t>;
+
+  std::vector<std::vector<const tensor3_t*>> phi_left;
+  std::vector<std::vector<const tensor4_t*>> operator_cores;
+  std::vector<std::vector<const tensor3_t*>> phi_right;
+  std::vector<::boba::Array<index_t, 3>> input_sizes;
+  std::vector<index_t> offsets;
+  std::vector<data_t> row_factors;
+  std::vector<::boba::Vector<space, data_t>> scalar_row_factors;
+
+  [[nodiscard]]
+  ::boba::Vector<space, data_t> operator*(
+    const ::boba::Vector<space, data_t>& input) const
+  {
+    BOBA_CALI_MARK
+    boba_always_assert_equal(offsets.size(), input_sizes.size() + 1,
+                             "Coupled operator offsets are inconsistent.");
+    boba_always_assert_equal(input.size(), static_cast<size_t>(offsets.back()),
+                             "Coupled operator input has the wrong size.");
+
+    const auto block_count = input_sizes.size();
+    std::vector<tensor3_t> input_blocks(block_count);
+    for (size_t col = 0; col < block_count; col++)
+    {
+      const auto block_size = offsets[col + 1] - offsets[col];
+      ::boba::Vector<space, data_t> input_block({block_size});
+      auto input_block_view = input_block.view();
+      auto input_view = input.const_view();
+      const auto offset = offsets[col];
+      ::boba::loop<space, 1>(block_size, [=] __boba_host_device__(index_t idx)
+      {
+        input_block_view({idx}) = input_view({offset + idx});
+      });
+      input_blocks[col] = reshape<3>(input_block, input_sizes[col]);
+    }
+
+    ::boba::Vector<space, data_t> output({offsets.back()});
+    output.fill_with_zeros();
+    for (size_t row = 0; row < block_count; row++)
+    {
+      tensor3_t output_block;
+      bool initialized = false;
+      for (size_t col = 0; col < block_count; col++)
+      {
+        if (operator_cores[row][col] == nullptr)
+        {
+          continue;
+        }
+        auto contribution = bfun3(*phi_left[row][col],
+                                  *operator_cores[row][col],
+                                  *phi_right[row][col],
+                                  input_blocks[col]);
+        if (initialized)
+        {
+          output_block += contribution;
+        }
+        else
+        {
+          output_block = std::move(contribution);
+          initialized = true;
+        }
+      }
+      boba_always_assert(initialized,
+                         "Coupled site operator requires a nonempty block in every row.");
+
+      auto output_block_flat = flatten(output_block);
+      auto output_view = output.view();
+      auto output_block_view = output_block_flat.const_view();
+      const auto offset = offsets[row];
+      auto scalar_factors_view = scalar_row_factors.empty()
+                                   ? output_block_flat.const_view()
+                                   : scalar_row_factors[row].const_view();
+      const bool use_scalar_factors = !scalar_row_factors.empty();
+      const auto block_factor = row_factors.empty() ? data_t{1} : row_factors[row];
+      ::boba::loop<space, 1>(static_cast<index_t>(output_block_flat.size()),
+                             [=] __boba_host_device__(index_t idx)
+      {
+        const auto factor = use_scalar_factors ? scalar_factors_view({idx}) : block_factor;
+        output_view({offset + idx}) = factor * output_block_view({idx});
+      });
+    }
+    return output;
+  }
+};
+
 template <typename data_t>
 struct TensorTrainAMENBlock
 {
@@ -38,13 +133,23 @@ struct TensorTrainAMENBlock
   // per-block scalar bookkeeping does not preserve the off-diagonal projected
   // equations, so coupled solves use unnormalized environments.
   bool normalize_coupled_intermediate_quantities = false;
-  // Scale the assembled dense coupled site equations explicitly before the
-  // local solve. This is an algebraic row scaling of B*x=rhs; residual
+  // Scale coupled site equations explicitly before the local solve. Dense
+  // paths currently use one Frobenius-norm factor per block row; matrix-free
+  // paths compute every scalar row norm by tensor contraction and apply true
+  // row equilibration. Both are algebraic left scalings of B*x=rhs; residual
   // diagnostics and enrichment continue to use the original unscaled system.
   // Unknown/column scaling is intentionally avoided because projected coupled
   // systems may have gauge/nullspace freedom, and reweighting unknowns can
   // change the least-squares representative selected by the local solve.
   bool scale_coupled_site_system = true;
+  /// Use Eigen GMRES instead of complete orthogonal decomposition for coupled site systems.
+  bool use_eigen_gmres_for_coupled_site_solve = false;
+  /// Use matrix-free BoBa GMRES for coupled site systems.
+  bool use_boba_gmres_for_coupled_site_solve = false;
+  /// Assemble a reference matrix and compare it with the matrix-free action.
+  bool validate_coupled_matrix_free_operator = false;
+  /// Direct CPU solver: 0=complete orthogonal decomposition, 1=pivoted QR, 2=partial-pivot LU.
+  size_t coupled_site_direct_solver_method = 0;
   /// \brief Enable per-sweep progress output from `solve()`.
   bool verbose = false;
 
@@ -139,8 +244,10 @@ struct TensorTrainAMENBlock
     // an independent diagonal solve. In a coupled block system, normalizing a
     // row by quantities derived from its diagonal block changes the relative
     // scale of the off-diagonal projected operators and therefore changes the
-    // local equation. Coupled systems instead keep the environments unnormalized
-    // and apply an explicit row scaling to the assembled dense site equations.
+    // local equation. Coupled systems instead keep the environments
+    // unnormalized. The assembled path applies block-row scaling. The
+    // matrix-free path applies finer scalar-row equilibration, obtaining every
+    // projected row norm by contracting the tensor network with itself.
     if (has_offdiag_blocks && normalize_coupled_intermediate_quantities)
     {
       boba_warn("TensorTrainAMENBlock coupled intermediate normalization is disabled because the current scaling does not preserve off-diagonal projected equations.");
@@ -547,8 +654,16 @@ struct TensorTrainAMENBlock
           }
 
           auto total_local_size = coupled_offsets[Kay];
-          boba::Matrix<space, data_t> coupled_B({total_local_size, total_local_size});
-          coupled_B.fill_with_zeros();
+          const bool use_matrix_free_coupled_solve =
+            use_boba_gmres_for_coupled_site_solve;
+          const bool assemble_coupled_matrix =
+            !use_matrix_free_coupled_solve || validate_coupled_matrix_free_operator;
+          boba::Matrix<space, data_t> coupled_B;
+          if (assemble_coupled_matrix)
+          {
+            coupled_B.resize({total_local_size, total_local_size});
+            coupled_B.fill_with_zeros();
+          }
 
           boba::Vector<space, data_t> coupled_rhs_full({total_local_size});
           coupled_rhs_full.fill_with_zeros();
@@ -557,6 +672,7 @@ struct TensorTrainAMENBlock
           coupled_sol_prev_full.fill_with_zeros();
 
           std::vector<data_t> coupled_row_norm_squared(Kay, 0.0);
+          std::vector<boba::Vector<space, data_t>> coupled_scalar_row_norm_squared(Kay);
           for (size_t ki = 0; ki < Kay; ki++)
           {
             // Assemble the dense site matrix block-by-block from the projected
@@ -564,6 +680,15 @@ struct TensorTrainAMENBlock
             copy_vector_block(coupled_rhs_full, coupled_offsets[ki], coupled_rhs[ki]);
             copy_vector_block(coupled_sol_prev_full, coupled_offsets[ki], flatten(site_x_cores[ki]));
             coupled_row_norm_squared[ki] += coupled_norm_rhs[ki] * coupled_norm_rhs[ki];
+            coupled_scalar_row_norm_squared[ki].resize(coupled_rhs[ki].sizes());
+            auto scalar_norm_view = coupled_scalar_row_norm_squared[ki].view();
+            auto rhs_view = coupled_rhs[ki].const_view();
+            ::boba::loop<space, 1>(static_cast<index_t>(coupled_rhs[ki].size()),
+                                   [=] __boba_host_device__(index_t idx)
+            {
+              auto rhs_abs = ::boba::abs(rhs_view({idx}));
+              scalar_norm_view({idx}) = rhs_abs * rhs_abs;
+            });
 
             for (size_t kj = 0; kj < Kay; kj++)
             {
@@ -572,24 +697,117 @@ struct TensorTrainAMENBlock
                 continue;
               }
 
-              auto B_block = bfun3_matrix(
-                phia[ki][kj].cores[i],
-                crA({ki, kj}).cores[i],
-                phia[ki][kj].cores[i + 1]);
+              data_t matrix_free_block_norm_squared = 0.0;
+              if (use_matrix_free_coupled_solve)
+              {
+                auto scalar_block_norm_squared = flatten(
+                  ::boba::bfun3_matrix_row_norms_squared(
+                    phia[ki][kj].cores[i],
+                    crA({ki, kj}).cores[i],
+                    phia[ki][kj].cores[i + 1]));
+                matrix_free_block_norm_squared = scalar_block_norm_squared.sum_reduce();
+                coupled_row_norm_squared[ki] += matrix_free_block_norm_squared;
+                auto scalar_norm_view = coupled_scalar_row_norm_squared[ki].view();
+                auto scalar_block_norm_view = scalar_block_norm_squared.const_view();
+                ::boba::loop<space, 1>(
+                  static_cast<index_t>(scalar_block_norm_squared.size()),
+                  [=] __boba_host_device__(index_t idx)
+                {
+                  scalar_norm_view({idx}) += scalar_block_norm_view({idx});
+                });
+              }
 
-              auto B_block_norm = ::boba::norm_frobenius(B_block);
-              coupled_row_norm_squared[ki] += B_block_norm * B_block_norm;
+              if (assemble_coupled_matrix)
+              {
+                auto B_block = bfun3_matrix(
+                  phia[ki][kj].cores[i],
+                  crA({ki, kj}).cores[i],
+                  phia[ki][kj].cores[i + 1]);
 
-              coupled_B.replace_submatrix(
-                {coupled_offsets[ki], coupled_offsets[ki + 1]},
-                {coupled_offsets[kj], coupled_offsets[kj + 1]},
-                B_block);
+                auto B_block_norm = ::boba::norm_frobenius(B_block);
+                if (!use_matrix_free_coupled_solve)
+                {
+                  coupled_row_norm_squared[ki] += B_block_norm * B_block_norm;
+                }
+                else if (validate_coupled_matrix_free_operator)
+                {
+                  auto dense_norm_squared = B_block_norm * B_block_norm;
+                  auto norm_denominator = boba::max(
+                    ::boba::abs(dense_norm_squared), ::boba::epsilon<data_t>());
+                  std::cout << "TensorTrainAMENBlock: matrix-free norm validation site " << i
+                            << ", block (" << ki << ", " << kj << ")"
+                            << ", relative_squared_norm_difference: "
+                            << ::boba::abs(matrix_free_block_norm_squared - dense_norm_squared) /
+                                 norm_denominator << "\n";
+                }
+
+                coupled_B.replace_submatrix(
+                  {coupled_offsets[ki], coupled_offsets[ki + 1]},
+                  {coupled_offsets[kj], coupled_offsets[kj + 1]},
+                  B_block);
+              }
+            }
+            if (use_matrix_free_coupled_solve && validate_coupled_matrix_free_operator)
+            {
+              auto scalar_norm_sum = coupled_scalar_row_norm_squared[ki].sum_reduce();
+              auto denominator = boba::max(
+                ::boba::abs(coupled_row_norm_squared[ki]), ::boba::epsilon<data_t>());
+              std::cout << "TensorTrainAMENBlock: scalar-row norm validation site " << i
+                        << ", block row " << ki
+                        << ", relative_sum_difference: "
+                        << ::boba::abs(scalar_norm_sum - coupled_row_norm_squared[ki]) /
+                             denominator << "\n";
+            }
+          }
+
+          CoupledSolve3DGMRESOperator<space, data_t> coupled_operator;
+          if (use_matrix_free_coupled_solve)
+          {
+            coupled_operator.phi_left.resize(Kay, std::vector<const boba::Tensor<3, space, data_t>*>(Kay, nullptr));
+            coupled_operator.operator_cores.resize(Kay, std::vector<const boba::Tensor<4, space, data_t>*>(Kay, nullptr));
+            coupled_operator.phi_right.resize(Kay, std::vector<const boba::Tensor<3, space, data_t>*>(Kay, nullptr));
+            coupled_operator.input_sizes.resize(Kay);
+            coupled_operator.offsets = coupled_offsets;
+            coupled_operator.row_factors.assign(Kay, data_t{1});
+            for (size_t kj = 0; kj < Kay; kj++)
+            {
+              coupled_operator.input_sizes[kj] = site_x_cores[kj].sizes();
+            }
+            for (size_t ki = 0; ki < Kay; ki++)
+            {
+              for (size_t kj = 0; kj < Kay; kj++)
+              {
+                if (crA({ki, kj}).get_number_elements() == 0)
+                {
+                  continue;
+                }
+                coupled_operator.phi_left[ki][kj] = &phia[ki][kj].cores[i];
+                coupled_operator.operator_cores[ki][kj] = &crA({ki, kj}).cores[i];
+                coupled_operator.phi_right[ki][kj] = &phia[ki][kj].cores[i + 1];
+              }
             }
           }
 
           // Solve the coupled site problem once, then slice the solution and
           // residual diagnostics back into the per-block containers.
-          auto coupled_prev_lhs = coupled_B * coupled_sol_prev_full;
+          if (use_matrix_free_coupled_solve && validate_coupled_matrix_free_operator)
+          {
+            auto assembled_action = coupled_B * coupled_sol_prev_full;
+            auto matrix_free_action = coupled_operator * coupled_sol_prev_full;
+            auto action_difference = assembled_action - matrix_free_action;
+            auto reference_norm = ::boba::norm_frobenius(assembled_action);
+            if (::boba::is_tiny(reference_norm))
+            {
+              reference_norm = 1.0;
+            }
+            std::cout << "TensorTrainAMENBlock: matrix-free validation site " << i
+                      << ", relative_action_difference: "
+                      << ::boba::norm_frobenius(action_difference) / reference_norm
+                      << "\n";
+          }
+          auto coupled_prev_lhs = use_matrix_free_coupled_solve
+                                    ? coupled_operator * coupled_sol_prev_full
+                                    : coupled_B * coupled_sol_prev_full;
           auto coupled_prev_residual = coupled_prev_lhs - coupled_rhs_full;
           auto coupled_rhs_norm = ::boba::norm_frobenius(coupled_rhs_full);
           if (is_tiny(coupled_rhs_norm))
@@ -618,7 +836,42 @@ struct TensorTrainAMENBlock
           if (coupled_prev_res_norm > real_tol)
           {
             coupled_skipped_solve = false;
-            if (scale_coupled_site_system)
+            if (use_matrix_free_coupled_solve)
+            {
+              if (scale_coupled_site_system)
+              {
+                auto coupled_operator_scaled = coupled_operator;
+                auto coupled_rhs_scaled = coupled_rhs_full;
+                coupled_operator_scaled.scalar_row_factors.resize(Kay);
+                for (size_t ki = 0; ki < Kay; ki++)
+                {
+                  auto local_size = coupled_offsets[ki + 1] - coupled_offsets[ki];
+                  coupled_operator_scaled.scalar_row_factors[ki].resize({local_size});
+                  auto factors_view = coupled_operator_scaled.scalar_row_factors[ki].view();
+                  auto norms_view = coupled_scalar_row_norm_squared[ki].const_view();
+                  auto rhs_scaled_view = coupled_rhs_scaled.view();
+                  auto offset = coupled_offsets[ki];
+                  ::boba::loop<space, 1>(local_size,
+                                         [=] __boba_host_device__(index_t idx)
+                  {
+                    auto norm = ::boba::sqrt(::boba::abs(norms_view({idx})));
+                    auto factor = ::boba::is_tiny(norm) ? data_t{1} : data_t{1} / norm;
+                    factors_view({idx}) = factor;
+                    rhs_scaled_view({offset + idx}) *= factor;
+                  });
+                }
+                coupled_sol_full = solve_coupled_site_system(
+                                     coupled_operator_scaled, coupled_rhs_scaled,
+                                     coupled_sol_prev_full, i);
+              }
+              else
+              {
+                coupled_sol_full = solve_coupled_site_system(
+                                     coupled_operator, coupled_rhs_full,
+                                     coupled_sol_prev_full, i);
+              }
+            }
+            else if (scale_coupled_site_system)
             {
               // This scaling is a local equation preconditioner, not a TT
               // environment normalization. Scaling complete equation rows in
@@ -651,15 +904,19 @@ struct TensorTrainAMENBlock
                 }
               }
 
-              coupled_sol_full = solve_coupled_site_system(coupled_B_scaled, coupled_rhs_scaled);
+              coupled_sol_full = solve_coupled_site_system(
+                                   coupled_B_scaled, coupled_rhs_scaled, coupled_sol_prev_full, i);
             }
             else
             {
-              coupled_sol_full = solve_coupled_site_system(coupled_B, coupled_rhs_full);
+              coupled_sol_full = solve_coupled_site_system(
+                                   coupled_B, coupled_rhs_full, coupled_sol_prev_full, i);
             }
           }
           skip_solution_enrichment = coupled_skipped_solve && !normalize_intermediate_quantities;
-          auto coupled_new_lhs = coupled_B * coupled_sol_full;
+          auto coupled_new_lhs = use_matrix_free_coupled_solve
+                                   ? coupled_operator * coupled_sol_full
+                                   : coupled_B * coupled_sol_full;
           auto coupled_new_residual = coupled_new_lhs - coupled_rhs_full;
           auto coupled_new_res_norm = ::boba::norm_frobenius(coupled_new_residual) / coupled_rhs_norm;
           coupled_new_res_for_convergence = coupled_new_res_norm;
@@ -1268,21 +1525,32 @@ struct TensorTrainAMENBlock
         auto raw_global_residual = apply_nonempty_blocks(crA, crx);
         raw_global_residual -= cry;
         raw_global_residual.round();
-        raw_global_res = ::boba::norm_frobenius(raw_global_residual) / norm_cry;
+        raw_global_res =
+          ::boba::norm_frobenius_right_orthogonal(raw_global_residual) / norm_cry;
 
-        auto crx_rescaled = crx;
-        for (size_t ki = 0; ki < Kay; ki++)
+        if (normalize_intermediate_quantities)
         {
-          auto scaled_nrmsx = boba::exp(boba::sum(boba::log(nrmsx[ki])) / static_cast<data_t>(dimension));
-          for (index_t d = 0; d < dimension; d++)
+          auto crx_rescaled = crx;
+          for (size_t ki = 0; ki < Kay; ki++)
           {
-            crx_rescaled(ki).cores[d] = crx_rescaled(ki).cores[d] * scaled_nrmsx;
+            auto scaled_nrmsx = boba::exp(boba::sum(boba::log(nrmsx[ki])) / static_cast<data_t>(dimension));
+            for (index_t d = 0; d < dimension; d++)
+            {
+              crx_rescaled(ki).cores[d] = crx_rescaled(ki).cores[d] * scaled_nrmsx;
+            }
           }
+          auto global_residual = apply_nonempty_blocks(crA, crx_rescaled);
+          global_residual -= cry;
+          global_residual.round();
+          global_res =
+            ::boba::norm_frobenius_right_orthogonal(global_residual) / norm_cry;
         }
-        auto global_residual = apply_nonempty_blocks(crA, crx_rescaled);
-        global_residual -= cry;
-        global_residual.round();
-        global_res = ::boba::norm_frobenius(global_residual) / norm_cry;
+        else
+        {
+          // Coupled systems disable intermediate normalization, so nrmsx is
+          // identically one and the rescaled residual equals the raw residual.
+          global_res = raw_global_res;
+        }
         have_global_res = true;
       }
 
@@ -1295,8 +1563,11 @@ struct TensorTrainAMENBlock
         {
           std::cout << ", ranks[" << ki << "]: " << crx(ki).ranks_string();
         }
-        std::cout << ", raw_global_res: " << raw_global_res
-                  << ", global_res: " << global_res << std::endl;
+        if (normalize_intermediate_quantities)
+        {
+          std::cout << ", raw_global_res: " << raw_global_res;
+        }
+        std::cout << ", global_res: " << global_res << std::endl;
       }
 
       if ((swp + 1 >= minimum_sweeps) && (max_res < convergence_tolerance))
@@ -1316,7 +1587,8 @@ struct TensorTrainAMENBlock
           auto global_residual = apply_nonempty_blocks(crA, crx_rescaled);
           global_residual -= cry;
           global_residual.round();
-          global_res = ::boba::norm_frobenius(global_residual) / norm_cry;
+          global_res =
+            ::boba::norm_frobenius_right_orthogonal(global_residual) / norm_cry;
         }
 
         if (verbose)
@@ -1388,20 +1660,105 @@ struct TensorTrainAMENBlock
 private:
   template <execution_space space_local>
   ::boba::Vector<space_local, data_t> solve_coupled_site_system(
-    const ::boba::Matrix<space_local, data_t>& matrix,
-    const ::boba::Vector<space_local, data_t>& rhs)
+    const CoupledSolve3DGMRESOperator<space_local, data_t>& linear_operator,
+    const ::boba::Vector<space_local, data_t>& rhs,
+    const ::boba::Vector<space_local, data_t>& initial_guess,
+    size_t site)
   {
-    BOBA_CALI_MARK
+    const auto site_region = std::string("coupled_site_boba_gmres_") +
+                             std::to_string(site) + "_n" +
+                             std::to_string(rhs.size());
+    BOBA_CALI_BEGIN(site_region.c_str());
+    using operator_t = CoupledSolve3DGMRESOperator<space_local, data_t>;
+    using vector_t = ::boba::Vector<space_local, data_t>;
+    ::boba::Krylov<operator_t, vector_t> solver(
+      1, solve3d_2ml_options.eigen_gmres_max_iterations,
+      solve3d_2ml_options.tolerance_relative);
+    solver.method = ::boba::KrylovMethods::gmres;
+    solver.set_matrix(linear_operator);
+    solver.verbose = false;
+    solver.relative_threshold = solve3d_2ml_options.tolerance_relative;
+    solver.absolute_threshold = solve3d_2ml_options.tolerance_absolute;
+
+    vector_t result(rhs.sizes());
+    solver.solve(rhs, initial_guess, result);
+    if (verbose)
+    {
+      auto residual = rhs - linear_operator * result;
+      auto rhs_norm = ::boba::norm_frobenius(rhs);
+      if (::boba::is_tiny(rhs_norm))
+      {
+        rhs_norm = 1.0;
+      }
+      std::cout << "TensorTrainAMENBlock: coupled BoBa GMRES site " << site
+                << ", size: " << rhs.size()
+                << ", iterations: " << solver.used_inner_iterations
+                << ", relative_residual: "
+                << ::boba::norm_frobenius(residual) / rhs_norm << "\n";
+    }
+    BOBA_CALI_END(site_region.c_str());
+    return result;
+  }
+
+  template <execution_space space_local>
+  ::boba::Vector<space_local, data_t> solve_coupled_site_system(
+    const ::boba::Matrix<space_local, data_t>& matrix,
+    const ::boba::Vector<space_local, data_t>& rhs,
+    const ::boba::Vector<space_local, data_t>& initial_guess,
+    size_t site)
+  {
+    const auto site_region = std::string("coupled_site_solve_") + std::to_string(site) +
+                             "_n" + std::to_string(matrix.rows());
+    BOBA_CALI_BEGIN(site_region.c_str());
     if constexpr (space_local == execution_space::CPU)
     {
+      if (use_eigen_gmres_for_coupled_site_solve)
+      {
+        size_t iterations_used = 0;
+        data_t estimated_error = 0.0;
+        auto result = ::boba::detail::eigen_gmres(
+                        matrix,
+                        rhs,
+                        solve3d_2ml_options.tolerance_relative,
+                        solve3d_2ml_options.eigen_gmres_max_iterations,
+                        solve3d_2ml_options.eigen_gmres_sparsity,
+                        &initial_guess,
+                        &iterations_used,
+                        &estimated_error);
+        if (verbose)
+        {
+          std::cout << "TensorTrainAMENBlock: coupled GMRES site " << site
+                    << ", size: " << matrix.rows()
+                    << ", iterations: " << iterations_used
+                    << ", estimated_error: " << estimated_error << "\n";
+        }
+        BOBA_CALI_END(site_region.c_str());
+        return result;
+      }
       auto rhs_matrix = reshape_to_matrix(rhs, {rhs.size(), 1});
       ::boba::Matrix<space_local, data_t> output({matrix.cols(), 1});
-      ::boba::detail::ls_solve_cod_eigen(matrix, rhs_matrix, output);
-      return flatten(output);
+      if (coupled_site_direct_solver_method == 0)
+      {
+        ::boba::detail::ls_solve_cod_eigen(matrix, rhs_matrix, output);
+      }
+      else if (coupled_site_direct_solver_method == 1)
+      {
+        ::boba::detail::ls_solve_qr_eigen(matrix, rhs_matrix, output);
+      }
+      else
+      {
+        boba_always_assert_equal(coupled_site_direct_solver_method, size_t{2}, "Invalid coupled site direct solver method.");
+        ::boba::detail::ls_solve_lu_eigen(matrix, rhs_matrix, output);
+      }
+      auto result = flatten(output);
+      BOBA_CALI_END(site_region.c_str());
+      return result;
     }
     else
     {
-      return backsolve(matrix, rhs);
+      auto result = backsolve(matrix, rhs);
+      BOBA_CALI_END(site_region.c_str());
+      return result;
     }
   }
 

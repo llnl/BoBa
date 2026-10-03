@@ -280,6 +280,48 @@ typename vector_a_t::data_t norm_frobenius(
   return ::boba::sqrt(output);
 }
 
+/**
+ * \brief Frobenius norm of a block vector with right-orthogonal TT blocks.
+ *
+ * BlockVector::round() establishes the required canonical form for every
+ * block.  This routine does not independently verify that precondition.
+ */
+template <typename vector_a_t>
+typename vector_a_t::data_t norm_frobenius_right_orthogonal(
+  const BlockVector<vector_a_t>& block_vec)
+{
+  BOBA_CALI_MARK
+  typename vector_a_t::data_t norm_squared = 0.0;
+  for (size_t element = 0; element < block_vec.block_size; element++)
+  {
+    const auto block_norm =
+      ::boba::norm_frobenius_right_orthogonal(block_vec.vector_blocks.at(element));
+    norm_squared += block_norm * block_norm;
+  }
+  return ::boba::sqrt(norm_squared);
+}
+
+/**
+ * \brief Frobenius norm of a block vector with left-orthogonal TT blocks.
+ *
+ * BlockVector::orthogonalize() establishes the required canonical form for
+ * every block.  This routine does not independently verify that precondition.
+ */
+template <typename vector_a_t>
+typename vector_a_t::data_t norm_frobenius_left_orthogonal(
+  const BlockVector<vector_a_t>& block_vec)
+{
+  BOBA_CALI_MARK
+  typename vector_a_t::data_t norm_squared = 0.0;
+  for (size_t element = 0; element < block_vec.block_size; element++)
+  {
+    const auto block_norm =
+      ::boba::norm_frobenius_left_orthogonal(block_vec.vector_blocks.at(element));
+    norm_squared += block_norm * block_norm;
+  }
+  return ::boba::sqrt(norm_squared);
+}
+
 template <typename vector_a_t, typename vector_b_t>
 typename vector_a_t::data_t norm_difference_frobenius(
   const BlockVector<vector_a_t>& block_vec_a,
