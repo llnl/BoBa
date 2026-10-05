@@ -168,8 +168,6 @@ boba_cmake_options['BOBA_ENABLE_RAJA'] = tpls['RAJA']['enable']
 boba_cmake_options['BOBA_ENABLE_UMPIRE'] = tpls['umpire']['enable']
 boba_cmake_options['BOBA_ENABLE_METAL'] = tpls['metal_cpp_compute']['enable']
 boba_cmake_options['BOBA_ENABLE_CAMP'] = tpls['camp']['enable']
-boba_cmake_options['BOBA_ENABLE_AOCL'] = 'On' if all(
-    tpls[name]['enable'] == 'On' for name in ['aocl-utils', 'blis', 'libflame']) else 'Off'
 
 boba_cmake_options['BOBA_ENABLE_MPI'] = args.mpi
 boba_cmake_options['BOBA_CHECKPOINTS'] = args.checkpoints
@@ -235,11 +233,23 @@ with open(dirpath, 'r') as file:
 if dirpath.stem.endswith('_cpu'):
     arch = 'cpu'
 
+# Recipes may override the build/install directory suffix, e.g. 'cpu' vs 'cpu_aocl'
+if 'arch' in cmake_data.keys():
+    arch = cmake_data['arch']
+
+print(f"arch = {arch}")
+
 if 'cmake_path' in cmake_data.keys():
     cmake_path = cmake_data['cmake_path']
 else:
     print("Error: Recipe requires cmake_path... (see other recipes for examples or set this value to 'cmake')")
     quit()
+
+# AOCL requires all three TPLs, and only recipes that list them can build them
+aocl_tpls = ['aocl-utils', 'blis', 'libflame']
+aocl_enabled = all(tpls[name]['enable'] == 'On' and name in cmake_data['libraries']
+                   for name in aocl_tpls)
+boba_cmake_options['BOBA_ENABLE_AOCL'] = 'On' if aocl_enabled else 'Off'
 
 cmake_data['libraries']['BOBA']['cmake'].update(boba_cmake_options)
 
@@ -491,9 +501,21 @@ def _set_aocl_root(name, value):
     cmake_data['libraries']['BOBA']['cmake'][name] = value
 
 
+def _clone_aocl_tpl(tpl, source_dir):
+    """Initialize the vendored submodule; these TPLs bypass build_cmake_tpl's clone phase."""
+    if args.clone == 'Off':
+        print("Skipping clone")
+        return
+    os.chdir(boba_dir)
+    command_runner(tpl, 'clone',
+                   ['git', 'submodule', 'update', '--init', '--depth=1', source_dir],
+                   use_alternate_command_runner)
+
+
 def build_blis_tpl(cmake_dict, tpl, architecture):
     source_dir, build_dir, install_dir = _aocl_paths(tpl, architecture)
     options = cmake_dict[tpl].get('cmake', {})
+    _clone_aocl_tpl(tpl, source_dir)
     if no_build:
         _set_aocl_root('AOCL_BLIS_ROOT', install_dir)
         return
@@ -533,6 +555,7 @@ def build_libflame_tpl(cmake_dict, tpl, architecture):
         'AOCL_UTILS_INCLUDE_DIR': f'{utils_root}/include',
         'CMAKE_PREFIX_PATH': utils_root,
     })
+    _clone_aocl_tpl(tpl, source_dir)
     if no_build:
         _set_aocl_root('AOCL_FLAME_ROOT', install_dir)
         return
@@ -580,7 +603,7 @@ for tpl in cmake_data['libraries'].keys():
             _set_aocl_root('AOCL_UTILS_ROOT',
                            os.path.join(tpl_install_base, f'{tpl}_{arch}'))
 
-if all(tpls[name]['enable'] == 'On' for name in ['aocl-utils', 'blis', 'libflame']):
+if aocl_enabled:
     write_aocl_lib_path_info(arch)
 
 #

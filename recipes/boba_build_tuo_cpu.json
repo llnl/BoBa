@@ -152,5 +152,6 @@
       }
     }
   },
-  "cmake_path": "/usr/tce/packages/cmake/cmake-3.29.2/bin/cmake"
+  "cmake_path": "/usr/tce/packages/cmake/cmake-3.29.2/bin/cmake",
+  "arch": "cpu_aocl"
 }

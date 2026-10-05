@@ -46,6 +46,9 @@ parser.add_argument("--verbose", help="Increase output verbosity",
 parser.add_argument("--umpire", help="Test with Umpire on",
                     action="store_true")
 
+parser.add_argument("--aocl", help="Test the AOCL-enabled CPU build",
+                    action="store_true")
+
 parser.add_argument("--debug", help="Test debug mode",
                     action="store_true")
 
@@ -94,6 +97,8 @@ if args.asan:
 if args.ubsan:
   NAME_FLAGS += "_ubsan"
 NAME_FLAGS += get_name_flags(space)
+if args.aocl:
+  NAME_FLAGS += "_aocl"
 if args.umpire:
   NAME_FLAGS += "_ump"
 if args.debug:
