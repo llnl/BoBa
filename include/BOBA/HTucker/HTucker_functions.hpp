@@ -84,6 +84,21 @@ cumulative_sum(const HierarchicalTucker<dimension, space, data_t>& pdf)
 // Product operations involving HierarchicalTucker objects
 // -------------------------------------------------------------------------
 
+  /**
+   * @brief Defines scalar * HierarchicalTucker.
+   *
+   * @param scalar Scalar multiplier.
+   * @param rhs An HierarchicalTucker to be scaled.
+   * @return New HierarchicalTucker object representing the scaled tensor.
+   */
+  template <typename Scalar, size_t dimension, ::boba::execution_space space, typename data_t>
+    requires std::is_convertible_v<Scalar, data_t>
+  HierarchicalTucker<dimension, space, data_t>
+  operator*(Scalar scalar, HierarchicalTucker<dimension, space, data_t> const& rhs)
+  {
+    return rhs * scalar;
+  }
+
 /**
  * @brief Tensor (Kronecker) product of two HierarchicalTucker tensors.
  *

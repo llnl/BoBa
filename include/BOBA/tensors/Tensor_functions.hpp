@@ -66,6 +66,38 @@ Tensor<dimension, space, data_t> cumulative_sum(const Tensor<dimension, space, d
   return cdf;
 }
 
+/**
+ * \brief Computes the inclusive prefix sum in the tensor's linear storage order.
+ *
+ * Dimension zero is the fastest-varying dimension, so the result at linear index `i`
+ * is the sum of input entries at linear indices `0` through `i`.
+ */
+template <size_t dimension, execution_space space, typename data_t>
+Tensor<dimension, space, data_t> linear_prefix_sum(const Tensor<dimension, space, data_t>& input)
+{
+  BOBA_CALI_OBJECT_MARK
+
+  Tensor<dimension, space, data_t> output(input);
+  output.rename(input.name() + "_linear_prefix_sum");
+
+  const index_t input_size = output.size();
+  if (input_size == 0)
+  {
+    return output;
+  }
+
+  auto output_view = output.view();
+  ::boba::detail::loop<space>(0_z, 1_z, [=] __boba_host_device__(size_t)
+  {
+    for (index_t i = 1; i < input_size; ++i)
+    {
+      output_view(i) += output_view(i - 1);
+    }
+  });
+
+  return output;
+}
+
 template <size_t dimension, execution_space space, typename data_t>
 Tensor<dimension, space, data_t> nonnegative_part(
   Tensor<dimension, space, data_t> const& input)

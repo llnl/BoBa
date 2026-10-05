@@ -12,6 +12,48 @@ constexpr boba::execution_space space = ::boba::default_execution_space;
 constexpr boba::tictoc_units tictoc_units = boba::tictoc_units::milliseconds;
 
 template <size_t dimension>
+void test_addition(const boba::Array<size_t, dimension>& sizes, bool& check)
+{
+  using cpd_t = boba::CanonicalPolyadicDecomposition<dimension, space, double>;
+
+  constexpr size_t rank_A = 2;
+  constexpr size_t rank_B = 3;
+
+  cpd_t cpd_A(sizes);
+  cpd_t cpd_B(sizes);
+
+  cpd_A.m_weights.resize(rank_A);
+  cpd_A.m_weights.fill_with_random();
+  cpd_B.m_weights.resize(rank_B);
+  cpd_B.m_weights.fill_with_random();
+
+  for (size_t d = 0; d < dimension; d++)
+  {
+    cpd_A.m_cores[d].resize({sizes[d], rank_A});
+    cpd_A.m_cores[d].fill_with_random();
+    cpd_B.m_cores[d].resize({sizes[d], rank_B});
+    cpd_B.m_cores[d].fill_with_random();
+  }
+
+  const auto expected = cpd_A.decompress() + cpd_B.decompress();
+
+  const auto cpd_sum = cpd_A + cpd_B;
+  const auto addition_error = boba::norm_difference_frobenius(cpd_sum.decompress(), expected);
+  const auto addition_error_relative = addition_error / boba::norm_frobenius(expected);
+
+  pass_or_fail_bool(check, cpd_sum.rank() == rank_A + rank_B);
+  pass_or_fail(check, addition_error_relative, 1.0e-12);
+
+  auto cpd_sum_in_place = cpd_A;
+  cpd_sum_in_place += cpd_B;
+  const auto in_place_error = boba::norm_difference_frobenius(cpd_sum_in_place.decompress(), expected);
+  const auto in_place_error_relative = in_place_error / boba::norm_frobenius(expected);
+
+  pass_or_fail_bool(check, cpd_sum_in_place.rank() == rank_A + rank_B);
+  pass_or_fail(check, in_place_error_relative, 1.0e-12);
+}
+
+template <size_t dimension>
 void run_test(size_t size_base, size_t rank, bool& check)
 {
   checkpoint();
@@ -27,6 +69,7 @@ void run_test(size_t size_base, size_t rank, bool& check)
   }
 
   boba_print(sizes);
+  test_addition(sizes, check);
   checkpoint();
   boba::Tensor<dimension, space, double> tensor(sizes);
 

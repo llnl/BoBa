@@ -25,6 +25,14 @@ struct TensorTrainAMENBlock
   index_t max_allowed_ranks = 1000;
   size_t max_sweeps = 20;
   size_t minimum_sweeps = 1;
+  /// Relative SVD tolerance used to truncate residual-enrichment bases.
+  real_type_t<data_t> residual_enrichment_svd_tolerance_relative = 0.0;
+  /// Absolute SVD tolerance used to truncate residual-enrichment bases.
+  real_type_t<data_t> residual_enrichment_svd_tolerance_absolute = 0.0;
+  /// Relative SVD tolerance used to split an updated local solution.
+  real_type_t<data_t> local_solution_svd_tolerance_relative = 0.0;
+  /// Absolute SVD tolerance used to split an updated local solution.
+  real_type_t<data_t> local_solution_svd_tolerance_absolute = 0.0;
   // Scalar AMEn-style intermediate normalization is algebraically safe for
   // diagonal block systems. For genuinely coupled block systems the current
   // per-block scalar bookkeeping does not preserve the off-diagonal projected
@@ -76,16 +84,20 @@ struct TensorTrainAMENBlock
    * block AMEn implementation, block mode sizes are allowed to differ across
    * rows and columns as long as each nonzero block maps between compatible sizes.
    *
+   * \tparam random_generator_t Type satisfying the C++
+   *          UniformRandomBitGenerator requirements.
    * \param[in] crA Square block operator.
    * \param[in] cry Block right-hand side.
    * \param[in] tt_initial_guess Initial block TT iterate.
+   * \param[in,out] random_generator Generator used for residual enrichment.
    * \return Final block TT solution, returned in host space.
    */
-  template <size_t dimension, execution_space space>
+  template <size_t dimension, execution_space space, typename random_generator_t>
   ::boba::BlockVector<::boba::TensorTrain<dimension, host_space, data_t>> solve(
     const ::boba::BlockOperator<::boba::TensorTrainMatrix<dimension, space, data_t>>& crA,
     const ::boba::BlockVector<::boba::TensorTrain<dimension, space, data_t>>& cry,
-    const ::boba::BlockVector<::boba::TensorTrain<dimension, space, data_t>>& tt_initial_guess)
+    const ::boba::BlockVector<::boba::TensorTrain<dimension, space, data_t>>& tt_initial_guess,
+    random_generator_t& random_generator)
   {
     BOBA_CALI_MARK
     checkpoint();
@@ -176,7 +188,7 @@ struct TensorTrainAMENBlock
         auto rank_right = (d == dimension - 1) ? 1 : z_rank;
 
         crz[ki].cores[d].resize({rank_left, cry(ki).sizes(d), rank_right});
-        crz[ki].cores[d].fill_with_random();
+        crz[ki].cores[d].fill_with_random(random_generator);
       }
     }
 
@@ -258,7 +270,6 @@ struct TensorTrainAMENBlock
                   "rl-crzAt");
               }
 
-              auto crzAt_matrix = boba::reshape_to_matrix(crzAt, {rz[ki][i], cry(ki).sizes(i) * rz[ki][i + 1]});
               auto crzy2 = project_phizy_block(
                 phizy[ki].cores[i],
                 cry(ki).cores[i],
@@ -270,18 +281,15 @@ struct TensorTrainAMENBlock
               {
                 crzy2 *= nrmsc[ki];
               }
-              auto crzy2_matrix = boba::reshape_to_matrix(crzy2, {rz[ki][i], cry(ki).sizes(i) * rz[ki][i + 1]});
-              crznew[ki] = crzy2_matrix - crzAt_matrix;
+              crzy2 -= crzAt;
+              crznew[ki] = boba::reshape_to_matrix(crzy2, {rz[ki][i], cry(ki).sizes(i) * rz[ki][i + 1]});
 
               ::boba::SVD<space, data_t> svd;
-              svd.tolerance_relative = 0.0;
-              svd.tolerance_absolute = 0.0;
+              svd.tolerance_relative = residual_enrichment_svd_tolerance_relative;
+              svd.tolerance_absolute = residual_enrichment_svd_tolerance_absolute;
+              svd.max_kept_singular_values = kickrank;
               svd(crznew[ki]);
               crznew[ki] = svd.V;
-
-              auto fetch_col = boba::min(kickrank, crznew[ki].cols());
-              auto crznew_temp = crznew[ki];
-              crznew[ki] = crznew_temp.get_submatrix({0, crznew[ki].rows()}, {0, fetch_col});
             }
             else
             {
@@ -879,8 +887,8 @@ struct TensorTrainAMENBlock
           auto sol_matrix = reshape_to_matrix(sol, {crx(ki).ranks(i) * cry(ki).sizes(i), crx(ki).ranks(i + 1)});
 
           boba::SVD<space, data_t> svd;
-          svd.tolerance_relative = 0.0;
-          svd.tolerance_absolute = 0.0;
+          svd.tolerance_relative = local_solution_svd_tolerance_relative;
+          svd.tolerance_absolute = local_solution_svd_tolerance_absolute;
 
           boba::Matrix<space, data_t> u, s, v;
           index_t r = boba::min(crx(ki).ranks(i) * cry(ki).sizes(i), crx(ki).ranks(i + 1));
@@ -987,7 +995,6 @@ struct TensorTrainAMENBlock
                 "lr-crzAt");
             }
 
-            auto crzAt_matrix = boba::reshape_to_matrix(crzAt, {rz[ki][i] * cry(ki).sizes(i), rz[ki][i + 1]});
             auto crzy = project_phizy_block(
               phizy[ki].cores[i],
               y1,
@@ -995,18 +1002,15 @@ struct TensorTrainAMENBlock
               ki,
               i,
               "lr-crz-project");
-            auto crzy_matrix = boba::reshape_to_matrix(crzy, {rz[ki][i] * cry(ki).sizes(i), rz[ki][i + 1]});
-            crznew[ki] = crzy_matrix - crzAt_matrix;
+            crzy -= crzAt;
+            crznew[ki] = boba::reshape_to_matrix(crzy, {rz[ki][i] * cry(ki).sizes(i), rz[ki][i + 1]});
 
             ::boba::SVD<space, data_t> _svd;
-            _svd.tolerance_relative = 0.0;
-            _svd.tolerance_absolute = 0.0;
+            _svd.tolerance_relative = residual_enrichment_svd_tolerance_relative;
+            _svd.tolerance_absolute = residual_enrichment_svd_tolerance_absolute;
+            _svd.max_kept_singular_values = kickrank;
             _svd(crznew[ki]);
             crznew[ki] = _svd.U;
-
-            auto fetch_col = boba::min(kickrank, crznew[ki].cols());
-            auto crznew_temp = crznew[ki];
-            crznew[ki] = crznew_temp.get_submatrix({0, crznew[ki].rows()}, {0, fetch_col});
 
             QR<space, data_t> qr;
             qr(crznew[ki]);
@@ -1356,6 +1360,29 @@ struct TensorTrainAMENBlock
       host_crx(ki) = crx(ki);
     }
     return host_crx;
+  }
+
+  /**
+   * \brief Solves a block TT system using the process-wide default generator.
+   *
+   * Calling `boba::random::set_seed()` resets the sequence used for residual
+   * enrichment.
+   *
+   * \tparam dimension Tensor dimension.
+   * \tparam space Execution space.
+   * \param[in] crA Square block operator.
+   * \param[in] cry Block right-hand side.
+   * \param[in] tt_initial_guess Initial block TT iterate.
+   * \return Final block TT solution, returned in host space.
+   */
+  template <size_t dimension, execution_space space>
+  ::boba::BlockVector<::boba::TensorTrain<dimension, host_space, data_t>> solve(
+    const ::boba::BlockOperator<::boba::TensorTrainMatrix<dimension, space, data_t>>& crA,
+    const ::boba::BlockVector<::boba::TensorTrain<dimension, space, data_t>>& cry,
+    const ::boba::BlockVector<::boba::TensorTrain<dimension, space, data_t>>& tt_initial_guess)
+  {
+    auto& random_generator = ::boba::random::default_context();
+    return solve(crA, cry, tt_initial_guess, random_generator);
   }
 
 private:

@@ -180,7 +180,7 @@ struct BurgersSolver
     flux_minus.svd_tolerance_relative = 1.0e-4;
     flux_minus.svd_tolerance_absolute = 1.0e-9;
 
-    compute_fluxes.tolerance = 1.0e-3;
+    compute_fluxes.convergence_tolerance = 1.0e-3;
 
     operators.generate(x.size(), domain_size, false);
   }

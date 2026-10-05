@@ -10,6 +10,7 @@
 // Common
 #include "BOBA/abstractions/common.hpp"
 #include "BOBA/abstractions/types.hpp"
+#include "BOBA/abstractions/random.hpp"
 #include "BOBA/abstractions/assert.hpp"
 #include "BOBA/abstractions/math.hpp"
 #include "BOBA/objects/Complex.hpp"

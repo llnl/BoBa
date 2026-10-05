@@ -9,7 +9,7 @@
 #include <Eigen/QR>
 #include <Eigen/SVD>
 #include <Eigen/Sparse>
-#include <Eigen/SparseLU>
+#include <unsupported/Eigen/IterativeSolvers>
 #endif
 
 namespace boba
@@ -210,14 +210,11 @@ boba::Vector<host_space, data_t> eigen_gmres(
   auto input_eigen = ::boba::get_eigen_map(input);
   auto output_eigen = ::boba::get_eigen_map(output);
 
-  ::boba::detail::ignore(tolerance_relative);
-  ::boba::detail::ignore(maximum_iterations);
-
   auto matrix_eigen = ::boba::get_eigen_map(matrix).sparseView(sparsity);
 
-  ::Eigen::SparseLU<Eigen::SparseMatrix<data_t>> esolver;
-  esolver.analyzePattern(matrix_eigen);
-  esolver.factorize(matrix_eigen);
+  ::Eigen::GMRES<Eigen::SparseMatrix<data_t>> esolver(matrix_eigen);
+  esolver.setTolerance(tolerance_relative);
+  esolver.setMaxIterations(static_cast<long>(maximum_iterations));
   output_eigen = esolver.solve(input_eigen);
   return output;
 }
@@ -657,6 +654,7 @@ void factor_svd_eigen(
  * @param input Right-hand side vector.
  * @param tolerance_relative Relative convergence tolerance.
  * @param maximum_iterations Maximum GMRES iteration count.
+ * @param sparsity Sparsification threshold passed to Eigen.
  * @return This function does not return successfully.
  */
 template <execution_space space, typename data_t>
@@ -665,13 +663,15 @@ boba::Vector<host_space, data_t> eigen_gmres(
   const boba::Matrix<space, data_t>& matrix,
   const boba::Vector<space, data_t>& input,
   data_t tolerance_relative = 1.0e-7,
-  size_t maximum_iterations = 30)
+  size_t maximum_iterations = 30,
+  data_t sparsity = 1.0e-3)
 {
   boba::Vector<space, data_t> output;
   detail::ignore(matrix);
   detail::ignore(input);
   detail::ignore(tolerance_relative);
   detail::ignore(maximum_iterations);
+  detail::ignore(sparsity);
   boba_error("You have called eigen's GMRES routine, but BOBA_ENABLE_EIGEN is set to false.");
   return output;
 }

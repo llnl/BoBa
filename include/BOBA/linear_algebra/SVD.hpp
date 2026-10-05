@@ -222,9 +222,44 @@ struct SVD
 
   /**
    * \brief Computes an SVD of the input matrix.
+   *
+   * When `svd_type` is `randomized`, the range finder advances
+   * `boba::random::default_context()`.
+   *
    * \param input Matrix to factor.
    */
   void operator()(boba::Matrix<space, data_t>& input)
+  {
+    factorize_with(input, [this](auto& svd_input)
+    {
+      compute(svd_input);
+    });
+  }
+
+  /**
+   * \brief Computes an SVD using a caller-owned generator for randomized SVD.
+   *
+   * The generator is ignored by non-randomized SVD variants.
+   *
+   * \tparam random_generator_t Type satisfying the C++
+   *          UniformRandomBitGenerator requirements.
+   * \param input Matrix to factor.
+   * \param[in,out] random_generator Generator used by the randomized range finder.
+   */
+  template <typename random_generator_t>
+  void operator()(boba::Matrix<space, data_t>& input,
+                  random_generator_t& random_generator)
+  {
+    factorize_with(input, [this, &random_generator](auto& svd_input)
+    {
+      compute(svd_input, random_generator);
+    });
+  }
+
+private:
+  template <typename compute_function_t>
+  void factorize_with(boba::Matrix<space, data_t>& input,
+                      compute_function_t compute_function)
   {
     BOBA_CALI_MARK
 
@@ -255,7 +290,7 @@ struct SVD
     //
     // Compute
     //
-    compute(svd_input);
+    compute_function(svd_input);
 
     checkpoint();
     // A = U*S*V^T
@@ -276,6 +311,31 @@ struct SVD
     V.resize({V.rows(), significant_singular_values});
 
     checkpoint();
+  }
+
+public:
+  /**
+   * \brief Dispatches SVD computation with caller-owned randomness.
+   *
+   * The generator is used only when `svd_type` is `randomized`.
+   *
+   * \tparam random_generator_t Type satisfying the C++
+   *          UniformRandomBitGenerator requirements.
+   * \param svd_input Matrix to factor.
+   * \param[in,out] random_generator Generator used by the randomized range finder.
+   */
+  template <typename random_generator_t>
+  void compute(Matrix<space, data_t> svd_input,
+               random_generator_t& random_generator)
+  {
+    if (svd_type == svd_types::randomized)
+    {
+      operator_svd_randomized(svd_input, random_generator);
+    }
+    else
+    {
+      compute(svd_input);
+    }
   }
 
   void compute(Matrix<execution_space::CPU, data_t> svd_input)
@@ -400,8 +460,15 @@ struct SVD
    *
    * The randomized stage builds a small orthonormal basis Q that approximates the column space of
    * the input. The exact SVD is then computed on Q^H A, which is typically much smaller than A.
+   *
+   * \tparam random_generator_t Type satisfying the C++
+   *          UniformRandomBitGenerator requirements.
+   * \param input Matrix to factor.
+   * \param[in,out] random_generator Generator used to build the random range.
    */
-  void operator_svd_randomized(boba::Matrix<space, data_t>& input)
+  template <typename random_generator_t>
+  void operator_svd_randomized(boba::Matrix<space, data_t>& input,
+                               random_generator_t& random_generator)
   {
     checkpoint();
 
@@ -422,7 +489,7 @@ struct SVD
 
     boba::Matrix<space, data_t> omega({cols, sketch_cols});
     omega.rename("omega");
-    omega.fill_with_random();
+    omega.fill_with_random(random_generator);
 
     auto y = input * omega;
     y.rename("randomized_range");
@@ -450,6 +517,16 @@ struct SVD
     S.resize({significant_singular_values});
     U.resize({U.rows(), significant_singular_values});
     V.resize({V.rows(), significant_singular_values});
+  }
+
+  /**
+   * \brief Computes a randomized SVD using the process-wide default generator.
+   * \param input Matrix to factor.
+   */
+  void operator_svd_randomized(boba::Matrix<space, data_t>& input)
+  {
+    auto& random_generator = ::boba::random::default_context();
+    operator_svd_randomized(input, random_generator);
   }
 
   // -------------------------------------------------------------------------------------

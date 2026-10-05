@@ -18,6 +18,18 @@ struct TensorTrainAMEN
   data_t resid_damp = 2.0;
   int max_direct_solve_size = 1500;
   index_t max_allowed_ranks = 1000;
+  size_t max_sweeps = 20;
+  size_t minimum_sweeps = 1;
+  bool verbose = false;
+
+  /// Relative SVD tolerance used to truncate residual-enrichment bases.
+  real_type_t<data_t> residual_enrichment_svd_tolerance_relative = 0.0;
+  /// Absolute SVD tolerance used to truncate residual-enrichment bases.
+  real_type_t<data_t> residual_enrichment_svd_tolerance_absolute = 0.0;
+  /// Relative SVD tolerance used to split an updated local solution.
+  real_type_t<data_t> local_solution_svd_tolerance_relative = 0.0;
+  /// Absolute SVD tolerance used to split an updated local solution.
+  real_type_t<data_t> local_solution_svd_tolerance_absolute = 0.0;
 
   Solve3D2MLOptions<data_t> solve3d_2ml_options;
 
@@ -34,11 +46,24 @@ struct TensorTrainAMEN
     return cry;
   }
 
-  template <size_t dimension, execution_space space>
+  /**
+   * @brief Solves a TT linear system using caller-owned randomness.
+   * @tparam dimension Tensor dimension.
+   * @tparam space Execution space.
+   * @tparam random_generator_t Type satisfying the C++
+   *         UniformRandomBitGenerator requirements.
+   * @param crA Square TT matrix.
+   * @param cry Right-hand-side TT.
+   * @param tt_initial_guess Initial TT iterate.
+   * @param[in,out] random_generator Generator used for residual enrichment.
+   * @return The computed TT solution.
+   */
+  template <size_t dimension, execution_space space, typename random_generator_t>
   ::boba::TensorTrain<dimension, space, data_t> solve(
     const ::boba::TensorTrainMatrix<dimension, space, data_t>& crA,
     const ::boba::TensorTrain<dimension, space, data_t>& cry,
-    const ::boba::TensorTrain<dimension, space, data_t>& tt_initial_guess)
+    const ::boba::TensorTrain<dimension, space, data_t>& tt_initial_guess,
+    random_generator_t& random_generator)
   {
     BOBA_CALI_MARK
     checkpoint();
@@ -66,7 +91,7 @@ struct TensorTrainAMEN
 
       crz.cores[d].resize({rank_left, cry.sizes(d), rank_right});
       checkpoint();
-      crz.cores[d].fill_with_random();
+      crz.cores[d].fill_with_random(random_generator);
     }
 
     checkpoint();
@@ -84,16 +109,20 @@ struct TensorTrainAMEN
     auto nrmsy = ::boba::filled_array<dimension - 1, data_t>(1.0);
 
     checkpoint();
-    size_t max_sweep = 20;
-
     data_t nrmsc = 1.0;
+    data_t norm_cry = ::boba::norm_frobenius(cry);
+    if(::boba::is_tiny(norm_cry))
+    {
+      norm_cry = 1.0;
+    }
     size_t rznew = 0;
 
     boba::Tensor<3, space, data_t> crznew_tensor;
 
     // AMEn sweeps
     bool last_sweep = false;
-    for (size_t swp = 0; swp < max_sweep; swp++)
+    bool converged = false;
+    for (size_t swp = 0; swp < max_sweeps; swp++)
     {
       boba::Matrix<space, data_t> crznew;
 
@@ -111,25 +140,18 @@ struct TensorTrainAMEN
             checkpoint();
             auto crxi = crx.cores[i];
             auto crzAt = bfun3(phiza.cores[i], crA.cores[i], phiza.cores[i + 1], crxi);
-            auto crzAt_matrix = boba::reshape_to_matrix(crzAt, {rz[i], cry.sizes(i) * rz[i + 1]});
             checkpoint();
             auto crzy2 = project_phizy(phizy.cores[i], cry.cores[i], phizy.cores[i + 1]);
             crzy2 *= nrmsc;
-            auto crzy2_matrix = boba::reshape_to_matrix(crzy2, {rz[i], cry.sizes(i) * rz[i + 1]});
-            crznew = crzy2_matrix - crzAt_matrix;
+            crzy2 -= crzAt;
+            crznew = boba::reshape_to_matrix(crzy2, {rz[i], cry.sizes(i) * rz[i + 1]});
 
             ::boba::SVD<space, data_t> svd;
-            svd.tolerance_relative = 0.0;
-            svd.tolerance_absolute = 0.0;
+            svd.tolerance_relative = residual_enrichment_svd_tolerance_relative;
+            svd.tolerance_absolute = residual_enrichment_svd_tolerance_absolute;
+            svd.max_kept_singular_values = kickrank;
             svd(crznew);
             crznew = svd.V;
-
-            checkpoint();
-            {
-              auto fetch_col = boba::min(kickrank, crznew.cols());
-              auto crznew_temp = crznew;
-              crznew = crznew_temp.get_submatrix({0, crznew.rows()}, {0, fetch_col});
-            }
           }
           else
           {
@@ -317,8 +339,8 @@ struct TensorTrainAMEN
         auto sol_matrix = reshape_to_matrix(sol, {crx.ranks(i) * cry.sizes(i), crx.ranks(i + 1)});
 
         boba::SVD<space, data_t> svd;
-        svd.tolerance_relative = 0.0;
-        svd.tolerance_absolute = 0.0;
+        svd.tolerance_relative = local_solution_svd_tolerance_relative;
+        svd.tolerance_absolute = local_solution_svd_tolerance_absolute;
 
         boba::Matrix<space, data_t> u, s, v;
         index_t r = boba::min(crx.ranks(i) * cry.sizes(i), crx.ranks(i + 1));
@@ -364,7 +386,7 @@ struct TensorTrainAMEN
           checkpoint();
 
           r += 1;
-          r = boba::min(r, s.size() - 1);
+          r = boba::min(r, s.size());
           r = boba::min(r, max_allowed_ranks);
           r = boba::max(r, size_t(1));
           checkpoint();
@@ -398,27 +420,19 @@ struct TensorTrainAMEN
           auto uvT = boba::reshape_from_matrix<3>(u * v.transpose(), {crx.ranks(i), cry.sizes(i), crx.ranks(i + 1)});
           checkpoint();
           auto crzAt = bfun3(phiza.cores[i], crA.cores[i], phiza.cores[i + 1], uvT);
-          checkpoint();
-          auto crzAt_matrix = boba::reshape_to_matrix(crzAt, {rz[i] * cry.sizes(i), rz[i + 1]});
 
           auto crzy = project_phizy(phizy.cores[i], y1, phizy.cores[i + 1]);
 
           checkpoint();
-          auto crzy_matrix = boba::reshape_to_matrix(crzy, {rz[i] * cry.sizes(i), rz[i + 1]});
-
-          crznew = crzy_matrix - crzAt_matrix;
+          crzy -= crzAt;
+          crznew = boba::reshape_to_matrix(crzy, {rz[i] * cry.sizes(i), rz[i + 1]});
 
           ::boba::SVD<space, data_t> _svd;
-          _svd.tolerance_relative = 0.0;
-          _svd.tolerance_absolute = 0.0;
+          _svd.tolerance_relative = residual_enrichment_svd_tolerance_relative;
+          _svd.tolerance_absolute = residual_enrichment_svd_tolerance_absolute;
+          _svd.max_kept_singular_values = kickrank;
           _svd(crznew);
           crznew = _svd.U;
-
-          {
-            auto fetch_col = boba::min(kickrank, crznew.cols());
-            auto crznew_temp = crznew;
-            crznew = crznew_temp.get_submatrix({0, crznew.rows()}, {0, fetch_col});
-          }
 
           QR<space, data_t> qr;
           qr(crznew);
@@ -536,17 +550,75 @@ struct TensorTrainAMEN
         }
       }
 
-      std::cout << "TensorTrainAMEN: sweep " << swp << ", max_dx: " << max_dx << ", max_res: " << max_res << ", ranks: " << crx.ranks_string() << ", CR: " << crx.compression_rate() << std::endl;
+      data_t raw_global_res = 0.0;
+      data_t global_res = 0.0;
+      bool have_global_res = false;
+      if (verbose)
+      {
+        auto raw_global_residual = crA.TensorTrainMatrix_vector_multiply(crx);
+        raw_global_residual -= cry;
+        raw_global_residual.round();
+        raw_global_res = ::boba::norm_frobenius(raw_global_residual) / norm_cry;
+
+        auto crx_rescaled = crx;
+        auto scaled_nrmsx = boba::exp(boba::sum(boba::log(nrmsx)) / static_cast<data_t>(dimension));
+        for (index_t k = 0; k < dimension; k++)
+        {
+          crx_rescaled.cores[k] = crx_rescaled.cores[k] * scaled_nrmsx;
+        }
+
+        auto global_residual = crA.TensorTrainMatrix_vector_multiply(crx_rescaled);
+        global_residual -= cry;
+        global_residual.round();
+        global_res = ::boba::norm_frobenius(global_residual) / norm_cry;
+        have_global_res = true;
+      }
+
+      if (verbose)
+      {
+        std::cout << "TensorTrainAMEN: sweep " << swp << ", max_dx: " << max_dx << ", max_res: " << max_res << ", ranks: " << crx.ranks_string() << ", CR: " << crx.compression_rate() << ", raw_global_res: " << raw_global_res << ", global_res: " << global_res << std::endl;
+      }
 
       if (last_sweep)
       {
         break;
       }
 
-      if (max_res < convergence_tolerance)
+      if ((swp + 1 >= minimum_sweeps) && (max_res < convergence_tolerance))
       {
-        last_sweep = true;
+        if (!have_global_res)
+        {
+          //
+          // Compute global residual  - TODO! move this to a function
+          //
+          auto crx_rescaled = crx;
+          auto scaled_nrmsx = boba::exp(boba::sum(boba::log(nrmsx)) / static_cast<data_t>(dimension));
+          for (index_t k = 0; k < dimension; k++)
+          {
+            crx_rescaled.cores[k] = crx_rescaled.cores[k] * scaled_nrmsx;
+          }
+
+          auto global_residual = crA.TensorTrainMatrix_vector_multiply(crx_rescaled);
+          global_residual -= cry;
+          global_residual.round();
+          global_res = ::boba::norm_frobenius(global_residual) / norm_cry;
+        }
+
+        //
+        // Only exit if the global residual is ALSO satisfied
+        //
+        if(global_res < convergence_tolerance)
+        {
+          converged = true;
+          break;
+        }
+
       }
+    }
+
+    if (!converged)
+    {
+      boba_warn("TensorTrainAMEN did not certify convergence before max_sweeps; returning the last iterate.");
     }
 
     checkpoint();
@@ -559,6 +631,29 @@ struct TensorTrainAMEN
 
     checkpoint();
     return crx;
+  }
+
+  /**
+   * @brief Solves a TT system using the process-wide default generator.
+   *
+   * Calling `boba::random::set_seed()` resets the sequence used for residual
+   * enrichment.
+   *
+   * @tparam dimension Tensor dimension.
+   * @tparam space Execution space.
+   * @param crA Square TT matrix.
+   * @param cry Right-hand-side TT.
+   * @param tt_initial_guess Initial TT iterate.
+   * @return The computed TT solution.
+   */
+  template <size_t dimension, execution_space space>
+  ::boba::TensorTrain<dimension, space, data_t> solve(
+    const ::boba::TensorTrainMatrix<dimension, space, data_t>& crA,
+    const ::boba::TensorTrain<dimension, space, data_t>& cry,
+    const ::boba::TensorTrain<dimension, space, data_t>& tt_initial_guess)
+  {
+    auto& random_generator = ::boba::random::default_context();
+    return solve(crA, cry, tt_initial_guess, random_generator);
   }
 
 private:
@@ -588,7 +683,6 @@ private:
   {
     BOBA_CALI_MARK
     checkpoint();
-
     auto phizyy1 = boba::tensor_contraction<1>(
       {"rz", "ry", "one"}, phizy_i, {"ry", "n", "ryp1"}, y1, {"rz", "one", "n", "ryp1"});
 
