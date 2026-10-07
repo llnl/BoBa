@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include "BOBA/sparse/SparseMatrixCommon.hpp"
+#include "BOBA/sparse/sparse_common.hpp"
 
 namespace boba
 {
@@ -21,7 +21,6 @@ template <typename data_t = double>
 struct ELLPACKMatrix
 {
   using data_type = data_t;
-  using const_view_type = SparseMatrixConstView<ELLPACKMatrix>;
   index_t m_rows = 0, m_cols = 0, m_width = 0;
   sparse_detail::host_matrix<data_t> m_values;
   sparse_detail::host_matrix<std::int64_t> m_column_indices;
@@ -80,14 +79,6 @@ struct ELLPACKMatrix
   }
 
   /**
-   * \brief Returns a non-owning read-only view.
-   */
-  const_view_type as_const_view() const noexcept
-  {
-    return {this};
-  }
-
-  /**
    * \brief Returns a stored value or zero when the coordinate is absent.
    */
   data_t get_element(index_t i, index_t j) const
@@ -113,7 +104,8 @@ struct ELLPACKMatrix
    */
   void matvec(sparse_detail::host_vector<data_t> const& x, sparse_detail::host_vector<data_t>& y, data_t alpha = 1, data_t beta = 0) const
   {
-    sparse_detail::check_vector_sizes(m_rows, m_cols, x, y);
+    boba_always_assert_equal(x.size(), m_cols, "ELLPACK matvec input has the wrong size");
+    boba_always_assert_equal(y.size(), m_rows, "ELLPACK matvec output has the wrong size");
     sparse_detail::initialize_output(y, beta);
     auto xv = x.const_view();
     auto yv = y.view();
@@ -194,5 +186,62 @@ struct ELLPACKMatrix
     m_values *= value;
   }
 };
+
+/**
+ * \brief Imports a dense matrix into ELLPACK storage using an absolute tolerance.
+ */
+template <typename data_t>
+ELLPACKMatrix<data_t> from_dense_ellpack(Matrix<host_space, data_t> const& dense, data_t tolerance = 0)
+{
+  sparse_detail::check_tolerance(tolerance);
+  index_t w = 0;
+  auto dv = dense.const_view();
+  for (index_t i = 0; i < dense.rows(); ++i)
+  {
+    index_t c = 0;
+    for (index_t j = 0; j < dense.cols(); ++j)
+    {
+      c += sparse_detail::keep(dv({i, j}), tolerance);
+    }
+    w = std::max(w, c);
+  }
+  ELLPACKMatrix<data_t> out(dense.rows(), dense.cols(), w);
+  for (index_t i = 0; i < dense.rows(); ++i)
+  {
+    for (index_t j = 0, k = 0; j < dense.cols(); ++j)
+    {
+      if (sparse_detail::keep(dv({i, j}), tolerance))
+      {
+        out.m_column_indices.view()({i, k}) = static_cast<std::int64_t>(j);
+        out.m_values.view()({i, k++}) = dv({i, j});
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * \brief Exports ELLPACK storage to a dense host matrix.
+ */
+template <typename data_t>
+Matrix<host_space, data_t> to_dense(ELLPACKMatrix<data_t> const& sparse)
+{
+  Matrix<host_space, data_t> out({sparse.rows(), sparse.cols()});
+  out.fill_with_zeros();
+  auto ov = out.view();
+  auto columns = sparse.m_column_indices.const_view();
+  auto values = sparse.m_values.const_view();
+  for (index_t i = 0; i < sparse.rows(); ++i)
+  {
+    for (index_t k = 0; k < sparse.m_width; ++k)
+    {
+      if (columns({i, k}) >= 0)
+      {
+        ov({i, static_cast<index_t>(columns({i, k}))}) = values({i, k});
+      }
+    }
+  }
+  return out;
+}
 
 } // namespace boba

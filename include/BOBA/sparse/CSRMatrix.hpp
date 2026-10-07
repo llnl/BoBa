@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include "BOBA/sparse/SparseMatrixCommon.hpp"
+#include "BOBA/sparse/sparse_common.hpp"
 
 namespace boba
 {
@@ -24,7 +24,6 @@ struct CSRMatrix
   using data_type = data_t;
   using value_container = sparse_detail::host_vector<data_t>;
   using index_container = sparse_detail::host_vector<index_t>;
-  using const_view_type = SparseMatrixConstView<CSRMatrix>;
   index_t m_rows = 0, m_cols = 0;
   value_container m_values;
   index_container m_column_indices, m_row_offsets;
@@ -78,14 +77,6 @@ struct CSRMatrix
   }
 
   /**
-   * \brief Returns a non-owning read-only view.
-   */
-  const_view_type as_const_view() const noexcept
-  {
-    return {this};
-  }
-
-  /**
    * \brief Returns a stored value or zero when the coordinate is absent.
    */
   data_t get_element(index_t i, index_t j) const
@@ -112,7 +103,8 @@ struct CSRMatrix
    */
   void matvec(sparse_detail::host_vector<data_t> const& x, sparse_detail::host_vector<data_t>& y, data_t alpha = 1, data_t beta = 0) const
   {
-    sparse_detail::check_vector_sizes(m_rows, m_cols, x, y);
+    boba_always_assert_equal(x.size(), m_cols, "CSR matvec input has the wrong size");
+    boba_always_assert_equal(y.size(), m_rows, "CSR matvec output has the wrong size");
     sparse_detail::initialize_output(y, beta);
     auto xv = x.const_view();
     auto yv = y.view();
@@ -189,5 +181,49 @@ struct CSRMatrix
     m_values *= value;
   }
 };
+
+/**
+ * \brief Imports a dense matrix into CSR storage using an absolute tolerance.
+ */
+template <typename data_t>
+CSRMatrix<data_t> from_dense_csr(Matrix<host_space, data_t> const& dense, data_t tolerance = 0)
+{
+  sparse_detail::check_tolerance(tolerance);
+  CSRMatrix<data_t> out(dense.rows(), dense.cols());
+  auto dv = dense.const_view();
+  for (index_t i = 0; i < dense.rows(); ++i)
+  {
+    for (index_t j = 0; j < dense.cols(); ++j)
+    {
+      if (sparse_detail::keep(dv({i, j}), tolerance))
+      {
+        out.set_element(i, j, dv({i, j}));
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * \brief Exports CSR storage to a dense host matrix.
+ */
+template <typename data_t>
+Matrix<host_space, data_t> to_dense(CSRMatrix<data_t> const& sparse)
+{
+  Matrix<host_space, data_t> out({sparse.rows(), sparse.cols()});
+  out.fill_with_zeros();
+  auto ov = out.view();
+  auto offsets = sparse.m_row_offsets.const_view();
+  auto columns = sparse.m_column_indices.const_view();
+  auto values = sparse.m_values.const_view();
+  for (index_t i = 0; i < sparse.rows(); ++i)
+  {
+    for (index_t k = offsets(i); k < offsets(i + 1); ++k)
+    {
+      ov({i, columns(k)}) = values(k);
+    }
+  }
+  return out;
+}
 
 } // namespace boba

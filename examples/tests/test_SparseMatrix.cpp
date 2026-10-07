@@ -58,7 +58,6 @@ void check_sparse(Sparse const& sparse,
     {
       error = std::max(error, boba::abs(dense_view({i, j}) - expected_view({i, j})));
       error = std::max(error, boba::abs(sparse.get_element(i, j) - expected_view({i, j})));
-      error = std::max(error, boba::abs(sparse.as_const_view().get_element(i, j) - expected_view({i, j})));
     }
   }
   pass_or_fail(check, error, 1.0e-14);

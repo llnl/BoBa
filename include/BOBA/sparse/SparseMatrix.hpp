@@ -7,5 +7,5 @@
 #include "BOBA/sparse/CSRMatrix.hpp"
 #include "BOBA/sparse/DIAMatrix.hpp"
 #include "BOBA/sparse/ELLPACKMatrix.hpp"
-#include "BOBA/sparse/SparseMatrixCommon.hpp"
 #include "BOBA/sparse/SparseMatrix_functions.hpp"
+#include "BOBA/sparse/sparse_common.hpp"
