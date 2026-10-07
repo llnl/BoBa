@@ -17,8 +17,8 @@ template <typename Sparse>
 void check_sparse(Sparse const& sparse,
                   matrix_t const& expected,
                   vector_t const& x,
-                  vector_t const& y_initial,
-                  vector_t const& y_expected,
+                  vector_t const& y,
+                  vector_t const& z,
                   char const* format,
                   bool& check)
 {
@@ -44,9 +44,9 @@ void check_sparse(Sparse const& sparse,
   //
   // Verifies matvec
   //
-  vector_t y = y_initial;
-  sparse.matvec(x, y, 3.0, 2.0);
-  double matvec_error = norm_difference_inf(y, y_expected);
+  vector_t z_matvec = y;
+  sparse.matvec(x, z_matvec, 3.0, 2.0);
+  double matvec_error = norm_difference_inf(z_matvec, z);
 
   pass_or_fail(check, matvec_error, 1.0e-13);
 }
@@ -59,7 +59,7 @@ int main()
   bool check = true;
 
   //
-  //
+  // Generate matrix
   //
   matrix_t dense({4, 4});
   auto dv = dense.view();
@@ -76,31 +76,43 @@ int main()
   dv({3, 2}) = 8.0;
   dv({3, 3}) = 9.0;
 
+  //
+  // Delete small entries in a way consistent with the sparse tensor constructors
+  //
   constexpr double tolerance = 1.0e-12;
   auto dense_thresholded = boba::apply_function(dense, [tolerance](auto x)
   {
     return (boba::abs(x) > tolerance) ? x : 0.0;
   });
 
-  vector_t x({dense.cols()}), y_initial({dense.rows()});
+  //
+  // Initialize some vectors
+  //
+  vector_t x({dense.cols()}), y({dense.rows()});
   auto xv = x.view();
-  auto y_initial_view = y_initial.view();
+  auto y_view = y.view();
   for (boba::index_t i = 0; i < x.size(); ++i)
   {
     xv(i) = static_cast<double>(i + 1);
   }
-  for (boba::index_t i = 0; i < y_initial.size(); ++i)
+  for (boba::index_t i = 0; i < y.size(); ++i)
   {
-    y_initial_view(i) = 0.5 * static_cast<double>(i + 1);
+    y_view(i) = 0.5 * static_cast<double>(i + 1);
   }
 
-  auto y_expected = 3.0 * (dense_thresholded * x) + 2.0 * y_initial;
+  //
+  // Dense operation that we will test with each format
+  //
+  auto z = 3.0 * (dense_thresholded * x) + 2.0 * y;
 
-  check_sparse(boba::from_dense<boba::COOMatrix<double>>(dense, tolerance), dense_thresholded, x, y_initial, y_expected, "COO", check);
-  check_sparse(boba::from_dense<boba::CSRMatrix<double>>(dense, tolerance), dense_thresholded, x, y_initial, y_expected, "CSR", check);
-  check_sparse(boba::from_dense<boba::ELLPACKMatrix<double>>(dense, tolerance), dense_thresholded, x, y_initial, y_expected, "ELLPACK", check);
-  check_sparse(boba::from_dense<boba::DIAMatrix<double>>(dense, tolerance), dense_thresholded, x, y_initial, y_expected, "DIA", check);
-  check_sparse(boba::from_dense<boba::BCOOMatrix<double>>(dense, 2, 2, tolerance), dense_thresholded, x, y_initial, y_expected, "BCOO", check);
+  //
+  // Test sparse formats
+  //
+  check_sparse(boba::from_dense<boba::COOMatrix<double>>(dense, tolerance), dense_thresholded, x, y, z, "COO", check);
+  check_sparse(boba::from_dense<boba::CSRMatrix<double>>(dense, tolerance), dense_thresholded, x, y, z, "CSR", check);
+  check_sparse(boba::from_dense<boba::ELLPACKMatrix<double>>(dense, tolerance), dense_thresholded, x, y, z, "ELLPACK", check);
+  check_sparse(boba::from_dense<boba::DIAMatrix<double>>(dense, tolerance), dense_thresholded, x, y, z, "DIA", check);
+  check_sparse(boba::from_dense<boba::BCOOMatrix<double>>(dense, 2, 2, tolerance), dense_thresholded, x, y, z, "BCOO", check);
 
   return final_check(check);
 }
