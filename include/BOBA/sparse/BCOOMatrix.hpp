@@ -9,6 +9,7 @@ namespace boba
 
 /**
  * \brief Block coordinate sparse matrix with dense rectangular blocks.
+ * Blocks are assumed all the same size and stored as dense objects in a containing COO format.
  *
  * The scalar matrix shape is
  * `(m_block_rows * m_block_grid_rows, m_block_cols * m_block_grid_cols)`.
