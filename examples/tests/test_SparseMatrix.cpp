@@ -72,7 +72,7 @@ int main()
   {
     for (boba::index_t j = 0; j < dense.cols(); ++j)
     {
-      dv({i, j}) = ((i + 2 * j) % 3 == 0) ? static_cast<double>(i - j + 1) : 0.0;
+      dv({i, j}) = ((i + 2 * j) % 3 == 0) ? static_cast<double>(i) - static_cast<double>(j) + 1.0 : 0.0;
     }
   }
   dv({0, 1}) = 1.0e-8;
