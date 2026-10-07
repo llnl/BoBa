@@ -74,6 +74,26 @@ struct DIAMatrix
   }
 
   /**
+   * \brief Returns the dense scalar size divided by the DIA storage size.
+   *
+   * The storage size counts every value slot and every diagonal offset. The
+   * result is truncated to two decimal places, matching tensor
+   * compression-rate semantics.
+   */
+  [[nodiscard]]
+  float compression_rate() const noexcept
+  {
+    if (m_offsets.size() == 0)
+    {
+      return 0.0F;
+    }
+    double diagonal_count = static_cast<double>(m_offsets.size());
+    double compressed_size = diagonal_count * static_cast<double>(m_rows) + diagonal_count;
+    double full_size = static_cast<double>(m_rows) * static_cast<double>(m_cols);
+    return static_cast<float>(std::floor(full_size / compressed_size * 100.0) / 100.0);
+  }
+
+  /**
    * \brief Returns a stored value or zero when the coordinate is absent.
    */
   data_t get_element(index_t i, index_t j) const

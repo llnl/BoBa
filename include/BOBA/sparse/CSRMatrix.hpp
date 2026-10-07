@@ -77,6 +77,21 @@ struct CSRMatrix
   }
 
   /**
+   * \brief Returns the dense scalar size divided by the CSR storage size.
+   *
+   * The storage size counts values, column indices, and row offsets. The
+   * result is truncated to two decimal places, matching tensor
+   * compression-rate semantics.
+   */
+  [[nodiscard]]
+  float compression_rate() const noexcept
+  {
+    double compressed_size = 2.0 * static_cast<double>(nnz()) + static_cast<double>(m_rows + 1);
+    double full_size = static_cast<double>(m_rows) * static_cast<double>(m_cols);
+    return static_cast<float>(std::floor(full_size / compressed_size * 100.0) / 100.0);
+  }
+
+  /**
    * \brief Returns a stored value or zero when the coordinate is absent.
    */
   data_t get_element(index_t i, index_t j) const
