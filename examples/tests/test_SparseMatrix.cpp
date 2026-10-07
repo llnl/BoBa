@@ -78,7 +78,7 @@ int main()
   // Delete small entries in a way consistent with the sparse tensor constructors
   //
   constexpr double tolerance = 1.0e-12;
-  auto dense_thresholded = boba::apply_function(dense, [=]__boba_host_device__(auto x)
+  auto dense_thresholded = boba::apply_function(dense, [=]__boba_host_device__(double x)
   {
     return (boba::abs(x) > tolerance) ? x : 0.0;
   });
