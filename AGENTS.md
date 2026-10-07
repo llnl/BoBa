@@ -115,6 +115,28 @@ This repo has two active build paths. Do not assume updating one is enough.
 - For complicated algorithms that could be simply demonstrated with a text example, add this to the documentation
 - If a block of code is hard to understand, first see whether extracting a helper or renaming variables makes the comment unnecessary.
 
+## General Development Conventions
+
+- Always use full braces for `if` and `for` statements, including one-line bodies.
+- Prefer public `boba::loop` when a loop is compatible with device execution.
+- Never nest BoBa loops; use a single loop or ordinary nested loops where necessary.
+- Use a multiindexer when it makes multidimensional indexing clearer than manual modulo or division arithmetic.
+- Create views once and reuse them instead of repeatedly constructing `.view()` or `.const_view()` inside loops and expressions.
+- Avoid inline view expressions such as `.view()({...})`; use a named view instead.
+- Prefer ordinary copy construction, such as `auto copy = object;`, over trivial copy helpers.
+- Treat `index_t` as unsigned and avoid mixed signed/unsigned arithmetic, especially subtraction, comparisons, and assignments involving indices.
+- Use explicit casts when converting indices to signed integer or data types.
+- Leave whitespace between function definitions and match the formatting and commenting conventions of nearby files.
+- Use concise Doxygen comments for public and non-obvious functions, including important invariants and non-obvious mutation logic.
+- Prefer improving names and structure over adding comments that merely restate obvious code.
+- Give each independently defined public struct or class its own header file.
+- Keep shared headers limited to genuinely shared functionality and name them according to their contents.
+- Follow established naming and behavior in neighboring BoBa classes.
+- Reuse existing operations when they express the intent directly; avoid helpers that hide the source of an error or make simple operations harder to trace.
+- Tests and standalone programs that allocate BoBa objects should call `boba::init()` before the first allocation and `boba::finalize()` before returning.
+- When a change affects allocation or runtime behavior, verify it under relevant backend configurations rather than only the default CPU build.
+- Reuse existing test helpers and conventions, construct shared expected values once, and use warning-sensitive compiler flags when validating changes.
+
 ## Change Boundaries
 
 - Avoid broad style churn in headers. This codebase is large and warning-sensitive.
