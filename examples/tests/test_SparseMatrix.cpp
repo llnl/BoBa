@@ -24,6 +24,9 @@ void check_sparse(Sparse const& sparse,
   auto expected_view = expected.const_view();
   auto dense_view = dense.const_view();
   double error = 0.0;
+  //
+  // Checks that sparse matrix is identically equal to dense matrix
+  //
   for (boba::index_t i = 0; i < expected.rows(); ++i)
   {
     for (boba::index_t j = 0; j < expected.cols(); ++j)
@@ -32,17 +35,16 @@ void check_sparse(Sparse const& sparse,
       error = std::max(error, boba::abs(sparse.get_element(i, j) - expected_view({i, j})));
     }
   }
+
   pass_or_fail(check, error, 1.0e-14);
 
+  //
+  // Verifies matvec
+  //
   vector_t y = y_initial;
   sparse.matvec(x, y, 3.0, 2.0);
-  double matvec_error = 0.0;
-  auto y_view = y.const_view();
-  auto y_expected_view = y_expected.const_view();
-  for (boba::index_t i = 0; i < y.size(); ++i)
-  {
-    matvec_error = std::max(matvec_error, boba::abs(y_view(i) - y_expected_view(i)));
-  }
+  double matvec_error = norm_difference_inf(y, y_expected);
+
   pass_or_fail(check, matvec_error, 1.0e-13);
 }
 
