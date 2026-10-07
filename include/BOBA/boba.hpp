@@ -49,6 +49,7 @@
 #include "BOBA/tensors/SparseTensor.hpp"
 #include "BOBA/abstractions/argparser.hpp"
 #include "BOBA/tensors/Matrix.hpp"
+#include "BOBA/sparse/SparseMatrix.hpp"
 #include "BOBA/tensors/PermutationMatrix.hpp"
 
 // Linear algebra
