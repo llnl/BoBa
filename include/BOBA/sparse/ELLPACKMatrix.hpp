@@ -152,7 +152,7 @@ struct ELLPACKMatrix
     // First update an existing slot so the row width remains unchanged.
     for (index_t k = 0; k < m_width; ++k)
     {
-      if (columns({i, k}) == j)
+      if (columns({i, k}) == static_cast<std::int64_t>(j))
       {
         values({i, k}) = value;
         return;
@@ -168,7 +168,7 @@ struct ELLPACKMatrix
     {
       if (columns({i, k}) < 0)
       {
-        columns({i, k}) = j;
+        columns({i, k}) = static_cast<std::int64_t>(j);
         values({i, k}) = value;
         return;
       }
@@ -185,7 +185,7 @@ struct ELLPACKMatrix
       columns_after_resize({r, old}) = -1;
     });
     m_width = old + 1;
-    columns_after_resize({i, old}) = j;
+    columns_after_resize({i, old}) = static_cast<std::int64_t>(j);
     values_after_resize({i, old}) = value;
   }
 
