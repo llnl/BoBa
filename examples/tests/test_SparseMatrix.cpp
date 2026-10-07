@@ -54,6 +54,8 @@ void check_sparse(Sparse const& sparse,
  */
 int main()
 {
+  boba::init();
+
   bool check = true;
 
   //
@@ -112,5 +114,7 @@ int main()
   check_sparse(boba::from_dense<boba::DIAMatrix<double>>(dense, tolerance), dense_thresholded, x, y, z, "DIA", check);
   check_sparse(boba::from_dense<boba::BCOOMatrix<double>>(dense, 2, 2, tolerance), dense_thresholded, x, y, z, "BCOO", check);
 
-  return final_check(check);
+  const int result = final_check(check);
+  boba::finalize();
+  return result;
 }
