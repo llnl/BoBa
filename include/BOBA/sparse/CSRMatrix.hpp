@@ -86,7 +86,7 @@ struct CSRMatrix
   [[nodiscard]]
   float compression_rate() const noexcept
   {
-    double compressed_size = 2.0 * static_cast<double>(nnz()) + static_cast<double>(m_rows + 1);
+    double compressed_size = static_cast<double>(m_values.size()) + static_cast<double>(m_column_indices.size()) + static_cast<double>(m_row_offsets.size());
     double full_size = static_cast<double>(m_rows) * static_cast<double>(m_cols);
     return static_cast<float>(std::floor(full_size / compressed_size * 100.0) / 100.0);
   }

@@ -83,12 +83,11 @@ struct DIAMatrix
   [[nodiscard]]
   float compression_rate() const noexcept
   {
-    if (m_offsets.size() == 0)
+    if (m_values.size() == 0 && m_offsets.size() == 0)
     {
       return 0.0F;
     }
-    double diagonal_count = static_cast<double>(m_offsets.size());
-    double compressed_size = diagonal_count * static_cast<double>(m_rows) + diagonal_count;
+    double compressed_size = static_cast<double>(m_values.size()) + static_cast<double>(m_offsets.size());
     double full_size = static_cast<double>(m_rows) * static_cast<double>(m_cols);
     return static_cast<float>(std::floor(full_size / compressed_size * 100.0) / 100.0);
   }

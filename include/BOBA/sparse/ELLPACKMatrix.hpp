@@ -88,11 +88,11 @@ struct ELLPACKMatrix
   [[nodiscard]]
   float compression_rate() const noexcept
   {
-    if (m_rows == 0 || m_width == 0)
+    if (m_values.size() == 0 && m_column_indices.size() == 0)
     {
       return 0.0F;
     }
-    double compressed_size = 2.0 * static_cast<double>(m_rows) * static_cast<double>(m_width);
+    double compressed_size = static_cast<double>(m_values.size()) + static_cast<double>(m_column_indices.size());
     double full_size = static_cast<double>(m_rows) * static_cast<double>(m_cols);
     return static_cast<float>(std::floor(full_size / compressed_size * 100.0) / 100.0);
   }
