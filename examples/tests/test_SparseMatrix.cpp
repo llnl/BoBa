@@ -35,7 +35,7 @@ void check_sparse(Sparse const& sparse,
   pass_or_fail(check, error, 1.0e-14);
 
   vector_t y = y_initial;
-  sparse.matvec(x, y, 2.0, 1.0);
+  sparse.matvec(x, y, 3.0, 2.0);
   double matvec_error = 0.0;
   auto y_view = y.const_view();
   auto y_expected_view = y_expected.const_view();
@@ -65,7 +65,7 @@ int main()
   dv({1, 1}) = -1.0e-3;
 
   constexpr double tolerance = 1.0e-7;
-  auto dense_thresholded = apply_function(dense, [tolerance](data_t x){ return (boba::abs(x) > tolerance) ? x : 0.0; });
+  auto dense_thresholded = apply_function(dense, [tolerance](auto x){ return (boba::abs(x) > tolerance) ? x : 0.0; });
 
   vector_t x({dense.cols()}), y_initial({dense.rows()});
   auto xv = x.view();
@@ -79,13 +79,13 @@ int main()
     y_initial_view(i) = 0.5 * static_cast<double>(i + 1);
   }
 
-  auto y_expected = dense_thresholded * x + 2.0 * y_initial;
+  auto y_expected = 3.0 * (dense_thresholded * x) + 2.0 * y_initial;
 
-  check_sparse(boba::from_dense<boba::COOMatrix<double>>(dense, tolerance), thresholded, x, y_initial, y_expected, check);
-  check_sparse(boba::from_dense<boba::CSRMatrix<double>>(dense, tolerance), thresholded, x, y_initial, y_expected, check);
-  check_sparse(boba::from_dense<boba::ELLPACKMatrix<double>>(dense, tolerance), thresholded, x, y_initial, y_expected, check);
-  check_sparse(boba::from_dense<boba::DIAMatrix<double>>(dense, tolerance), thresholded, x, y_initial, y_expected, check);
-  check_sparse(boba::from_dense<boba::BCOOMatrix<double>>(dense, 2, 1, tolerance), thresholded, x, y_initial, y_expected, check);
+  check_sparse(boba::from_dense<boba::COOMatrix<double>>(dense, tolerance), dense_thresholded, x, y_initial, y_expected, check);
+  check_sparse(boba::from_dense<boba::CSRMatrix<double>>(dense, tolerance), dense_thresholded, x, y_initial, y_expected, check);
+  check_sparse(boba::from_dense<boba::ELLPACKMatrix<double>>(dense, tolerance), dense_thresholded, x, y_initial, y_expected, check);
+  check_sparse(boba::from_dense<boba::DIAMatrix<double>>(dense, tolerance), dense_thresholded, x, y_initial, y_expected, check);
+  check_sparse(boba::from_dense<boba::BCOOMatrix<double>>(dense, 2, 1, tolerance), dense_thresholded, x, y_initial, y_expected, check);
 
   return final_check(check);
 }
