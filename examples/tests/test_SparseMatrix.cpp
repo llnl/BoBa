@@ -65,9 +65,11 @@ void check_sparse(Sparse const& sparse,
   vector_t y = y_initial;
   sparse.matvec(x, y, 2.0, 1.0);
   double matvec_error = 0.0;
+  auto y_view = y.const_view();
+  auto y_expected_view = y_expected.const_view();
   for (boba::index_t i = 0; i < y.size(); ++i)
   {
-    matvec_error = std::max(matvec_error, boba::abs(y.const_view()(i) - y_expected.const_view()(i)));
+    matvec_error = std::max(matvec_error, boba::abs(y_view(i) - y_expected_view(i)));
   }
   pass_or_fail(check, matvec_error, 1.0e-13);
 }

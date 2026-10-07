@@ -26,8 +26,8 @@ struct BCOOMatrix
 {
   using data_type = data_t;
   index_t m_block_rows = 0, m_block_cols = 0, m_block_grid_rows = 0, m_block_grid_cols = 0;
-  sparse_detail::host_tensor3<data_t> m_values;
-  sparse_detail::host_matrix<index_t> m_indices;
+  Tensor<3, host_space, data_t> m_values;
+  Matrix<host_space, index_t> m_indices;
 
   /**
    * \brief Constructs an empty BCOO matrix.
@@ -107,7 +107,7 @@ struct BCOOMatrix
   /**
    * \brief Computes a dense-vector product using the native sparse storage.
    */
-  void matvec(sparse_detail::host_vector<data_t> const& x, sparse_detail::host_vector<data_t>& y, data_t alpha = 1, data_t beta = 0) const
+  void matvec(Vector<host_space, data_t> const& x, Vector<host_space, data_t>& y, data_t alpha = 1, data_t beta = 0) const
   {
     boba_always_assert_equal(x.size(), cols(), "BCOO matvec input has the wrong size");
     boba_always_assert_equal(y.size(), rows(), "BCOO matvec output has the wrong size");
@@ -139,11 +139,13 @@ struct BCOOMatrix
     auto col_index = Multiindexer<2>::multiindex({m_block_cols, m_block_grid_cols}, j);
     index_t u = row_index[0], p = row_index[1];
     index_t v = col_index[0], q = col_index[1];
+    auto indices = m_indices.view();
+    auto values = m_values.view();
     for (index_t k = 0; k < nnz(); ++k)
     {
-      if (m_indices.view()({k, 0}) == p && m_indices.view()({k, 1}) == q)
+      if (indices({k, 0}) == p && indices({k, 1}) == q)
       {
-        m_values.view()({u, v, k}) = value;
+        values({u, v, k}) = value;
         return;
       }
     }
@@ -154,16 +156,18 @@ struct BCOOMatrix
     index_t old = nnz();
     m_indices.resize({old + 1, 2});
     m_values.resize({m_block_rows, m_block_cols, old + 1});
+    auto indices_after_resize = m_indices.view();
+    auto values_after_resize = m_values.view();
     for (index_t a = 0; a < m_block_rows; ++a)
     {
       for (index_t b = 0; b < m_block_cols; ++b)
       {
-        m_values.view()({a, b, old}) = data_t{};
+        values_after_resize({a, b, old}) = data_t{};
       }
     }
-    m_indices.view()({old, 0}) = p;
-    m_indices.view()({old, 1}) = q;
-    m_values.view()({u, v, old}) = value;
+    indices_after_resize({old, 0}) = p;
+    indices_after_resize({old, 1}) = q;
+    values_after_resize({u, v, old}) = value;
   }
 
   /**

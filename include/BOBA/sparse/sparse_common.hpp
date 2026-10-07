@@ -17,15 +17,6 @@ namespace sparse_detail
 {
 
 template <typename data_t>
-using host_vector = Vector<host_space, data_t>;
-
-template <typename data_t>
-using host_matrix = Matrix<host_space, data_t>;
-
-template <typename data_t>
-using host_tensor3 = Tensor<3, host_space, data_t>;
-
-template <typename data_t>
 void check_tolerance(data_t tolerance)
 {
   boba_always_assert(tolerance >= data_t{0}, "Sparse tolerance must be nonnegative");
@@ -39,7 +30,7 @@ bool keep(data_t value, data_t tolerance)
 }
 
 template <typename data_t>
-void initialize_output(host_vector<data_t>& y, data_t beta)
+void initialize_output(Vector<host_space, data_t>& y, data_t beta)
 {
   if (abs(beta) <= 0)
   {

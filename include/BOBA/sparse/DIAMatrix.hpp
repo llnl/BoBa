@@ -23,8 +23,8 @@ struct DIAMatrix
 {
   using data_type = data_t;
   index_t m_rows = 0, m_cols = 0;
-  sparse_detail::host_matrix<data_t> m_values;
-  sparse_detail::host_vector<std::int64_t> m_offsets;
+  Matrix<host_space, data_t> m_values;
+  Vector<host_space, std::int64_t> m_offsets;
 
   /**
    * \brief Constructs an empty DIA matrix.
@@ -97,7 +97,7 @@ struct DIAMatrix
   /**
    * \brief Computes a dense-vector product using the native sparse storage.
    */
-  void matvec(sparse_detail::host_vector<data_t> const& x, sparse_detail::host_vector<data_t>& y, data_t alpha = 1, data_t beta = 0) const
+  void matvec(Vector<host_space, data_t> const& x, Vector<host_space, data_t>& y, data_t alpha = 1, data_t beta = 0) const
   {
     boba_always_assert_equal(x.size(), m_cols, "DIA matvec input has the wrong size");
     boba_always_assert_equal(y.size(), m_rows, "DIA matvec output has the wrong size");
@@ -126,11 +126,13 @@ struct DIAMatrix
   {
     boba_always_assert(i < m_rows && j < m_cols, "Sparse coordinate out of bounds");
     std::int64_t d = static_cast<std::int64_t>(j) - static_cast<std::int64_t>(i);
+    auto offsets = m_offsets.view();
+    auto values = m_values.view();
     for (index_t k = 0; k < m_offsets.size(); ++k)
     {
-      if (m_offsets.view()(k) == d)
+      if (offsets(k) == d)
       {
-        m_values.view()({i, k}) = value;
+        values({i, k}) = value;
         return;
       }
     }
@@ -141,12 +143,14 @@ struct DIAMatrix
     index_t old = m_offsets.size();
     m_offsets.resize(old + 1);
     m_values.resize({m_rows, old + 1});
-    m_offsets.view()(old) = d;
+    auto offsets_after_resize = m_offsets.view();
+    auto values_after_resize = m_values.view();
+    offsets_after_resize(old) = d;
     for (index_t r = 0; r < m_rows; ++r)
     {
-      m_values.view()({r, old}) = data_t{};
+      values_after_resize({r, old}) = data_t{};
     }
-    m_values.view()({i, old}) = value;
+    values_after_resize({i, old}) = value;
   }
 
   /**

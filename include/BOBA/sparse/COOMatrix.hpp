@@ -20,8 +20,8 @@ template <typename data_t = double>
 struct COOMatrix
 {
   using data_type = data_t;
-  using index_container = sparse_detail::host_matrix<index_t>;
-  using value_container = sparse_detail::host_vector<data_t>;
+  using index_container = Matrix<host_space, index_t>;
+  using value_container = Vector<host_space, data_t>;
 
   index_t m_rows = 0;
   index_t m_cols = 0;
@@ -99,8 +99,8 @@ struct COOMatrix
   /**
    * \brief Computes a dense-vector product using the native sparse storage.
    */
-  void matvec(sparse_detail::host_vector<data_t> const& x,
-              sparse_detail::host_vector<data_t>& y,
+  void matvec(Vector<host_space, data_t> const& x,
+              Vector<host_space, data_t>& y,
               data_t alpha = 1,
               data_t beta = 0) const
   {
@@ -123,11 +123,13 @@ struct COOMatrix
   void set_element(index_t i, index_t j, data_t value)
   {
     boba_always_assert(i >= 0 && i < m_rows && j >= 0 && j < m_cols, "Sparse coordinate out of bounds");
+    auto indices = m_indices.view();
+    auto values = m_values.view();
     for (index_t k = 0; k < nnz(); ++k)
     {
-      if (m_indices.view()({k, 0}) == i && m_indices.view()({k, 1}) == j)
+      if (indices({k, 0}) == i && indices({k, 1}) == j)
       {
-        m_values.view()(k) = value;
+        values(k) = value;
         return;
       }
     }
@@ -138,9 +140,11 @@ struct COOMatrix
     index_t old = nnz();
     m_values.resize(old + 1);
     m_indices.resize({old + 1, 2});
-    m_values.view()(old) = value;
-    m_indices.view()({old, 0}) = i;
-    m_indices.view()({old, 1}) = j;
+    auto values_after_resize = m_values.view();
+    auto indices_after_resize = m_indices.view();
+    values_after_resize(old) = value;
+    indices_after_resize({old, 0}) = i;
+    indices_after_resize({old, 1}) = j;
   }
 
   /**

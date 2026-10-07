@@ -22,8 +22,8 @@ struct ELLPACKMatrix
 {
   using data_type = data_t;
   index_t m_rows = 0, m_cols = 0, m_width = 0;
-  sparse_detail::host_matrix<data_t> m_values;
-  sparse_detail::host_matrix<std::int64_t> m_column_indices;
+  Matrix<host_space, data_t> m_values;
+  Matrix<host_space, std::int64_t> m_column_indices;
 
   /**
    * \brief Constructs an empty ELLPACK matrix.
@@ -102,7 +102,7 @@ struct ELLPACKMatrix
   /**
    * \brief Computes a dense-vector product using the native sparse storage.
    */
-  void matvec(sparse_detail::host_vector<data_t> const& x, sparse_detail::host_vector<data_t>& y, data_t alpha = 1, data_t beta = 0) const
+  void matvec(Vector<host_space, data_t> const& x, Vector<host_space, data_t>& y, data_t alpha = 1, data_t beta = 0) const
   {
     boba_always_assert_equal(x.size(), m_cols, "ELLPACK matvec input has the wrong size");
     boba_always_assert_equal(y.size(), m_rows, "ELLPACK matvec output has the wrong size");
@@ -129,11 +129,13 @@ struct ELLPACKMatrix
   void set_element(index_t i, index_t j, data_t value)
   {
     boba_always_assert(i < m_rows && j < m_cols, "Sparse coordinate out of bounds");
+    auto columns = m_column_indices.view();
+    auto values = m_values.view();
     for (index_t k = 0; k < m_width; ++k)
     {
-      if (m_column_indices.view()({i, k}) == j)
+      if (columns({i, k}) == j)
       {
-        m_values.view()({i, k}) = value;
+        values({i, k}) = value;
         return;
       }
     }
@@ -143,23 +145,25 @@ struct ELLPACKMatrix
     }
     for (index_t k = 0; k < m_width; ++k)
     {
-      if (m_column_indices.view()({i, k}) < 0)
+      if (columns({i, k}) < 0)
       {
-        m_column_indices.view()({i, k}) = j;
-        m_values.view()({i, k}) = value;
+        columns({i, k}) = j;
+        values({i, k}) = value;
         return;
       }
     }
     index_t old = m_width;
     m_values.resize({m_rows, m_width + 1});
     m_column_indices.resize({m_rows, m_width + 1});
+    auto columns_after_resize = m_column_indices.view();
+    auto values_after_resize = m_values.view();
     for (index_t r = 0; r < m_rows; ++r)
     {
-      m_column_indices.view()({r, old}) = -1;
+      columns_after_resize({r, old}) = -1;
     }
     m_width = old + 1;
-    m_column_indices.view()({i, old}) = j;
-    m_values.view()({i, old}) = value;
+    columns_after_resize({i, old}) = j;
+    values_after_resize({i, old}) = value;
   }
 
   /**

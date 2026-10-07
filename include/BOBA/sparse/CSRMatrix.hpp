@@ -22,8 +22,8 @@ template <typename data_t = double>
 struct CSRMatrix
 {
   using data_type = data_t;
-  using value_container = sparse_detail::host_vector<data_t>;
-  using index_container = sparse_detail::host_vector<index_t>;
+  using value_container = Vector<host_space, data_t>;
+  using index_container = Vector<host_space, index_t>;
   index_t m_rows = 0, m_cols = 0;
   value_container m_values;
   index_container m_column_indices, m_row_offsets;
@@ -101,7 +101,7 @@ struct CSRMatrix
   /**
    * \brief Computes a dense-vector product using the native sparse storage.
    */
-  void matvec(sparse_detail::host_vector<data_t> const& x, sparse_detail::host_vector<data_t>& y, data_t alpha = 1, data_t beta = 0) const
+  void matvec(Vector<host_space, data_t> const& x, Vector<host_space, data_t>& y, data_t alpha = 1, data_t beta = 0) const
   {
     boba_always_assert_equal(x.size(), m_cols, "CSR matvec input has the wrong size");
     boba_always_assert_equal(y.size(), m_rows, "CSR matvec output has the wrong size");
@@ -144,16 +144,18 @@ struct CSRMatrix
     index_t at = ov(i + 1);
     m_values.resize(nnz() + 1);
     m_column_indices.resize(nnz());
+    auto values_after_resize = m_values.view();
+    auto columns_after_resize = m_column_indices.view();
     for (index_t k = nnz() - 1; k > at; --k)
     {
-      m_values.view()(k) = m_values.view()(k - 1);
-      m_column_indices.view()(k) = m_column_indices.view()(k - 1);
+      values_after_resize(k) = values_after_resize(k - 1);
+      columns_after_resize(k) = columns_after_resize(k - 1);
     }
-    m_values.view()(at) = value;
-    m_column_indices.view()(at) = j;
+    values_after_resize(at) = value;
+    columns_after_resize(at) = j;
     for (index_t r = i + 1; r <= m_rows; ++r)
     {
-      m_row_offsets.view()(r)++;
+      ov(r)++;
     }
   }
 
