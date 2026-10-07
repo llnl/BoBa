@@ -2,28 +2,16 @@
 
 #pragma once
 
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-
-#pragma once
-
 #include "BOBA/tensors/Matrix.hpp"
 #include "BOBA/tensors/Vector.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <limits>
 #include <type_traits>
-#include <utility>
-#include <vector>
 
 namespace boba
 {
-
-/**
- * \file SparseMatrixCommon.hpp
- * \brief Shared storage helpers and read-only sparse-matrix views.
- */
 
 namespace sparse_detail
 {
@@ -67,8 +55,10 @@ void initialize_output(host_vector<data_t>& y, data_t beta)
   }
   else
   {
-    for (index_t i = 0; i < y.size(); ++i)
+    ::boba::detail::loop<host_space>(0, y.size(), [=](index_t i)
+    {
       y_view(i) *= beta;
+    });
   }
 }
 
@@ -88,31 +78,49 @@ host_matrix<data_t> copy_dense(host_matrix<data_t> const& dense)
 template <typename owner_t>
 struct SparseMatrixConstView
 {
-  owner_t const* owner = nullptr;
+  owner_t const* m_owner = nullptr;
 
-  index_t nrows() const noexcept
+  /**
+   * \brief Returns the number of rows in the viewed matrix.
+   */
+  index_t rows() const noexcept
   {
-    return owner->nrows();
+    return m_owner->rows();
   }
-  index_t ncols() const noexcept
+
+  /**
+   * \brief Returns the number of columns in the viewed matrix.
+   */
+  index_t cols() const noexcept
   {
-    return owner->ncols();
+    return m_owner->cols();
   }
+
+  /**
+   * \brief Returns the logical shape of the viewed matrix.
+   */
   auto shape() const noexcept
   {
-    return owner->shape();
-  }
-  auto get_element(index_t i, index_t j) const
-  {
-    return owner->get_element(i, j);
+    return m_owner->shape();
   }
 
+  /**
+   * \brief Returns a stored value or zero when the coordinate is absent.
+   */
+  auto get_element(index_t i, index_t j) const
+  {
+    return m_owner->get_element(i, j);
+  }
+
+  /**
+   * \brief Computes a dense-vector product through the viewed matrix.
+   */
   void matvec(Vector<host_space, typename owner_t::data_type> const& x,
               Vector<host_space, typename owner_t::data_type>& y,
               typename owner_t::data_type alpha = typename owner_t::data_type{1},
               typename owner_t::data_type beta = typename owner_t::data_type{0}) const
   {
-    owner->matvec(x, y, alpha, beta);
+    m_owner->matvec(x, y, alpha, beta);
   }
 };
 

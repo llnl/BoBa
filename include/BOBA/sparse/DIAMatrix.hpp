@@ -15,94 +15,154 @@ struct DIAMatrix
 {
   using data_type = data_t;
   using const_view_type = SparseMatrixConstView<DIAMatrix>;
-  index_t rows = 0, cols = 0;
-  sparse_detail::host_matrix<data_t> values;
-  sparse_detail::host_vector<std::int64_t> offsets;
+  index_t m_rows = 0, m_cols = 0;
+  sparse_detail::host_matrix<data_t> m_values;
+  sparse_detail::host_vector<std::int64_t> m_offsets;
+
+  /**
+   * \brief Constructs an empty DIA matrix.
+   */
   DIAMatrix() = default;
+
+  /**
+   * \brief Constructs a matrix with the requested dimensions.
+   */
   DIAMatrix(index_t m, index_t n)
-      : rows(m),
-        cols(n),
-        values({m, 0})
+      : m_rows(m),
+        m_cols(n),
+        m_values({m, 0})
   {
   }
-  index_t nrows() const noexcept
+
+  /**
+   * \brief Returns the number of matrix rows.
+   */
+  index_t rows() const noexcept
   {
-    return rows;
+    return m_rows;
   }
-  index_t ncols() const noexcept
+
+  /**
+   * \brief Returns the number of matrix columns.
+   */
+  index_t cols() const noexcept
   {
-    return cols;
+    return m_cols;
   }
+
+  /**
+   * \brief Returns the logical matrix shape.
+   */
   Array<index_t, 2> shape() const noexcept
   {
-    return {rows, cols};
+    return {m_rows, m_cols};
   }
+
+  /**
+   * \brief Returns the number of stored entries or blocks.
+   */
   index_t nnz() const noexcept
   {
     return 0;
   }
+
+  /**
+   * \brief Returns a non-owning read-only view.
+   */
   const_view_type as_const_view() const noexcept
   {
     return {this};
   }
+
+  /**
+   * \brief Returns a stored value or zero when the coordinate is absent.
+   */
   data_t get_element(index_t i, index_t j) const
   {
-    if (i >= rows || j >= cols)
+    if (i >= m_rows || j >= m_cols)
       return {};
-    auto o = offsets.const_view();
-    auto v = values.const_view();
-    for (index_t k = 0; k < offsets.size(); ++k)
+    auto o = m_offsets.const_view();
+    auto v = m_values.const_view();
+    for (index_t k = 0; k < m_offsets.size(); ++k)
+    {
       if (static_cast<std::int64_t>(j) - static_cast<std::int64_t>(i) == o(k))
         return v({i, k});
+    }
     return {};
   }
+
+  /**
+   * \brief Computes a dense-vector product using the native sparse storage.
+   */
   void matvec(sparse_detail::host_vector<data_t> const& x, sparse_detail::host_vector<data_t>& y, data_t alpha = 1, data_t beta = 0) const
   {
-    sparse_detail::check_vector_sizes(rows, cols, x, y);
+    sparse_detail::check_vector_sizes(m_rows, m_cols, x, y);
     sparse_detail::initialize_output(y, beta);
     auto xv = x.const_view();
     auto yv = y.view();
-    auto o = offsets.const_view();
-    auto v = values.const_view();
-    for (index_t i = 0; i < rows; ++i)
-      for (index_t k = 0; k < offsets.size(); ++k)
+    auto o = m_offsets.const_view();
+    auto v = m_values.const_view();
+    for (index_t i = 0; i < m_rows; ++i)
+    {
+      for (index_t k = 0; k < m_offsets.size(); ++k)
       {
         auto j = static_cast<std::int64_t>(i) + o(k);
-        if (j >= 0 && j < static_cast<std::int64_t>(cols))
+        if (j >= 0 && j < static_cast<std::int64_t>(m_cols))
           yv(i) += alpha * v({i, k}) * xv(static_cast<index_t>(j));
       }
+    }
   }
+
+  /**
+   * \brief Replaces one scalar value, inserting storage when necessary.
+   */
   void set_element(index_t i, index_t j, data_t value)
   {
-    boba_always_assert(i < rows && j < cols, "Sparse coordinate out of bounds");
+    boba_always_assert(i < m_rows && j < m_cols, "Sparse coordinate out of bounds");
     std::int64_t d = static_cast<std::int64_t>(j) - static_cast<std::int64_t>(i);
-    for (index_t k = 0; k < offsets.size(); ++k)
-      if (offsets.view()(k) == d)
+    for (index_t k = 0; k < m_offsets.size(); ++k)
+    {
+      if (m_offsets.view()(k) == d)
       {
-        values.view()({i, k}) = value;
+        m_values.view()({i, k}) = value;
         return;
       }
+    }
     if (!(abs(value) > 0))
       return;
-    index_t old = offsets.size();
-    offsets.resize(old + 1);
-    values.resize({rows, old + 1});
-    offsets.view()(old) = d;
-    for (index_t r = 0; r < rows; ++r)
-      values.view()({r, old}) = data_t{};
-    values.view()({i, old}) = value;
+    index_t old = m_offsets.size();
+    m_offsets.resize(old + 1);
+    m_values.resize({m_rows, old + 1});
+    m_offsets.view()(old) = d;
+    for (index_t r = 0; r < m_rows; ++r)
+    {
+      m_values.view()({r, old}) = data_t{};
+    }
+    m_values.view()({i, old}) = value;
   }
+
+  /**
+   * \brief Adds a scalar value at one coordinate.
+   */
   void add_element(index_t i, index_t j, data_t value)
   {
     set_element(i, j, get_element(i, j) + value);
   }
+
+  /**
+   * \brief Sets all stored values to zero without changing structure.
+   */
   void zero_values()
   {
-    values.fill_with_zeros();
+    m_values.fill_with_zeros();
   }
+
+  /**
+   * \brief Scales all stored values.
+   */
   void scale(data_t value)
   {
-    values *= value;
+    m_values *= value;
   }
 };
 
