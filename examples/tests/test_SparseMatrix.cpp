@@ -29,14 +29,12 @@ void check_sparse(Sparse const& sparse,
   //
   // Checks that sparse matrix is identically equal to dense matrix
   //
-  for (boba::index_t i = 0; i < expected.rows(); ++i)
+  boba::loop<boba::host_space, 2>({expected.rows(), expected.cols()}, [&](boba::Array<boba::index_t, 2> indices)
   {
-    for (boba::index_t j = 0; j < expected.cols(); ++j)
-    {
-      error = std::max(error, boba::abs(dense_view({i, j}) - expected_view({i, j})));
-      error = std::max(error, boba::abs(sparse.get_element(i, j) - expected_view({i, j})));
-    }
-  }
+    auto [i, j] = indices;
+    error = std::max(error, boba::abs(dense_view({i, j}) - expected_view({i, j})));
+    error = std::max(error, boba::abs(sparse.get_element(i, j) - expected_view({i, j})));
+  });
 
   pass_or_fail(check, error, 1.0e-14);
   std::cout << format << " compression rate: " << sparse.compression_rate() << "x" << std::endl;
@@ -91,14 +89,14 @@ int main()
   vector_t x({dense.cols()}), y({dense.rows()});
   auto xv = x.view();
   auto y_view = y.view();
-  for (boba::index_t i = 0; i < x.size(); ++i)
+  boba::loop<boba::host_space, 1>(0, x.size(), [&](boba::index_t i)
   {
     xv(i) = static_cast<double>(i + 1);
-  }
-  for (boba::index_t i = 0; i < y.size(); ++i)
+  });
+  boba::loop<boba::host_space, 1>(0, y.size(), [&](boba::index_t i)
   {
     y_view(i) = 0.5 * static_cast<double>(i + 1);
-  }
+  });
 
   //
   // Dense operation that we will test with each format

@@ -128,10 +128,10 @@ struct CSRMatrix
     auto vv = m_values.const_view();
     for (index_t i = 0; i < m_rows; ++i)
     {
-      for (index_t k = ov(i); k < ov(i + 1); ++k)
+      ::boba::loop<host_space, 1>(ov(i), ov(i + 1), [&](index_t k)
       {
         yv(i) += alpha * vv(k) * xv(cv(k));
-      }
+      });
     }
   }
 
@@ -175,10 +175,10 @@ struct CSRMatrix
     values_after_resize(at) = value;
     columns_after_resize(at) = j;
     // Every row beginning at i + 1 now starts one position later.
-    for (index_t r = i + 1; r <= m_rows; ++r)
+    ::boba::loop<host_space, 1>(i + 1, m_rows + 1, [&](index_t r)
     {
       ov(r)++;
-    }
+    });
   }
 
   /**
@@ -242,10 +242,10 @@ Matrix<host_space, data_t> to_dense(CSRMatrix<data_t> const& sparse)
   auto values = sparse.m_values.const_view();
   for (index_t i = 0; i < sparse.rows(); ++i)
   {
-    for (index_t k = offsets(i); k < offsets(i + 1); ++k)
+    ::boba::loop<host_space, 1>(offsets(i), offsets(i + 1), [&](index_t k)
     {
       ov({i, columns(k)}) = values(k);
-    }
+    });
   }
   return out;
 }

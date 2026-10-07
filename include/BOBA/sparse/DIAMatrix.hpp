@@ -125,17 +125,15 @@ struct DIAMatrix
     auto yv = y.view();
     auto offs = m_offsets.const_view();
     auto v = m_values.const_view();
-    for (index_t i = 0; i < m_rows; ++i)
+    ::boba::loop<host_space, 2>({m_rows, m_offsets.size()}, [&](Array<index_t, 2> indices)
     {
-      for (index_t k = 0; k < m_offsets.size(); ++k)
+      auto [i, k] = indices;
+      auto j = static_cast<std::int64_t>(i) + offs(k);
+      if (j >= 0 && j < static_cast<std::int64_t>(m_cols))
       {
-        auto j = static_cast<std::int64_t>(i) + offs(k);
-        if (j >= 0 && j < static_cast<std::int64_t>(m_cols))
-        {
-          yv(i) += alpha * v({i, k}) * xv(static_cast<index_t>(j));
-        }
+        yv(i) += alpha * v({i, k}) * xv(static_cast<index_t>(j));
       }
-    }
+    });
   }
 
   /**
@@ -171,10 +169,10 @@ struct DIAMatrix
     auto offsets_after_resize = m_offsets.view();
     auto values_after_resize = m_values.view();
     offsets_after_resize(old) = d;
-    for (index_t r = 0; r < m_rows; ++r)
+    ::boba::loop<host_space, 1>(0, m_rows, [&](index_t r)
     {
       values_after_resize({r, old}) = data_t{};
-    }
+    });
     values_after_resize({i, old}) = value;
   }
 
@@ -236,17 +234,15 @@ Matrix<host_space, data_t> to_dense(DIAMatrix<data_t> const& sparse)
   auto ov = out.view();
   auto offsets = sparse.m_offsets.const_view();
   auto values = sparse.m_values.const_view();
-  for (index_t i = 0; i < sparse.rows(); ++i)
+  ::boba::loop<host_space, 2>({sparse.rows(), sparse.m_offsets.size()}, [&](Array<index_t, 2> indices)
   {
-    for (index_t k = 0; k < sparse.m_offsets.size(); ++k)
+    auto [i, k] = indices;
+    auto j = static_cast<std::int64_t>(i) + offsets(k);
+    if (j >= 0 && j < static_cast<std::int64_t>(sparse.cols()))
     {
-      auto j = static_cast<std::int64_t>(i) + offsets(k);
-      if (j >= 0 && j < static_cast<std::int64_t>(sparse.cols()))
-      {
-        ov({i, static_cast<index_t>(j)}) = values({i, k});
-      }
+      ov({i, static_cast<index_t>(j)}) = values({i, k});
     }
-  }
+  });
   return out;
 }
 

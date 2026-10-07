@@ -130,10 +130,10 @@ struct COOMatrix
     auto yv = y.view();
     auto iv = m_indices.const_view();
     auto vv = m_values.const_view();
-    for (index_t k = 0; k < nnz(); ++k)
+    ::boba::loop<host_space, 1>(0, nnz(), [&](index_t k)
     {
       yv(iv({k, 0})) += alpha * vv(k) * xv(iv({k, 1}));
-    }
+    });
   }
 
   /**
@@ -229,10 +229,10 @@ Matrix<host_space, data_t> to_dense(COOMatrix<data_t> const& sparse)
   auto ov = out.view();
   auto iv = sparse.m_indices.const_view();
   auto vv = sparse.m_values.const_view();
-  for (index_t k = 0; k < sparse.nnz(); ++k)
+  ::boba::loop<host_space, 1>(0, sparse.nnz(), [&](index_t k)
   {
     ov({iv({k, 0}), iv({k, 1})}) = vv(k);
-  }
+  });
   return out;
 }
 

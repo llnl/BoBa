@@ -40,10 +40,10 @@ struct ELLPACKMatrix
         m_values({m, w}),
         m_column_indices({m, w})
   {
-    for (index_t i = 0; i < m * w; ++i)
+    ::boba::loop<host_space, 1>(0, m * w, [&](index_t i)
     {
       m_column_indices.data()[i] = -1;
-    }
+    });
   }
 
   /**
@@ -130,16 +130,14 @@ struct ELLPACKMatrix
     auto yv = y.view();
     auto c = m_column_indices.const_view();
     auto v = m_values.const_view();
-    for (index_t i = 0; i < m_rows; ++i)
+    ::boba::loop<host_space, 2>({m_rows, m_width}, [&](Array<index_t, 2> indices)
     {
-      for (index_t k = 0; k < m_width; ++k)
+      auto [i, k] = indices;
+      if (c({i, k}) >= 0)
       {
-        if (c({i, k}) >= 0)
-        {
-          yv(i) += alpha * v({i, k}) * xv(static_cast<index_t>(c({i, k})));
-        }
+        yv(i) += alpha * v({i, k}) * xv(static_cast<index_t>(c({i, k})));
       }
-    }
+    });
   }
 
   /**
@@ -182,10 +180,10 @@ struct ELLPACKMatrix
     // Initialize the new column as unused before assigning this row's entry.
     auto columns_after_resize = m_column_indices.view();
     auto values_after_resize = m_values.view();
-    for (index_t r = 0; r < m_rows; ++r)
+    ::boba::loop<host_space, 1>(0, m_rows, [&](index_t r)
     {
       columns_after_resize({r, old}) = -1;
-    }
+    });
     m_width = old + 1;
     columns_after_resize({i, old}) = j;
     values_after_resize({i, old}) = value;
@@ -228,23 +226,26 @@ ELLPACKMatrix<data_t> from_dense_ellpack(Matrix<host_space, data_t> const& dense
   for (index_t i = 0; i < dense.rows(); ++i)
   {
     index_t c = 0;
-    for (index_t j = 0; j < dense.cols(); ++j)
+    ::boba::loop<host_space, 1>(0, dense.cols(), [&](index_t j)
     {
       c += sparse_detail::keep(dv({i, j}), tolerance);
-    }
+    });
     w = std::max(w, c);
   }
   ELLPACKMatrix<data_t> out(dense.rows(), dense.cols(), w);
   for (index_t i = 0; i < dense.rows(); ++i)
   {
-    for (index_t j = 0, k = 0; j < dense.cols(); ++j)
+    index_t k = 0;
+    auto columns = out.m_column_indices.view();
+    auto values = out.m_values.view();
+    ::boba::loop<host_space, 1>(0, dense.cols(), [&](index_t j)
     {
       if (sparse_detail::keep(dv({i, j}), tolerance))
       {
-        out.m_column_indices.view()({i, k}) = static_cast<std::int64_t>(j);
-        out.m_values.view()({i, k++}) = dv({i, j});
+        columns({i, k}) = static_cast<std::int64_t>(j);
+        values({i, k++}) = dv({i, j});
       }
-    }
+    });
   }
   return out;
 }
@@ -260,16 +261,14 @@ Matrix<host_space, data_t> to_dense(ELLPACKMatrix<data_t> const& sparse)
   auto ov = out.view();
   auto columns = sparse.m_column_indices.const_view();
   auto values = sparse.m_values.const_view();
-  for (index_t i = 0; i < sparse.rows(); ++i)
+  ::boba::loop<host_space, 2>({sparse.rows(), sparse.m_width}, [&](Array<index_t, 2> indices)
   {
-    for (index_t k = 0; k < sparse.m_width; ++k)
+    auto [i, k] = indices;
+    if (columns({i, k}) >= 0)
     {
-      if (columns({i, k}) >= 0)
-      {
-        ov({i, static_cast<index_t>(columns({i, k}))}) = values({i, k});
-      }
+      ov({i, static_cast<index_t>(columns({i, k}))}) = values({i, k});
     }
-  }
+  });
   return out;
 }
 

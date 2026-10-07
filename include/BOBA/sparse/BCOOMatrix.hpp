@@ -136,19 +136,14 @@ struct BCOOMatrix
     auto yv = y.view();
     auto iv = m_indices.const_view();
     auto vv = m_values.const_view();
-    for (index_t k = 0; k < nnz(); ++k)
+    ::boba::loop<host_space, 3>({nnz(), m_block_rows, m_block_cols}, [&](Array<index_t, 3> indices)
     {
+      auto [k, u, v] = indices;
       index_t p = iv({k, 0}), q = iv({k, 1});
-      for (index_t u = 0; u < m_block_rows; ++u)
-      {
-        for (index_t v = 0; v < m_block_cols; ++v)
-        {
-          auto out_id = p * m_block_rows + u;
-          auto in_id = q * m_block_cols + v;
-          yv(out_id) += alpha * vv({u, v, k}) * xv(in_id);
-        }
-      }
-    }
+      auto out_id = p * m_block_rows + u;
+      auto in_id = q * m_block_cols + v;
+      yv(out_id) += alpha * vv({u, v, k}) * xv(in_id);
+    });
   }
 
   /**
@@ -189,13 +184,11 @@ struct BCOOMatrix
     // fresh views before writing its requested local value.
     auto indices_after_resize = m_indices.view();
     auto values_after_resize = m_values.view();
-    for (index_t a = 0; a < m_block_rows; ++a)
+    ::boba::loop<host_space, 2>({m_block_rows, m_block_cols}, [&](Array<index_t, 2> loop_indices)
     {
-      for (index_t b = 0; b < m_block_cols; ++b)
-      {
-        values_after_resize({a, b, old}) = data_t{};
-      }
-    }
+      auto [a, b] = loop_indices;
+      values_after_resize({a, b, old}) = data_t{};
+    });
     indices_after_resize({old, 0}) = p;
     indices_after_resize({old, 1}) = q;
     values_after_resize({u, v, old}) = value;
@@ -265,20 +258,15 @@ Matrix<host_space, data_t> to_dense(BCOOMatrix<data_t> const& sparse)
   auto block_rows = sparse.m_block_rows;
   auto block_cols = sparse.m_block_cols;
 
-  for (index_t k = 0; k < sparse.nnz(); ++k)
+  ::boba::loop<host_space, 3>({sparse.nnz(), block_rows, block_cols}, [&](Array<index_t, 3> loop_indices)
   {
+    auto [k, u, v] = loop_indices;
     index_t p = indices({k, 0});
     index_t q = indices({k, 1});
-    for (index_t u = 0; u < block_rows; ++u)
-    {
-      for (index_t v = 0; v < block_cols; ++v)
-      {
-        auto row_id = p * block_rows + u;
-        auto col_id = q * block_cols + v;
-        ov({row_id, col_id}) = values({u, v, k});
-      }
-    }
-  }
+    auto row_id = p * block_rows + u;
+    auto col_id = q * block_cols + v;
+    ov({row_id, col_id}) = values({u, v, k});
+  });
   return out;
 }
 
