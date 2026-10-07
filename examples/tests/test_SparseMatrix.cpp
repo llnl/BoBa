@@ -9,6 +9,9 @@ using boba::host_space;
 using boba::Matrix;
 using boba::Vector;
 
+/**
+ * \brief Compares sparse lookup, dense export, and matvec with a dense oracle.
+ */
 template <typename Sparse>
 void check_sparse(Sparse const& sparse, Matrix<host_space, double> const& expected, bool& check)
 {
@@ -45,6 +48,9 @@ void check_sparse(Sparse const& sparse, Matrix<host_space, double> const& expect
   pass_or_fail(check, matvec_error, 1.0e-13);
 }
 
+/**
+ * \brief Exercises all initial sparse matrix formats against dense storage.
+ */
 int main()
 {
   bool check = true;
