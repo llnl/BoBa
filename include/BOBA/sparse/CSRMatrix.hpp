@@ -144,6 +144,8 @@ struct CSRMatrix
     auto ov = m_row_offsets.view();
     auto cv = m_column_indices.view();
     auto vv = m_values.view();
+
+    // Search only this row's half-open storage segment for the column.
     for (index_t k = ov(i); k < ov(i + 1); ++k)
     {
       if (cv(k) == j)
@@ -154,13 +156,17 @@ struct CSRMatrix
     }
     if (!(abs(value) > 0))
     {
+      // A zero absent from the row does not need a structural entry.
       return;
     }
     index_t at = ov(i + 1);
+    // Insert at the end of the row, then shift later rows right by one slot.
     m_values.resize(nnz() + 1);
     m_column_indices.resize(nnz());
+    // The resized arrays may have moved, so refresh their views before shifting.
     auto values_after_resize = m_values.view();
     auto columns_after_resize = m_column_indices.view();
+    // Shift entries backward to leave the insertion position available.
     for (index_t k = nnz() - 1; k > at; --k)
     {
       values_after_resize(k) = values_after_resize(k - 1);
@@ -168,6 +174,7 @@ struct CSRMatrix
     }
     values_after_resize(at) = value;
     columns_after_resize(at) = j;
+    // Every row beginning at i + 1 now starts one position later.
     for (index_t r = i + 1; r <= m_rows; ++r)
     {
       ov(r)++;

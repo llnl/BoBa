@@ -144,6 +144,8 @@ struct COOMatrix
     boba_always_assert(i >= 0 && i < m_rows && j >= 0 && j < m_cols, "Sparse coordinate out of bounds");
     auto indices = m_indices.view();
     auto values = m_values.view();
+    // COO has no row directory, so locate an existing coordinate by scanning
+    // the coordinate list.
     for (index_t k = 0; k < nnz(); ++k)
     {
       if (indices({k, 0}) == i && indices({k, 1}) == j)
@@ -154,11 +156,14 @@ struct COOMatrix
     }
     if (!(abs(value) > 0))
     {
+      // Do not create an explicit zero entry in the coordinate list.
       return;
     }
     index_t old = nnz();
+    // Appending preserves the coordinate/value pairing; no sorting is needed.
     m_values.resize(old + 1);
     m_indices.resize({old + 1, 2});
+    // Resizing may invalidate earlier views, so acquire views of the new storage.
     auto values_after_resize = m_values.view();
     auto indices_after_resize = m_indices.view();
     values_after_resize(old) = value;

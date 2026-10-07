@@ -86,13 +86,14 @@ struct BCOOMatrix
    * indices per block. The result is truncated to two decimal places,
    * matching tensor compression-rate semantics.
    */
-  [[nodiscard]] float compression_rate() const noexcept
+  [[nodiscard]]
+  float compression_rate() const noexcept
   {
-    double compressed_size = static_cast<double>(m_block_rows) * static_cast<double>(m_block_cols) * static_cast<double>(nnz()) + 2.0 * static_cast<double>(nnz());
-    if (compressed_size == 0.0)
+    if (nnz() == 0)
     {
       return 0.0F;
     }
+    double compressed_size = static_cast<double>(m_block_rows) * static_cast<double>(m_block_cols) * static_cast<double>(nnz()) + 2.0 * static_cast<double>(nnz());
     double full_size = static_cast<double>(rows()) * static_cast<double>(cols());
     return static_cast<float>(std::floor(full_size / compressed_size * 100.0) / 100.0);
   }
@@ -106,6 +107,7 @@ struct BCOOMatrix
     {
       return {};
     }
+
     auto row_index = Multiindexer<2>::multiindex({m_block_rows, m_block_grid_rows}, i);
     auto col_index = Multiindexer<2>::multiindex({m_block_cols, m_block_grid_cols}, j);
     index_t u = row_index[0], p = row_index[1];
@@ -141,7 +143,9 @@ struct BCOOMatrix
       {
         for (index_t v = 0; v < m_block_cols; ++v)
         {
-          yv(p * m_block_rows + u) += alpha * vv({u, v, k}) * xv(q * m_block_cols + v);
+          auto out_id = p * m_block_rows + u;
+          auto in_id = q * m_block_cols + v;
+          yv(out_id) += alpha * vv({u, v, k}) * xv(in_id);
         }
       }
     }
@@ -153,12 +157,16 @@ struct BCOOMatrix
   void set_element(index_t i, index_t j, data_t value)
   {
     boba_always_assert(i < rows() && j < cols(), "Sparse coordinate out of bounds");
+    // Split the scalar coordinate into a local block coordinate and a block-grid
+    // coordinate; the latter identifies the stored block and the former its slot.
     auto row_index = Multiindexer<2>::multiindex({m_block_rows, m_block_grid_rows}, i);
     auto col_index = Multiindexer<2>::multiindex({m_block_cols, m_block_grid_cols}, j);
     index_t u = row_index[0], p = row_index[1];
     index_t v = col_index[0], q = col_index[1];
     auto indices = m_indices.view();
     auto values = m_values.view();
+
+    // Update an existing block in place when its grid coordinate is present.
     for (index_t k = 0; k < nnz(); ++k)
     {
       if (indices({k, 0}) == p && indices({k, 1}) == q)
@@ -169,11 +177,16 @@ struct BCOOMatrix
     }
     if (!(abs(value) > 0))
     {
+      // Do not allocate a full block for an absent zero scalar.
       return;
     }
     index_t old = nnz();
+    // A new BCOO entry always allocates a complete dense block and one pair of
+    // block-grid indices, even when most block values are zero.
     m_indices.resize({old + 1, 2});
     m_values.resize({m_block_rows, m_block_cols, old + 1});
+    // Resizing may invalidate earlier views; initialize the new block through
+    // fresh views before writing its requested local value.
     auto indices_after_resize = m_indices.view();
     auto values_after_resize = m_values.view();
     for (index_t a = 0; a < m_block_rows; ++a)
@@ -248,15 +261,21 @@ Matrix<host_space, data_t> to_dense(BCOOMatrix<data_t> const& sparse)
   auto ov = out.view();
   auto indices = sparse.m_indices.const_view();
   auto values = sparse.m_values.const_view();
+
+  auto block_rows = sparse.m_block_rows;
+  auto block_cols = sparse.m_block_cols;
+
   for (index_t k = 0; k < sparse.nnz(); ++k)
   {
     index_t p = indices({k, 0});
     index_t q = indices({k, 1});
-    for (index_t u = 0; u < sparse.m_block_rows; ++u)
+    for (index_t u = 0; u < block_rows; ++u)
     {
-      for (index_t v = 0; v < sparse.m_block_cols; ++v)
+      for (index_t v = 0; v < block_cols; ++v)
       {
-        ov({p * sparse.m_block_rows + u, q * sparse.m_block_cols + v}) = values({u, v, k});
+        auto row_id = p * block_rows + u;
+        auto col_id = q * block_cols + v;
+        ov({row_id, col_id}) = values({u, v, k});
       }
     }
   }

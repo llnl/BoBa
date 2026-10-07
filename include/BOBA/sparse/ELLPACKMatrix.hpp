@@ -150,6 +150,8 @@ struct ELLPACKMatrix
     boba_always_assert(i < m_rows && j < m_cols, "Sparse coordinate out of bounds");
     auto columns = m_column_indices.view();
     auto values = m_values.view();
+
+    // First update an existing slot so the row width remains unchanged.
     for (index_t k = 0; k < m_width; ++k)
     {
       if (columns({i, k}) == j)
@@ -160,8 +162,10 @@ struct ELLPACKMatrix
     }
     if (!(abs(value) > 0))
     {
+      // An absent zero does not need a sentinel slot.
       return;
     }
+    // Use the first sentinel slot already allocated to this row when possible.
     for (index_t k = 0; k < m_width; ++k)
     {
       if (columns({i, k}) < 0)
@@ -172,8 +176,10 @@ struct ELLPACKMatrix
       }
     }
     index_t old = m_width;
+    // ELLPACK has one common width, so a full row grows every row equally.
     m_values.resize({m_rows, m_width + 1});
     m_column_indices.resize({m_rows, m_width + 1});
+    // Initialize the new column as unused before assigning this row's entry.
     auto columns_after_resize = m_column_indices.view();
     auto values_after_resize = m_values.view();
     for (index_t r = 0; r < m_rows; ++r)

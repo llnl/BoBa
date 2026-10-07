@@ -124,13 +124,13 @@ struct DIAMatrix
     sparse_detail::initialize_output(y, beta);
     auto xv = x.const_view();
     auto yv = y.view();
-    auto o = m_offsets.const_view();
+    auto offs = m_offsets.const_view();
     auto v = m_values.const_view();
     for (index_t i = 0; i < m_rows; ++i)
     {
       for (index_t k = 0; k < m_offsets.size(); ++k)
       {
-        auto j = static_cast<std::int64_t>(i) + o(k);
+        auto j = static_cast<std::int64_t>(i) + offs(k);
         if (j >= 0 && j < static_cast<std::int64_t>(m_cols))
         {
           yv(i) += alpha * v({i, k}) * xv(static_cast<index_t>(j));
@@ -145,9 +145,11 @@ struct DIAMatrix
   void set_element(index_t i, index_t j, data_t value)
   {
     boba_always_assert(i < m_rows && j < m_cols, "Sparse coordinate out of bounds");
+    // DIA identifies a complete diagonal by its signed column-minus-row offset.
     std::int64_t d = static_cast<std::int64_t>(j) - static_cast<std::int64_t>(i);
     auto offsets = m_offsets.view();
     auto values = m_values.view();
+    // If the diagonal already exists, only its value slot needs updating.
     for (index_t k = 0; k < m_offsets.size(); ++k)
     {
       if (offsets(k) == d)
@@ -158,11 +160,15 @@ struct DIAMatrix
     }
     if (!(abs(value) > 0))
     {
+      // Do not allocate a whole diagonal for an absent zero.
       return;
     }
     index_t old = m_offsets.size();
+    // A new diagonal allocates one value slot for every matrix row, including
+    // padding positions whose columns lie outside the rectangular matrix.
     m_offsets.resize(old + 1);
     m_values.resize({m_rows, old + 1});
+    // Resizing may invalidate earlier views, so acquire views of the new column.
     auto offsets_after_resize = m_offsets.view();
     auto values_after_resize = m_values.view();
     offsets_after_resize(old) = d;
