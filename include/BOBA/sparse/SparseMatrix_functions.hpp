@@ -45,7 +45,9 @@ COOMatrix<data_t> from_dense_coo(Matrix<host_space, data_t> const& dense, data_t
     for (index_t j = 0; j < dense.cols(); ++j)
     {
       if (sparse_detail::keep(dv({i, j}), tolerance))
+      {
         out.set_element(i, j, dv({i, j}));
+      }
     }
   }
   return out;
@@ -65,7 +67,9 @@ CSRMatrix<data_t> from_dense_csr(Matrix<host_space, data_t> const& dense, data_t
     for (index_t j = 0; j < dense.cols(); ++j)
     {
       if (sparse_detail::keep(dv({i, j}), tolerance))
+      {
         out.set_element(i, j, dv({i, j}));
+      }
     }
   }
   return out;
@@ -118,7 +122,9 @@ DIAMatrix<data_t> from_dense_dia(Matrix<host_space, data_t> const& dense, data_t
     for (index_t j = 0; j < dense.cols(); ++j)
     {
       if (sparse_detail::keep(dv({i, j}), tolerance))
+      {
         out.set_element(i, j, dv({i, j}));
+      }
     }
   }
   return out;
@@ -140,7 +146,9 @@ BCOOMatrix<data_t> from_dense_bcoo(Matrix<host_space, data_t> const& dense, inde
     for (index_t j = 0; j < dense.cols(); ++j)
     {
       if (sparse_detail::keep(dv({i, j}), tolerance))
+      {
         out.set_element(i, j, dv({i, j}));
+      }
     }
   }
   return out;

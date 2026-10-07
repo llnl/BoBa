@@ -9,7 +9,13 @@ namespace boba
 
 /**
  * \brief ELLPACK sparse matrix with a common row-slot width.
- * Unused column slots contain the signed sentinel `-1`.
+ *
+ * The logical matrix has shape `(m_rows, m_cols)`. `m_values` and
+ * `m_column_indices` each have shape `(m_rows, m_width)`, so every row owns
+ * `m_width` slots. A nonnegative column index represents an entry and its
+ * scalar value is `m_values(i, k)`; `-1` marks an unused slot whose value is
+ * ignored. Column indices are unique within a row but need not be sorted.
+ * Inserting into a full row increases the common width for every row.
  */
 template <typename data_t = double>
 struct ELLPACKMatrix
@@ -87,13 +93,17 @@ struct ELLPACKMatrix
   data_t get_element(index_t i, index_t j) const
   {
     if (i >= m_rows || j >= m_cols)
+    {
       return {};
+    }
     auto c = m_column_indices.const_view();
     auto v = m_values.const_view();
     for (index_t k = 0; k < m_width; ++k)
     {
       if (c({i, k}) == static_cast<std::int64_t>(j))
+      {
         return v({i, k});
+      }
     }
     return {};
   }
@@ -114,7 +124,9 @@ struct ELLPACKMatrix
       for (index_t k = 0; k < m_width; ++k)
       {
         if (c({i, k}) >= 0)
+        {
           yv(i) += alpha * v({i, k}) * xv(static_cast<index_t>(c({i, k})));
+        }
       }
     }
   }
@@ -134,7 +146,9 @@ struct ELLPACKMatrix
       }
     }
     if (!(abs(value) > 0))
+    {
       return;
+    }
     for (index_t k = 0; k < m_width; ++k)
     {
       if (m_column_indices.view()({i, k}) < 0)

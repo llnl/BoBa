@@ -9,6 +9,12 @@ namespace boba
 
 /**
  * \brief Coordinate-list sparse matrix with unsorted zero-based coordinates.
+ *
+ * The logical matrix has shape `(m_rows, m_cols)`. `m_values` has length
+ * `nnz()` and `m_indices` has shape `(nnz(), 2)`. Entry `k` is represented by
+ * `m_indices(k, 0)` for its row, `m_indices(k, 1)` for its column, and
+ * `m_values(k)` for its scalar value. Coordinates are unique by contract but
+ * need not be sorted. Missing coordinates represent zero.
  */
 template <typename data_t = double>
 struct COOMatrix
@@ -84,13 +90,17 @@ struct COOMatrix
   data_t get_element(index_t i, index_t j) const
   {
     if (i >= m_rows || j >= m_cols)
+    {
       return data_t{};
+    }
     auto iv = m_indices.const_view();
     auto vv = m_values.const_view();
     for (index_t k = 0; k < nnz(); ++k)
     {
       if (iv({k, 0}) == i && iv({k, 1}) == j)
+      {
         return vv(k);
+      }
     }
     return data_t{};
   }
@@ -130,7 +140,9 @@ struct COOMatrix
       }
     }
     if (!(abs(value) > 0))
+    {
       return;
+    }
     index_t old = nnz();
     m_values.resize(old + 1);
     m_indices.resize({old + 1, 2});

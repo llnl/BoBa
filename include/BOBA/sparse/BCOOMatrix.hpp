@@ -9,6 +9,16 @@ namespace boba
 
 /**
  * \brief Block coordinate sparse matrix with dense rectangular blocks.
+ *
+ * The scalar matrix shape is
+ * `(m_block_rows * m_block_grid_rows, m_block_cols * m_block_grid_cols)`.
+ * `m_values` has shape `(m_block_rows, m_block_cols, nnz())` and
+ * `m_indices` has shape `(nnz(), 2)`. Block `k` has grid coordinates
+ * `(m_indices(k, 0), m_indices(k, 1))`; for local coordinates `(u, v)`, its
+ * definition is `A(p * m_block_rows + u, q * m_block_cols + v) =
+ * m_values(u, v, k)`. Block coordinates are unique but need not be sorted; a
+ * missing block represents an all-zero block. Only full, rectangular blocks
+ * are supported.
  */
 template <typename data_t = double>
 struct BCOOMatrix
@@ -83,7 +93,9 @@ struct BCOOMatrix
   data_t get_element(index_t i, index_t j) const
   {
     if (i >= rows() || j >= cols())
+    {
       return {};
+    }
     auto row_index = Multiindexer<2>::multiindex({m_block_rows, m_block_grid_rows}, i);
     auto col_index = Multiindexer<2>::multiindex({m_block_cols, m_block_grid_cols}, j);
     index_t u = row_index[0], p = row_index[1];
@@ -93,7 +105,9 @@ struct BCOOMatrix
     for (index_t k = 0; k < nnz(); ++k)
     {
       if (iv({k, 0}) == p && iv({k, 1}) == q)
+      {
         return vv({u, v, k});
+      }
     }
     return {};
   }
@@ -141,7 +155,9 @@ struct BCOOMatrix
       }
     }
     if (!(abs(value) > 0))
+    {
       return;
+    }
     index_t old = nnz();
     m_indices.resize({old + 1, 2});
     m_values.resize({m_block_rows, m_block_cols, old + 1});

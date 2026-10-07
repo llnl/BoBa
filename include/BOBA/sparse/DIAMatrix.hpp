@@ -9,6 +9,14 @@ namespace boba
 
 /**
  * \brief Sparse matrix stored by diagonal offsets `column - row`.
+ *
+ * The logical matrix has shape `(m_rows, m_cols)`. `m_offsets` has length
+ * `ndiag` and `m_values` has shape `(m_rows, ndiag)`. Diagonal `k` has offset
+ * `m_offsets(k)` and represents
+ * `A(i, i + m_offsets(k)) = m_values(i, k)` whenever the column is in bounds.
+ * Rows outside the logical shape are padding and do not represent matrix
+ * entries. Offsets are unique, and adding a new diagonal allocates one value
+ * slot for every logical row.
  */
 template <typename data_t = double>
 struct DIAMatrix
@@ -80,13 +88,17 @@ struct DIAMatrix
   data_t get_element(index_t i, index_t j) const
   {
     if (i >= m_rows || j >= m_cols)
+    {
       return {};
+    }
     auto o = m_offsets.const_view();
     auto v = m_values.const_view();
     for (index_t k = 0; k < m_offsets.size(); ++k)
     {
       if (static_cast<std::int64_t>(j) - static_cast<std::int64_t>(i) == o(k))
+      {
         return v({i, k});
+      }
     }
     return {};
   }
@@ -108,7 +120,9 @@ struct DIAMatrix
       {
         auto j = static_cast<std::int64_t>(i) + o(k);
         if (j >= 0 && j < static_cast<std::int64_t>(m_cols))
+        {
           yv(i) += alpha * v({i, k}) * xv(static_cast<index_t>(j));
+        }
       }
     }
   }
@@ -129,7 +143,9 @@ struct DIAMatrix
       }
     }
     if (!(abs(value) > 0))
+    {
       return;
+    }
     index_t old = m_offsets.size();
     m_offsets.resize(old + 1);
     m_values.resize({m_rows, old + 1});

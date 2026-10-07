@@ -9,6 +9,14 @@ namespace boba
 
 /**
  * \brief Compressed sparse row matrix.
+ *
+ * The logical matrix has shape `(m_rows, m_cols)`. `m_values` and
+ * `m_column_indices` have length `nnz()`, while `m_row_offsets` has length
+ * `m_rows + 1`. Entries in row `i` occupy the half-open range
+ * `[m_row_offsets(i), m_row_offsets(i + 1))` in the two length-`nnz()` arrays.
+ * Row offsets are nondecreasing, begin at zero, and end at the number of
+ * stored entries. Column indices are unique within a row but need not be
+ * sorted.
  */
 template <typename data_t = double>
 struct CSRMatrix
@@ -83,14 +91,18 @@ struct CSRMatrix
   data_t get_element(index_t i, index_t j) const
   {
     if (i >= m_rows || j >= m_cols)
+    {
       return data_t{};
+    }
     auto ov = m_row_offsets.const_view();
     auto cv = m_column_indices.const_view();
     auto vv = m_values.const_view();
     for (index_t k = ov(i); k < ov(i + 1); ++k)
     {
       if (cv(k) == j)
+      {
         return vv(k);
+      }
     }
     return data_t{};
   }
@@ -134,7 +146,9 @@ struct CSRMatrix
       }
     }
     if (!(abs(value) > 0))
+    {
       return;
+    }
     index_t at = ov(i + 1);
     m_values.resize(nnz() + 1);
     m_column_indices.resize(nnz());
