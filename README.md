@@ -49,7 +49,7 @@ Please use this citation when citing BoBa
               Vuchkov, Radoslav and
               De, Saibal and
               Nelson, Austin and
-              Sands, Bill and
+              Sands, William and
               Ricketson, Lee and
               Jones, Holger and
               Walton, Steven and
