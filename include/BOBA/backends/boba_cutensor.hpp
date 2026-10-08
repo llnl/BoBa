@@ -464,13 +464,17 @@ void cutensor_contract(
   BOBA_CALI_SWITCH("cutensorEstimateWorkspaceSize", "cutensorCreatePlan");
 
   cutensorPlan_t plan;
+  // Allow the plan more workspace than the initial estimate.  Some cuTENSOR
+  // plans, particularly for strided views, require more workspace at
+  // execution than the default estimate reports.
+  const uint64_t workspaceSizeLimit = 2 * workspaceSizeEstimate;
   boba::detail::cutensor_assert(
     cutensorCreatePlan(
       detail::cutensor_handle,
       &plan,
       desc,
       planPref,
-      workspaceSizeEstimate));
+      workspaceSizeLimit));
 
   //
   // Optional: Query information about the created plan
@@ -487,12 +491,15 @@ void cutensor_contract(
       &actualWorkspaceSize,
       sizeof(actualWorkspaceSize)));
 
-  actualWorkspaceSize *= 2;
+  // The plan estimate can be larger than the required-workspace attribute.
+  // Keep the larger value because cuTENSOR may use the estimate selected while
+  // creating the plan during execution.
+  const uint64_t workspaceSize = std::max(workspaceSizeLimit, actualWorkspaceSize);
 
   BOBA_CALI_SWITCH("cutensorPlanGetAttribute", "allocate_work");
 
   // Allocate workspace
-  ::boba::Vector<execution_space::CUDA, unsigned char> work({static_cast<size_t>(actualWorkspaceSize)});
+  ::boba::Vector<execution_space::CUDA, unsigned char> work({static_cast<size_t>(workspaceSize)});
 
   BOBA_CALI_SWITCH("allocate_work", "cudaStreamCreate");
 
@@ -515,7 +522,7 @@ void cutensor_contract(
       tensor_C.data(),
       tensor_C.data(),
       work.data(),
-      actualWorkspaceSize,
+      workspaceSize,
       stream));
 
   BOBA_CALI_SWITCH("cutensorContract", "destroy");
