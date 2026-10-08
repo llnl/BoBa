@@ -81,9 +81,9 @@ template <size_t dimension, execution_space space, typename data_t>
 auto norm_frobenius(TensorTrain<dimension, space, data_t> const& train)
 {
   BOBA_CALI_MARK
-  const auto product = train.inner_product(train);
-  const auto abs_product = boba::abs(product);
-  return boba::sqrt(abs_product);
+  TensorTrain<dimension, space, data_t> orthogonalized_train(train);
+  orthogonalized_train.orthogonalize();
+  return ::boba::norm_frobenius(orthogonalized_train.cores[dimension - 1]);
 }
 
 // -------------------------------------------------------------------------------------
@@ -488,7 +488,6 @@ auto norm_difference_frobenius(
   TensorTrain<dimension, space, data_t> temp = tt_A - tt_B;
   checkpoint();
   temp.rename("norm_difference_temp");
-  temp.round();
   data_t diff_frobenius = ::boba::norm_frobenius(temp);
   return diff_frobenius;
 }
