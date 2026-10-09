@@ -3,10 +3,6 @@
 #pragma once
 #include "BOBA/boba.hpp"
 
-#ifdef BOBA_RAJA
-#include "RAJA/RAJA.hpp"
-#endif
-
 namespace boba
 {
 
@@ -14,6 +10,37 @@ namespace atomics
 {
 
 // TODO<documentation> use concepts to constrain types used in atomics to supported types
+
+#if defined(BOBA_CUDA) || defined(BOBA_HIP)
+/**
+ * @brief Atomically adds a 64-bit size value on GPU backends.
+ *
+ * CUDA and HIP do not consistently provide atomicAdd overloads for
+ * `size_t`, which is an `unsigned long` on some host platforms. Use the
+ * universally available 64-bit compare-and-swap operation instead.
+ */
+__boba_device__ inline void atomic_add(size_t* destination_ptr, const size_t& source_value)
+{
+#ifdef BOBA_DEVICE_CODE
+  static_assert(sizeof(size_t) == sizeof(unsigned long long), "GPU size_t must be 64-bit");
+  auto address = reinterpret_cast<unsigned long long*>(destination_ptr);
+  auto old_value = *address;
+  while (true)
+  {
+    const auto assumed_value = old_value;
+    old_value = atomicCAS(address,
+                          assumed_value,
+                          assumed_value + static_cast<unsigned long long>(source_value));
+    if (old_value == assumed_value)
+    {
+      break;
+    }
+  }
+#else
+  *destination_ptr += source_value;
+#endif
+}
+#endif
 
 /**
  * @brief Atomically adds a value to a destination.
@@ -100,38 +127,74 @@ void atomic_min(T* destination_ptr, const T& source_value)
 #endif
 }
 
-template <::boba::execution_space space>
-struct SpaceAtomicTraits;
+template <::boba::execution_space space, typename _data_t>
+struct ReferenceSelector;
 
-#ifdef BOBA_RAJA
-
-template <>
-struct SpaceAtomicTraits<::boba::execution_space::CPU>
+#if defined(BOBA_CUDA) || defined(BOBA_HIP)
+/**
+ * @brief Native GPU atomic reference for scalar values.
+ *
+ * This covers the operations used by BoBa's current atomic views. Assignment
+ * is intentionally a plain store, matching the previous device reference.
+ */
+template <typename T>
+struct DeviceAtomicReference
 {
-  using raja_atomic_policy = RAJA::seq_atomic;
+  using value_type = T;
+
+  __boba_host_device__ constexpr explicit DeviceAtomicReference(value_type* value_ptr)
+      : m_value_ptr(value_ptr)
+  {
+  }
+
+  __boba_host_device__ value_type load() const
+  {
+    return *m_value_ptr;
+  }
+
+  __boba_host_device__ operator value_type() const
+  {
+    return load();
+  }
+
+  __boba_host_device__ value_type operator=(value_type rhs) const
+  {
+    *m_value_ptr = rhs;
+    return rhs;
+  }
+
+  __boba_host_device__ value_type operator+=(value_type rhs) const
+  {
+    atomic_add(m_value_ptr, rhs);
+    return load();
+  }
+
+  __boba_host_device__ value_type operator-=(value_type rhs) const
+  {
+    atomic_add(m_value_ptr, -rhs);
+    return load();
+  }
+
+private:
+  value_type* m_value_ptr;
 };
 
 #ifdef BOBA_CUDA
-template <>
-struct SpaceAtomicTraits<::boba::execution_space::CUDA>
+template <typename T>
+struct ReferenceSelector<::boba::execution_space::CUDA, T>
 {
-  using raja_atomic_policy = RAJA::cuda_atomic;
+  using type = DeviceAtomicReference<T>;
 };
 #endif
 
 #ifdef BOBA_HIP
-template <>
-struct SpaceAtomicTraits<::boba::execution_space::HIP>
+template <typename T>
+struct ReferenceSelector<::boba::execution_space::HIP, T>
 {
-  using raja_atomic_policy = RAJA::hip_atomic;
+  using type = DeviceAtomicReference<T>;
 };
 #endif
-
-template <::boba::execution_space space, typename _data_t>
-struct ReferenceSelector
-{
-  using type = RAJA::AtomicRef<_data_t, typename SpaceAtomicTraits<space>::raja_atomic_policy>;
-};
+#endif
 
 #if defined(BOBA_CUDA) || defined(BOBA_HIP)
 template <typename T>
@@ -218,23 +281,16 @@ struct ReferenceSelector<::boba::execution_space::HIP, boba::complex<double>>
 template <::boba::execution_space space, typename _data_t>
 using space_atomic_reference = typename ReferenceSelector<space, _data_t>::type;
 
-#else
-
-template <>
-struct SpaceAtomicTraits<::boba::execution_space::CPU>
-{
-};
-
-/*!
+/*! 
  * \brief Atomic wrapper object, but actually non-atomic.
  *
- * Based on RAJA::AtomicRef but changed to only do RAJA::seq_atomic non-atomic
- * operations. Therefore this is only compatible with CPU execution.
+ * This is a sequential, non-atomic reference and is compatible with CPU
+ * execution.
  *
  * Provides an interface akin to that provided by std::atomic, but for an
  * arbitrary memory location.
  *
- * This is used on GPUs when you haven't set BOBA_RAJA
+ * GPU execution uses the native device reference above.
  */
 template <typename T, ::boba::execution_space space>
 struct Reference
@@ -255,7 +311,7 @@ struct Reference
   {
     if constexpr (space != ::boba::execution_space::CPU)
     {
-      boba_always_assert_equal(space, ::boba::execution_space::CPU, "atomics::Reference fallback implementation only works with CPU. Build with RAJA to enable correct implementations guarded by BOBA_RAJA for GPUs.");
+      boba_always_assert_equal(space, ::boba::execution_space::CPU, "atomics::Reference only works with CPU.");
     }
   }
 
@@ -646,10 +702,11 @@ private:
   value_type* m_value_ptr;
 };
 
-template <::boba::execution_space space, typename _data_t>
-using space_atomic_reference = Reference<_data_t, space>;
-
-#endif
+template <typename T>
+struct ReferenceSelector<::boba::execution_space::CPU, T>
+{
+  using type = Reference<T, ::boba::execution_space::CPU>;
+};
 
 /**
  * \brief
