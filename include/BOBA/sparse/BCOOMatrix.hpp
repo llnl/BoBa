@@ -9,24 +9,25 @@ namespace boba
 
 /**
  * \brief Block coordinate sparse matrix with dense rectangular blocks.
- * Blocks are assumed all the same size and stored as dense objects in a containing COO format.
+ * Blocks use row and column partitions stored as BoBa vectors. Block `(p, q)`
+ * has shape `(m_block_rows(p), m_block_cols(q))` and is stored densely in a
+ * flattened value vector.
  *
  * The scalar matrix shape is
- * `(m_block_rows * m_block_grid_rows, m_block_cols * m_block_grid_cols)`.
- * `m_values` has shape `(m_block_rows, m_block_cols, nnz())` and
  * `m_indices` has shape `(nnz(), 2)`. Block `k` has grid coordinates
- * `(m_indices(k, 0), m_indices(k, 1))`; for local coordinates `(u, v)`, its
- * definition is `A(p * m_block_rows + u, q * m_block_cols + v) =
- * m_values(u, v, k)`. Block coordinates are unique but need not be sorted; a
- * missing block represents an all-zero block. Only full, rectangular blocks
- * are supported.
+ * `(m_indices(k, 0), m_indices(k, 1))`; its values begin at
+ * `m_value_offsets(k)` and have size `m_block_rows(p) * m_block_cols(q)`.
+ * Block coordinates are unique but need not be sorted; a missing block
+ * represents an all-zero block.
  */
 template <typename data_t = double>
 struct BCOOMatrix
 {
   using data_type = data_t;
-  index_t m_block_rows = 0, m_block_cols = 0, m_block_grid_rows = 0, m_block_grid_cols = 0;
-  Tensor<3, host_space, data_t> m_values;
+  Vector<host_space, index_t> m_block_rows;
+  Vector<host_space, index_t> m_block_cols;
+  Vector<host_space, data_t> m_values;
+  Vector<host_space, index_t> m_value_offsets;
   Matrix<host_space, index_t> m_indices;
 
   /**
@@ -38,13 +39,35 @@ struct BCOOMatrix
    * \brief Constructs a matrix with the requested dimensions.
    */
   BCOOMatrix(index_t br, index_t bc, index_t gr, index_t gc)
-      : m_block_rows(br),
-        m_block_cols(bc),
-        m_block_grid_rows(gr),
-        m_block_grid_cols(gc),
-        m_values({br, bc, 0}),
+      : m_block_rows(std::vector<index_t>(gr, br)),
+        m_block_cols(std::vector<index_t>(gc, bc)),
+        m_value_offsets({1}),
         m_indices({0, 2})
   {
+    m_value_offsets.fill_with_zeros();
+  }
+
+  /**
+   * rief Constructs a matrix from variable row and column block sizes.
+   */
+  BCOOMatrix(Vector<host_space, index_t> block_rows, Vector<host_space, index_t> block_cols)
+      : m_block_rows(std::move(block_rows)),
+        m_block_cols(std::move(block_cols)),
+        m_value_offsets({1}),
+        m_indices({0, 2})
+  {
+    boba_always_assert(m_block_rows.size() > 0 && m_block_cols.size() > 0, "BCOO block partitions must be nonempty");
+    auto rows = m_block_rows.const_view();
+    auto cols = m_block_cols.const_view();
+    for (index_t p = 0; p < m_block_rows.size(); ++p)
+    {
+      boba_always_assert(rows(p) > 0, "BCOO row block sizes must be positive");
+    }
+    for (index_t q = 0; q < m_block_cols.size(); ++q)
+    {
+      boba_always_assert(cols(q) > 0, "BCOO column block sizes must be positive");
+    }
+    m_value_offsets.fill_with_zeros();
   }
 
   /**
@@ -52,7 +75,13 @@ struct BCOOMatrix
    */
   index_t rows() const noexcept
   {
-    return m_block_rows * m_block_grid_rows;
+    index_t result = 0;
+    auto block_rows = m_block_rows.const_view();
+    for (index_t p = 0; p < m_block_rows.size(); ++p)
+    {
+      result += block_rows(p);
+    }
+    return result;
   }
 
   /**
@@ -60,7 +89,13 @@ struct BCOOMatrix
    */
   index_t cols() const noexcept
   {
-    return m_block_cols * m_block_grid_cols;
+    index_t result = 0;
+    auto block_cols = m_block_cols.const_view();
+    for (index_t q = 0; q < m_block_cols.size(); ++q)
+    {
+      result += block_cols(q);
+    }
+    return result;
   }
 
   /**
@@ -69,6 +104,38 @@ struct BCOOMatrix
   Array<index_t, 2> shape() const noexcept
   {
     return {rows(), cols()};
+  }
+
+  index_t row_block(index_t i, index_t& local_i) const
+  {
+    auto block_rows = m_block_rows.const_view();
+    for (index_t p = 0; p < m_block_rows.size(); ++p)
+    {
+      if (i < block_rows(p))
+      {
+        local_i = i;
+        return p;
+      }
+      i -= block_rows(p);
+    }
+    local_i = 0;
+    return m_block_rows.size();
+  }
+
+  index_t col_block(index_t j, index_t& local_j) const
+  {
+    auto block_cols = m_block_cols.const_view();
+    for (index_t q = 0; q < m_block_cols.size(); ++q)
+    {
+      if (j < block_cols(q))
+      {
+        local_j = j;
+        return q;
+      }
+      j -= block_cols(q);
+    }
+    local_j = 0;
+    return m_block_cols.size();
   }
 
   /**
@@ -108,17 +175,18 @@ struct BCOOMatrix
       return {};
     }
 
-    auto row_index = Multiindexer<2>::multiindex({m_block_rows, m_block_grid_rows}, i);
-    auto col_index = Multiindexer<2>::multiindex({m_block_cols, m_block_grid_cols}, j);
-    index_t u = row_index[0], p = row_index[1];
-    index_t v = col_index[0], q = col_index[1];
+    index_t u = 0, v = 0;
+    index_t p = row_block(i, u);
+    index_t q = col_block(j, v);
     auto iv = m_indices.const_view();
     auto vv = m_values.const_view();
     for (index_t k = 0; k < nnz(); ++k)
     {
       if (iv({k, 0}) == p && iv({k, 1}) == q)
       {
-        return vv({u, v, k});
+        auto row_size = m_block_rows.const_view()(p);
+        auto col_size = m_block_cols.const_view()(q);
+        return vv(m_value_offsets.const_view()(k) + u * col_size + v);
       }
     }
     return {};
@@ -136,14 +204,32 @@ struct BCOOMatrix
     auto yv = y.view();
     auto iv = m_indices.const_view();
     auto vv = m_values.const_view();
-    ::boba::loop<host_space, 3>({nnz(), m_block_rows, m_block_cols}, [&](Array<index_t, 3> indices)
+    auto block_rows = m_block_rows.const_view();
+    auto block_cols = m_block_cols.const_view();
+    auto value_offsets = m_value_offsets.const_view();
+    for (index_t k = 0; k < nnz(); ++k)
     {
-      auto [k, u, v] = indices;
       index_t p = iv({k, 0}), q = iv({k, 1});
-      auto out_id = p * m_block_rows + u;
-      auto in_id = q * m_block_cols + v;
-      yv(out_id) += alpha * vv({u, v, k}) * xv(in_id);
-    });
+      index_t row_offset = 0;
+      for (index_t prior = 0; prior < p; ++prior)
+      {
+        row_offset += block_rows(prior);
+      }
+      index_t col_offset = 0;
+      for (index_t prior = 0; prior < q; ++prior)
+      {
+        col_offset += block_cols(prior);
+      }
+      for (index_t u = 0; u < block_rows(p); ++u)
+      {
+        for (index_t v = 0; v < block_cols(q); ++v)
+        {
+          auto out_id = row_offset + u;
+          auto in_id = col_offset + v;
+          yv(out_id) += alpha * vv(value_offsets(k) + u * block_cols(q) + v) * xv(in_id);
+        }
+      }
+    }
   }
 
   /**
@@ -154,19 +240,19 @@ struct BCOOMatrix
     boba_always_assert(i < rows() && j < cols(), "Sparse coordinate out of bounds");
     // Split the scalar coordinate into a local block coordinate and a block-grid
     // coordinate; the latter identifies the stored block and the former its slot.
-    auto row_index = Multiindexer<2>::multiindex({m_block_rows, m_block_grid_rows}, i);
-    auto col_index = Multiindexer<2>::multiindex({m_block_cols, m_block_grid_cols}, j);
-    index_t u = row_index[0], p = row_index[1];
-    index_t v = col_index[0], q = col_index[1];
+    index_t u = 0, v = 0;
+    index_t p = row_block(i, u);
+    index_t q = col_block(j, v);
     auto indices = m_indices.view();
     auto values = m_values.view();
+    auto value_offsets = m_value_offsets.view();
 
     // Update an existing block in place when its grid coordinate is present.
     for (index_t k = 0; k < nnz(); ++k)
     {
       if (indices({k, 0}) == p && indices({k, 1}) == q)
       {
-        values({u, v, k}) = value;
+        values(value_offsets(k) + u * m_block_cols.const_view()(q) + v) = value;
         return;
       }
     }
@@ -176,22 +262,27 @@ struct BCOOMatrix
       return;
     }
     index_t old = nnz();
-    // A new BCOO entry always allocates a complete dense block and one pair of
-    // block-grid indices, even when most block values are zero.
+    // A new BCOO entry allocates the dense block selected by its row and
+    // column block partitions.
+    const index_t block_size = m_block_rows.const_view()(p) * m_block_cols.const_view()(q);
+    const index_t value_offset = m_values.size();
     m_indices.resize({old + 1, 2});
-    m_values.resize({m_block_rows, m_block_cols, old + 1});
+    m_value_offsets.resize({old + 2});
+    m_values.resize({value_offset + block_size});
     // Resizing may invalidate earlier views; initialize the new block through
     // fresh views before writing its requested local value.
     auto indices_after_resize = m_indices.view();
     auto values_after_resize = m_values.view();
-    ::boba::loop<host_space, 2>({m_block_rows, m_block_cols}, [&](Array<index_t, 2> loop_indices)
+    auto offsets_after_resize = m_value_offsets.view();
+    for (index_t offset = 0; offset < block_size; ++offset)
     {
-      auto [a, b] = loop_indices;
-      values_after_resize({a, b, old}) = data_t{};
-    });
+      values_after_resize(value_offset + offset) = data_t{};
+    }
     indices_after_resize({old, 0}) = p;
     indices_after_resize({old, 1}) = q;
-    values_after_resize({u, v, old}) = value;
+    offsets_after_resize(old) = value_offset;
+    offsets_after_resize(old + 1) = value_offset + block_size;
+    values_after_resize(value_offset + u * m_block_cols.const_view()(q) + v) = value;
   }
 
   /**
@@ -244,6 +335,34 @@ BCOOMatrix<data_t> from_dense_bcoo(Matrix<host_space, data_t> const& dense, inde
 }
 
 /**
+ * \brief Imports a dense matrix into BCOO storage using variable block sizes.
+ */
+template <typename data_t>
+BCOOMatrix<data_t> from_dense_bcoo(
+  Matrix<host_space, data_t> const& dense,
+  Vector<host_space, index_t> block_rows,
+  Vector<host_space, index_t> block_cols,
+  data_t tolerance = 0)
+{
+  sparse_detail::check_tolerance(tolerance);
+  BCOOMatrix<data_t> out(std::move(block_rows), std::move(block_cols));
+  boba_always_assert_equal(dense.rows(), out.rows(), "BCOO row partitions do not match the dense matrix");
+  boba_always_assert_equal(dense.cols(), out.cols(), "BCOO column partitions do not match the dense matrix");
+  auto dv = dense.const_view();
+  for (index_t i = 0; i < dense.rows(); ++i)
+  {
+    for (index_t j = 0; j < dense.cols(); ++j)
+    {
+      if (sparse_detail::keep(dv({i, j}), tolerance))
+      {
+        out.set_element(i, j, dv({i, j}));
+      }
+    }
+  }
+  return out;
+}
+
+/**
  * \brief Exports BCOO storage to a dense host matrix.
  */
 template <typename data_t>
@@ -254,19 +373,32 @@ Matrix<host_space, data_t> to_dense(BCOOMatrix<data_t> const& sparse)
   auto ov = out.view();
   auto indices = sparse.m_indices.const_view();
   auto values = sparse.m_values.const_view();
+  auto block_rows = sparse.m_block_rows.const_view();
+  auto block_cols = sparse.m_block_cols.const_view();
+  auto value_offsets = sparse.m_value_offsets.const_view();
 
-  auto block_rows = sparse.m_block_rows;
-  auto block_cols = sparse.m_block_cols;
-
-  ::boba::loop<host_space, 3>({sparse.nnz(), block_rows, block_cols}, [&](Array<index_t, 3> loop_indices)
+  for (index_t k = 0; k < sparse.nnz(); ++k)
   {
-    auto [k, u, v] = loop_indices;
     index_t p = indices({k, 0});
     index_t q = indices({k, 1});
-    auto row_id = p * block_rows + u;
-    auto col_id = q * block_cols + v;
-    ov({row_id, col_id}) = values({u, v, k});
-  });
+    index_t row_offset = 0;
+    for (index_t prior = 0; prior < p; ++prior)
+    {
+      row_offset += block_rows(prior);
+    }
+    index_t col_offset = 0;
+    for (index_t prior = 0; prior < q; ++prior)
+    {
+      col_offset += block_cols(prior);
+    }
+    for (index_t u = 0; u < block_rows(p); ++u)
+    {
+      for (index_t v = 0; v < block_cols(q); ++v)
+      {
+        ov({row_offset + u, col_offset + v}) = values(value_offsets(k) + u * block_cols(q) + v);
+      }
+    }
+  }
   return out;
 }
 

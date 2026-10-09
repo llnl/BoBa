@@ -59,4 +59,18 @@ sparse_t from_dense(Matrix<host_space, data_t> const& dense, index_t br, index_t
   return from_dense_bcoo(dense, br, bc, tolerance);
 }
 
+/**
+ * \brief Imports a dense matrix into BCOO storage using variable block sizes.
+ */
+template <typename sparse_t, typename data_t>
+sparse_t from_dense(
+  Matrix<host_space, data_t> const& dense,
+  Vector<host_space, index_t> block_rows,
+  Vector<host_space, index_t> block_cols,
+  data_t tolerance = 0)
+{
+  static_assert(std::is_same_v<sparse_t, BCOOMatrix<data_t>>, "Variable block sizes are only defined for BCOO");
+  return from_dense_bcoo(dense, std::move(block_rows), std::move(block_cols), tolerance);
+}
+
 } // namespace boba
