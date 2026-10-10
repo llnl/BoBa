@@ -525,6 +525,8 @@ void cutensor_contract(
       workspaceSize,
       stream));
 
+  boba::detail::cuda_assert(cudaStreamSynchronize(stream));
+
   BOBA_CALI_SWITCH("cutensorContract", "destroy");
 
   //
@@ -721,6 +723,8 @@ void cutensor_reduce(
   boba::detail::cutensor_assert(
     cutensorReduce(
       detail::cutensor_handle, plan, (const void*)&alpha, tensor_A.const_data(), (const void*)&beta, tensor_C.data(), tensor_C.data(), work.data(), actualWorkspaceSize, stream));
+
+  boba::detail::cuda_assert(cudaStreamSynchronize(stream));
 
   boba::detail::cutensor_assert(cutensorDestroyPlan(plan));
   boba::detail::cutensor_assert(cutensorDestroyOperationDescriptor(desc));

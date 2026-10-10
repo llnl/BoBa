@@ -44,6 +44,84 @@ int main(int argc, char* argv[])
   args.parse_check();
 
   //
+  // Test norm frobenius
+  //
+  auto inner_product_based_norm = [](boba::TensorTrain<3, space, double> const& train)
+  {
+    const auto product = train.inner_product(train);
+    return ::boba::sqrt(::boba::abs(product));
+  };
+
+  auto inner_product_based_ttm_norm = [](boba::TensorTrainMatrix<2, space, double> const& ttm)
+  {
+    boba::Vector<space, double> in;
+    boba::Vector<space, double> out;
+
+    for (size_t d = 2; d > 0; d--)
+    {
+      auto this_core_view = ttm.cores[d - 1].const_view();
+      const size_t this_ranks_left = ttm.get_ranks_left(d - 1);
+      const size_t this_ranks_right = ttm.get_ranks_right(d - 1);
+      const size_t this_rows = ttm.core_rows(d - 1);
+      const size_t this_cols = ttm.core_cols(d - 1);
+
+      const size_t new_ranks_left = ::boba::pow(this_ranks_left, 2);
+      const size_t new_ranks_right = ::boba::pow(this_ranks_right, 2);
+      if (d == 2)
+      {
+        in.resize(1);
+        in.fill_with(1.0);
+      }
+      else
+      {
+        in = out;
+      }
+      out.resize(new_ranks_left);
+      out.fill_with_zeros();
+
+      auto rank_left_view = ::boba::Multiindexer<2>({this_ranks_left, this_ranks_left});
+      auto rank_right_view = ::boba::Multiindexer<2>({this_ranks_right, this_ranks_right});
+
+      boba::Matrix<space, double> temp({new_ranks_left, new_ranks_right});
+      temp.fill_with_zeros();
+      auto temp_atomic_view = temp.atomic_view();
+
+      auto loop_indexer = ::boba::Multiindexer<4>({new_ranks_left, this_rows, this_cols, new_ranks_right});
+      ::boba::loop<space, 1>(loop_indexer.size(),
+                             [=] __boba_host_device__(size_t I)
+      {
+        auto lijk = loop_indexer.multiindex(I);
+        auto [l, i, j, k] = lijk;
+        auto rank_left_mid = rank_left_view.multiindex(l);
+        auto rank_right_mid = rank_right_view.multiindex(k);
+        auto value_this_1 = this_core_view({rank_left_mid[0], i, j, rank_right_mid[0]});
+        auto value_this_2 = this_core_view({rank_left_mid[1], i, j, rank_right_mid[1]});
+        temp_atomic_view({l, k}) += value_this_1 * value_this_2;
+      });
+
+      out = temp * in;
+    }
+
+    return ::boba::sqrt(::boba::abs(out.sum_reduce()));
+  };
+
+  {
+    boba::Tensor<3, space, double> test_tensor({4, 5, 6});
+    auto test_tensor_view = test_tensor.view();
+    ::boba::loop<space, 3>(test_tensor.sizes(),
+                            [=] __boba_host_device__(::boba::Array<size_t, 3> ijk)
+    {
+      auto [i, j, k] = ijk;
+      test_tensor_view({i, j, k}) = static_cast<double>((i + 1) * (j + 2)) + 0.1 * static_cast<double>(k);
+    });
+
+    auto test_tt = ::boba::compress_to_TensorTrain(test_tensor, 1.0e-14, 1.0e-14);
+    const auto inner_product_norm = inner_product_based_norm(test_tt);
+    const auto orthogonalization_norm = ::boba::norm_frobenius(test_tt);
+    pass_or_fail(check, ::boba::abs(orthogonalization_norm - inner_product_norm), 1.0e-12);
+  }
+
+  //
   // Test TTM compression
   //
   checkpoint();
@@ -61,6 +139,10 @@ int main(int argc, char* argv[])
     checkpoint();
     test_ttm_A.compress(test_matrix);
     time_a.end_and_print("compress ttm");
+
+    const auto inner_product_ttm_norm = inner_product_based_ttm_norm(test_ttm_A);
+    const auto orthogonalization_ttm_norm = ::boba::norm_frobenius(test_ttm_A);
+    pass_or_fail(check, ::boba::abs(orthogonalization_ttm_norm - inner_product_ttm_norm), 1.0e-12);
 
     checkpoint();
     boba::TicToc<tictoc_units> time_b;

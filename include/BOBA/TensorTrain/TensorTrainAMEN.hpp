@@ -557,7 +557,6 @@ struct TensorTrainAMEN
       {
         auto raw_global_residual = crA.TensorTrainMatrix_vector_multiply(crx);
         raw_global_residual -= cry;
-        raw_global_residual.round();
         raw_global_res = ::boba::norm_frobenius(raw_global_residual) / norm_cry;
 
         auto crx_rescaled = crx;
@@ -569,7 +568,6 @@ struct TensorTrainAMEN
 
         auto global_residual = crA.TensorTrainMatrix_vector_multiply(crx_rescaled);
         global_residual -= cry;
-        global_residual.round();
         global_res = ::boba::norm_frobenius(global_residual) / norm_cry;
         have_global_res = true;
       }
@@ -600,7 +598,6 @@ struct TensorTrainAMEN
 
           auto global_residual = crA.TensorTrainMatrix_vector_multiply(crx_rescaled);
           global_residual -= cry;
-          global_residual.round();
           global_res = ::boba::norm_frobenius(global_residual) / norm_cry;
         }
 
