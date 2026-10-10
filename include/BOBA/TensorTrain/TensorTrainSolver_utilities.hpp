@@ -197,43 +197,6 @@ boba::Matrix<space, data_t> bfun3_matrix(
 }
 
 /**
- * @brief Squared Frobenius norm of the projected one-site matrix from bfun3.
- *
- * Contracts the tensor network with its conjugate.  The largest intermediates
- * depend only on operator bond dimensions; the projected dense matrix is never
- * formed.
- */
-template <::boba::execution_space space, typename data_t>
-data_t bfun3_matrix_norm_frobenius_squared(
-  const boba::Tensor<3, space, data_t>& Phi1,
-  const boba::Tensor<4, space, data_t>& A,
-  const boba::Tensor<3, space, data_t>& Phi2)
-{
-  BOBA_CALI_MARK
-  auto Phi1_conj = ::boba::get_conj(Phi1);
-  auto A_conj = ::boba::get_conj(A);
-  auto Phi2_conj = ::boba::get_conj(Phi2);
-
-  auto left_gram = ::boba::tensor_contraction<2>(
-    {"ry", "rx", "ra"}, Phi1,
-    {"ry", "rx", "rap"}, Phi1_conj,
-    {"ra", "rap"});
-  auto operator_gram = ::boba::tensor_contraction<2>(
-    {"ra", "row", "col", "rb"}, A,
-    {"rap", "row", "col", "rbp"}, A_conj,
-    {"ra", "rb", "rap", "rbp"});
-  auto right_gram = ::boba::tensor_contraction<2>(
-    {"rx", "rb", "ry"}, Phi2,
-    {"rx", "rbp", "ry"}, Phi2_conj,
-    {"rb", "rbp"});
-  auto left_operator_gram = ::boba::tensor_contraction<2>(
-    {"ra", "rap"}, left_gram,
-    {"ra", "rb", "rap", "rbp"}, operator_gram,
-    {"rb", "rbp"});
-  return ::boba::inner_product(left_operator_gram, right_gram);
-}
-
-/**
  * @brief Squared Euclidean norm of every row of the projected bfun3 matrix.
  *
  * The returned tensor has the projected row shape (left rank, physical row,
