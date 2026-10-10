@@ -681,13 +681,13 @@ struct TensorTrainAMENBlock
             copy_vector_block(coupled_sol_prev_full, coupled_offsets[ki], flatten(site_x_cores[ki]));
             coupled_row_norm_squared[ki] += coupled_norm_rhs[ki] * coupled_norm_rhs[ki];
             coupled_scalar_row_norm_squared[ki].resize(coupled_rhs[ki].sizes());
-            auto scalar_norm_view = coupled_scalar_row_norm_squared[ki].view();
+            auto rhs_norm_squared_view = coupled_scalar_row_norm_squared[ki].view();
             auto rhs_view = coupled_rhs[ki].const_view();
             ::boba::loop<space, 1>(static_cast<index_t>(coupled_rhs[ki].size()),
                                    [=] __boba_host_device__(index_t idx)
             {
               auto rhs_abs = ::boba::abs(rhs_view({idx}));
-              scalar_norm_view({idx}) = rhs_abs * rhs_abs;
+              rhs_norm_squared_view({idx}) = rhs_abs * rhs_abs;
             });
 
             for (size_t kj = 0; kj < Kay; kj++)
@@ -707,13 +707,13 @@ struct TensorTrainAMENBlock
                     phia[ki][kj].cores[i + 1]));
                 matrix_free_block_norm_squared = scalar_block_norm_squared.sum_reduce();
                 coupled_row_norm_squared[ki] += matrix_free_block_norm_squared;
-                auto scalar_norm_view = coupled_scalar_row_norm_squared[ki].view();
-                auto scalar_block_norm_view = scalar_block_norm_squared.const_view();
+                auto row_norm_squared_view = coupled_scalar_row_norm_squared[ki].view();
+                auto block_norm_squared_view = scalar_block_norm_squared.const_view();
                 ::boba::loop<space, 1>(
                   static_cast<index_t>(scalar_block_norm_squared.size()),
                   [=] __boba_host_device__(index_t idx)
                 {
-                  scalar_norm_view({idx}) += scalar_block_norm_view({idx});
+                  row_norm_squared_view({idx}) += block_norm_squared_view({idx});
                 });
               }
 
@@ -1524,9 +1524,7 @@ struct TensorTrainAMENBlock
       {
         auto raw_global_residual = apply_nonempty_blocks(crA, crx);
         raw_global_residual -= cry;
-        raw_global_residual.round();
-        raw_global_res =
-          ::boba::norm_frobenius_right_orthogonal(raw_global_residual) / norm_cry;
+        raw_global_res = ::boba::norm_frobenius(raw_global_residual) / norm_cry;
 
         if (normalize_intermediate_quantities)
         {
@@ -1541,9 +1539,7 @@ struct TensorTrainAMENBlock
           }
           auto global_residual = apply_nonempty_blocks(crA, crx_rescaled);
           global_residual -= cry;
-          global_residual.round();
-          global_res =
-            ::boba::norm_frobenius_right_orthogonal(global_residual) / norm_cry;
+          global_res = ::boba::norm_frobenius(global_residual) / norm_cry;
         }
         else
         {
@@ -1586,9 +1582,7 @@ struct TensorTrainAMENBlock
 
           auto global_residual = apply_nonempty_blocks(crA, crx_rescaled);
           global_residual -= cry;
-          global_residual.round();
-          global_res =
-            ::boba::norm_frobenius_right_orthogonal(global_residual) / norm_cry;
+          global_res = ::boba::norm_frobenius(global_residual) / norm_cry;
         }
 
         if (verbose)
