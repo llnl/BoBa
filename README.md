@@ -134,6 +134,15 @@ This is an excellent test to make sure the code compiles for the given system co
 ./test_boba_tensor_train_cpu.out
 ```
 
+For an AOCL-enabled CPU build, use:
+```
+make all BOBA_CI=1 BOBA_AOCL=1 BOBA_HIP= BOBA_CUDA= -j 12
+python3 ci.py --aocl
+```
+`--aocl` selects CPU executables (`*_cpu_aocl.out`) and CPU test skip rules,
+even on GPU machines such as Tuolumne. The empty Make options disable any
+HIP or CUDA settings inherited from the environment.
+
 ## Tips and Tricks
 
 - BoBa has [Caliper](https://github.com/LLNL/Caliper) integration, which allows you to see runtime hotspots in the code. This is done by building with the `BOBA_ENABLE_CALIPER=1` flag and exporting the `CALI_CONFIG=runtime-report` environment variable. Use `BOBA_ENABLE_CALIPER_EXTERNAL=1` when you want Caliper scopes in code outside BoBa internals, such as exercises and tests:

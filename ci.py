@@ -77,6 +77,8 @@ with open(yaml_file, encoding="utf-8") as stream:
 selected_tests = {test for test in args.tests.replace(",", " ").split() if test}
 
 _, _, space = get_machine()
+if args.aocl:
+  space = "cpu"
 
 def get_name_flags(space):
   if 'cpu' in space:

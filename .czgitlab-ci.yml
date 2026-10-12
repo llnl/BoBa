@@ -24,7 +24,7 @@ variables:
   H100_MACHINE: "matrix"
   HIP_MACHINE: "tuolumne"
 
-  BOBA_TPL_FARM: "/usr/workspace/boba_dev/boba_tpl_build_farms/2026_05_20_python"
+  BOBA_TPL_FARM: "/usr/workspace/boba_dev/boba_tpl_build_farms/2026_09_29_aocl"
 
 include:
   - project: 'lc-templates/id_tokens'
@@ -182,6 +182,18 @@ h100_build_and_test:
     - time flux run -N 1 -n 1 --exclusive make all BOBA_CI=1 BOBA_HIP=1 BOBA_HIPTENSOR=1 BOBA_UMPIRE=1 -j 12 --output-sync
     - cp ./test_boba_linear_algebra_hip_ump.out ./test_boba_linear_algebra_rocm_ump.out
     - time flux run -N 1 -n 1 --exclusive python3 ci.py --umpire
+
+cpu_aocl_build_and_test:
+  extends:
+    - .shell_hip
+    - .boba_base
+  stage: build_and_test
+  needs: ["ci_sanity_checks"]
+  script:
+    - ${GCC_VERSION}
+    - squeue -p pci
+    - time flux run -N 1 -n 1 --exclusivemake all BOBA_CI=1 BOBA_AOCL=1 BOBA_CPU=1 -j 12 --output-sync
+    - time flux run -N 1 -n 1 --exclusive OMP_NUM_THREADS=4 BLIS_NUM_THREADS=4 python3 ci.py --aocl --tests test_boba_linear_algebra
 
 cmake_boba_cpu:
   extends:
