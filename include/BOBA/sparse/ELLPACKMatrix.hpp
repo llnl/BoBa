@@ -71,11 +71,22 @@ struct ELLPACKMatrix
   }
 
   /**
-   * \brief Returns the number of stored entries or blocks.
+   * \brief Returns the number of explicitly stored scalar entries.
+   *
+   * Unused ELLPACK slots have a column index of `-1` and are excluded.
    */
   index_t nnz() const noexcept
   {
-    return 0;
+    index_t result = 0;
+    auto columns = m_column_indices.const_view();
+    for (index_t i = 0; i < m_rows; ++i)
+    {
+      for (index_t k = 0; k < m_width; ++k)
+      {
+        result += columns({i, k}) >= 0;
+      }
+    }
+    return result;
   }
 
   /**
