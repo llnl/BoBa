@@ -108,10 +108,19 @@ int main()
   //
   // Test sparse formats
   //
-  check_sparse(boba::from_dense<boba::COOMatrix<double>>(dense, tolerance), dense_thresholded, x, y, z, "COO", check);
-  check_sparse(boba::from_dense<boba::CSRMatrix<double>>(dense, tolerance), dense_thresholded, x, y, z, "CSR", check);
-  check_sparse(boba::from_dense<boba::ELLPACKMatrix<double>>(dense, tolerance), dense_thresholded, x, y, z, "ELLPACK", check);
-  check_sparse(boba::from_dense<boba::BCOOMatrix<double>>(dense, 2, 2, tolerance), dense_thresholded, x, y, z, "BCOO", check);
+  auto coo = boba::from_dense<boba::COOMatrix<double>>(dense, tolerance);
+  auto csr = boba::from_dense<boba::CSRMatrix<double>>(dense, tolerance);
+  auto ellpack = boba::from_dense<boba::ELLPACKMatrix<double>>(dense, tolerance);
+  auto bcoo = boba::from_dense<boba::BCOOMatrix<double>>(dense, 2, 2, tolerance);
+  pass_or_fail_bool(check, coo.nnz() == 9);
+  pass_or_fail_bool(check, csr.nnz() == 9);
+  pass_or_fail_bool(check, ellpack.nnz() == 9);
+  pass_or_fail_bool(check, bcoo.nnz() == 12);
+  pass_or_fail_bool(check, bcoo.nonzero_blocks() == 3);
+  check_sparse(coo, dense_thresholded, x, y, z, "COO", check);
+  check_sparse(csr, dense_thresholded, x, y, z, "CSR", check);
+  check_sparse(ellpack, dense_thresholded, x, y, z, "ELLPACK", check);
+  check_sparse(bcoo, dense_thresholded, x, y, z, "BCOO", check);
 
   const int result = final_check(check);
   boba::finalize();

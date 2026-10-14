@@ -14,8 +14,8 @@ namespace boba
  *
  * The scalar matrix shape is
  * `(m_rows_per_block * m_block_grid_rows, m_cols_per_block * m_block_grid_cols)`.
- * `m_values` has shape `(m_rows_per_block, m_cols_per_block, nnz())` and
- * `m_indices` has shape `(nnz(), 2)`. Block `k` has grid coordinates
+ * `m_values` has shape `(m_rows_per_block, m_cols_per_block, nonzero_blocks())`
+ * and `m_indices` has shape `(nonzero_blocks(), 2)`. Block `k` has grid coordinates
  * `(m_indices(k, 0), m_indices(k, 1))`; for local coordinates `(u, v)`, its
  * definition is `A(p * m_rows_per_block + u, q * m_cols_per_block + v) =
  * m_values(u, v, k)`. Block coordinates are unique but need not be sorted; a
@@ -26,7 +26,10 @@ template <typename data_t = double>
 struct BCOOMatrix
 {
   using data_type = data_t;
-  index_t m_rows_per_block = 0, m_cols_per_block = 0, m_block_grid_rows = 0, m_block_grid_cols = 0;
+  index_t m_rows_per_block = 0;
+  index_t m_cols_per_block = 0;
+  index_t m_block_grid_rows = 0;
+  index_t m_block_grid_cols = 0;
   Tensor<3, host_space, data_t> m_values;
   Matrix<host_space, index_t> m_indices;
 
@@ -78,11 +81,19 @@ struct BCOOMatrix
   }
 
   /**
-   * \brief Returns the number of stored blocks.
+   * \brief Returns the number of explicitly stored blocks.
+   */
+  index_t nonzero_blocks() const noexcept
+  {
+    return m_indices.sizes(0);
+  }
+
+  /**
+   * \brief Returns the size of the dense block-value tensor.
    */
   index_t nnz() const noexcept
   {
-    return m_indices.sizes(0);
+    return m_values.size();
   }
 
   /**
@@ -120,7 +131,7 @@ struct BCOOMatrix
     const index_t v = col_index[0], q = col_index[1];
     auto indices = m_indices.const_view();
     auto values = m_values.const_view();
-    for (index_t k = 0; k < nnz(); ++k)
+    for (index_t k = 0; k < nonzero_blocks(); ++k)
     {
       if (indices({k, 0}) == p && indices({k, 1}) == q)
       {
@@ -145,7 +156,7 @@ struct BCOOMatrix
     auto yv = y.view();
     auto indices = m_indices.const_view();
     auto values = m_values.const_view();
-    ::boba::loop<host_space, 3>({nnz(), m_rows_per_block, m_cols_per_block}, [&](Array<index_t, 3> loop_indices)
+    ::boba::loop<host_space, 3>({nonzero_blocks(), m_rows_per_block, m_cols_per_block}, [&](Array<index_t, 3> loop_indices)
     {
       auto [k, u, v] = loop_indices;
       const index_t p = indices({k, 0});
@@ -251,7 +262,7 @@ Matrix<host_space, data_t> to_dense(BCOOMatrix<data_t> const& sparse)
   auto output = out.view();
   auto indices = sparse.m_indices.const_view();
   auto values = sparse.m_values.const_view();
-  ::boba::loop<host_space, 3>({sparse.nnz(), sparse.m_rows_per_block, sparse.m_cols_per_block},
+  ::boba::loop<host_space, 3>({sparse.nonzero_blocks(), sparse.m_rows_per_block, sparse.m_cols_per_block},
                                [&](Array<index_t, 3> loop_indices)
   {
     auto [k, u, v] = loop_indices;
