@@ -55,6 +55,10 @@
     test_abstractions:
       skip: [cuda, hip]
 
+  test_reductions:
+    test_reductions:
+      skip: []
+
   test_argparse:
     test_argparse_help_short:
       inputs: "-h"

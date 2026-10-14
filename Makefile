@@ -77,6 +77,7 @@ all: \
 	test_argparse \
 	test_fft \
 	test_abstractions \
+	test_reductions \
 	test_krylov \
 	test_preconditioner \
 	test_tensor_train_matrix \
@@ -312,6 +313,16 @@ test_abstractions${NAME_FLAG}.out: test_abstractions${NAME_FLAG}.o boba${NAME_FL
 
 test_abstractions${NAME_FLAG}.o: ${TESTS_DIR}/test_abstractions.cpp ${BOBA_INC} boba${NAME_FLAG}.o
 	${COMPILE} ${OPTS} -c ${TESTS_DIR}/test_abstractions.cpp -o test_abstractions${NAME_FLAG}.o
+
+###############################
+test_reductions: test_reductions${NAME_FLAG}.out
+	echo "Done making $@${NAME_FLAG}.out"
+
+test_reductions${NAME_FLAG}.out: test_reductions${NAME_FLAG}.o boba${NAME_FLAG}.o
+	${LINK} -o $@ $^ ${LIBS}
+
+test_reductions${NAME_FLAG}.o: ${TESTS_DIR}/test_reductions.cpp ${BOBA_INC} boba${NAME_FLAG}.o
+	${COMPILE} ${OPTS} -c ${TESTS_DIR}/test_reductions.cpp -o test_reductions${NAME_FLAG}.o
 
 ###############################
 test_boba_linear_algebra: test_boba_linear_algebra${NAME_FLAG}.out
