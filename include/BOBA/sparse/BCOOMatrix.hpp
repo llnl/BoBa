@@ -127,6 +127,34 @@ struct BCOOMatrix
   }
 
   /**
+   * \brief Performs a linear scan for a scalar entry in the stored blocks.
+   *
+   * \param i Row index.
+   * \param j Column index.
+   * \return The stored value at `(i, j)`, or zero when its block is absent.
+   * \warning An out-of-bounds `i` or `j` value produces an error in debug mode.
+   */
+  data_t get_element_naive(index_t i, index_t j) const
+  {
+    boba_assert(i >= 0 && i < rows() && j >= 0 && j < cols(), "Sparse coordinate out of bounds");
+
+    const auto row_index = Multiindexer<2>::multiindex({m_rows_per_block, m_block_grid_rows}, i);
+    const auto col_index = Multiindexer<2>::multiindex({m_cols_per_block, m_block_grid_cols}, j);
+    const index_t u = row_index[0], p = row_index[1];
+    const index_t v = col_index[0], q = col_index[1];
+    auto indices = m_indices.const_view();
+    auto values = m_values.const_view();
+    for (index_t k = 0; k < nonzero_blocks(); ++k)
+    {
+      if (indices({k, 0}) == p && indices({k, 1}) == q)
+      {
+        return values({u, v, k});
+      }
+    }
+    return {};
+  }
+
+  /**
    * \brief Computes a dense-vector product using the native sparse storage.
    *
    * Computes `y = alpha * A * x + beta * y`.

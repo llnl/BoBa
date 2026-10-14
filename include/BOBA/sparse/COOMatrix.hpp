@@ -108,6 +108,29 @@ struct COOMatrix
   }
 
   /**
+   * \brief Performs a linear scan for a scalar entry.
+   *
+   * \param i Row index.
+   * \param j Column index.
+   * \return The stored value at `(i, j)`, or zero when it is absent.
+   * \warning An out-of-bounds `i` or `j` value produces an error in debug mode.
+   */
+  data_t get_element_naive(index_t i, index_t j) const
+  {
+    boba_assert(i >= 0 && i < m_rows && j >= 0 && j < m_cols, "Sparse coordinate out of bounds");
+    auto indices = m_indices.const_view();
+    auto values = m_values.const_view();
+    for (index_t k = 0; k < nnz(); ++k)
+    {
+      if (indices({k, 0}) == i && indices({k, 1}) == j)
+      {
+        return values(k);
+      }
+    }
+    return data_t{};
+  }
+
+  /**
    * \brief Computes a dense-vector product using the native sparse storage.
    *
    * Computes `y = alpha * A * x + beta * y`.

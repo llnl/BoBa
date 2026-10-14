@@ -106,6 +106,30 @@ struct CSRMatrix
   }
 
   /**
+   * \brief Scans one CSR row for a scalar entry.
+   *
+   * \param i Row index.
+   * \param j Column index.
+   * \return The stored value at `(i, j)`, or zero when it is absent.
+   * \warning An out-of-bounds `i` or `j` value produces an error in debug mode.
+   */
+  data_t get_element_naive(index_t i, index_t j) const
+  {
+    boba_assert(i >= 0 && i < m_rows && j >= 0 && j < m_cols, "Sparse coordinate out of bounds");
+    auto offsets = m_row_offsets.const_view();
+    auto columns = m_column_indices.const_view();
+    auto values = m_values.const_view();
+    for (index_t k = offsets(i); k < offsets(i + 1); ++k)
+    {
+      if (columns(k) == j)
+      {
+        return values(k);
+      }
+    }
+    return data_t{};
+  }
+
+  /**
    * \brief Computes a dense-vector product using the native sparse storage.
    *
    * Computes `y = alpha * A * x + beta * y`.
