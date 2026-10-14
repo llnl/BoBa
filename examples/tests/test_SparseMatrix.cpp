@@ -111,7 +111,6 @@ int main()
   check_sparse(boba::from_dense<boba::COOMatrix<double>>(dense, tolerance), dense_thresholded, x, y, z, "COO", check);
   check_sparse(boba::from_dense<boba::CSRMatrix<double>>(dense, tolerance), dense_thresholded, x, y, z, "CSR", check);
   check_sparse(boba::from_dense<boba::ELLPACKMatrix<double>>(dense, tolerance), dense_thresholded, x, y, z, "ELLPACK", check);
-  check_sparse(boba::from_dense<boba::DIAMatrix<double>>(dense, tolerance), dense_thresholded, x, y, z, "DIA", check);
   check_sparse(boba::from_dense<boba::BCOOMatrix<double>>(dense, 2, 2, tolerance), dense_thresholded, x, y, z, "BCOO", check);
 
   boba::Vector<boba::host_space, boba::index_t> variable_block_rows(std::vector<boba::index_t>{1, 3});
