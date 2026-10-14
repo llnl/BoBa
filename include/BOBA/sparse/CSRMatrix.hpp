@@ -135,75 +135,6 @@ struct CSRMatrix
     }
   }
 
-  /**
-   * \brief Replaces one scalar value, inserting storage when necessary.
-   */
-  void set_element(index_t i, index_t j, data_t value)
-  {
-    boba_always_assert(i >= 0 && i < m_rows && j >= 0 && j < m_cols, "Sparse coordinate out of bounds");
-    auto ov = m_row_offsets.view();
-    auto cv = m_column_indices.view();
-    auto vv = m_values.view();
-
-    // Search only this row's half-open storage segment for the column.
-    for (index_t k = ov(i); k < ov(i + 1); ++k)
-    {
-      if (cv(k) == j)
-      {
-        vv(k) = value;
-        return;
-      }
-    }
-    if (!(abs(value) > 0))
-    {
-      // A zero absent from the row does not need a structural entry.
-      return;
-    }
-    index_t at = ov(i + 1);
-    // Insert at the end of the row, then shift later rows right by one slot.
-    m_values.resize(nnz() + 1);
-    m_column_indices.resize(nnz());
-    // The resized arrays may have moved, so refresh their views before shifting.
-    auto values_after_resize = m_values.view();
-    auto columns_after_resize = m_column_indices.view();
-    // Shift entries backward to leave the insertion position available.
-    for (index_t k = nnz() - 1; k > at; --k)
-    {
-      values_after_resize(k) = values_after_resize(k - 1);
-      columns_after_resize(k) = columns_after_resize(k - 1);
-    }
-    values_after_resize(at) = value;
-    columns_after_resize(at) = j;
-    // Every row beginning at i + 1 now starts one position later.
-    ::boba::loop<host_space, 1>(i + 1, m_rows + 1, [&](index_t r)
-    {
-      ov(r)++;
-    });
-  }
-
-  /**
-   * \brief Adds a scalar value at one coordinate.
-   */
-  void add_element(index_t i, index_t j, data_t value)
-  {
-    set_element(i, j, get_element(i, j) + value);
-  }
-
-  /**
-   * \brief Sets all stored values to zero without changing structure.
-   */
-  void zero_values()
-  {
-    m_values.fill_with_zeros();
-  }
-
-  /**
-   * \brief Scales all stored values.
-   */
-  void scale(data_t value)
-  {
-    m_values *= value;
-  }
 };
 
 /**
@@ -215,13 +146,42 @@ CSRMatrix<data_t> from_dense_csr(Matrix<host_space, data_t> const& dense, data_t
   sparse_detail::check_tolerance(tolerance);
   CSRMatrix<data_t> out(dense.rows(), dense.cols());
   auto dv = dense.const_view();
+  auto offsets = out.m_row_offsets.view();
   for (index_t i = 0; i < dense.rows(); ++i)
   {
     for (index_t j = 0; j < dense.cols(); ++j)
     {
       if (sparse_detail::keep(dv({i, j}), tolerance))
       {
-        out.set_element(i, j, dv({i, j}));
+        ++offsets(i + 1);
+      }
+    }
+  }
+
+  for (index_t i = 0; i < dense.rows(); ++i)
+  {
+    offsets(i + 1) += offsets(i);
+  }
+  out.m_column_indices.resize({offsets(dense.rows())});
+  out.m_values.resize({offsets(dense.rows())});
+
+  Vector<host_space, index_t> next({dense.rows()});
+  auto next_view = next.view();
+  for (index_t i = 0; i < dense.rows(); ++i)
+  {
+    next_view(i) = offsets(i);
+  }
+  auto columns = out.m_column_indices.view();
+  auto values = out.m_values.view();
+  for (index_t i = 0; i < dense.rows(); ++i)
+  {
+    for (index_t j = 0; j < dense.cols(); ++j)
+    {
+      if (sparse_detail::keep(dv({i, j}), tolerance))
+      {
+        const index_t sparse_index = next_view(i)++;
+        columns(sparse_index) = j;
+        values(sparse_index) = dv({i, j});
       }
     }
   }

@@ -136,64 +136,6 @@ struct COOMatrix
     });
   }
 
-  /**
-   * \brief Replaces one scalar value, inserting storage when necessary.
-   */
-  void set_element(index_t i, index_t j, data_t value)
-  {
-    boba_always_assert(i >= 0 && i < m_rows && j >= 0 && j < m_cols, "Sparse coordinate out of bounds");
-    auto indices = m_indices.view();
-    auto values = m_values.view();
-    // COO has no row directory, so locate an existing coordinate by scanning
-    // the coordinate list.
-    for (index_t k = 0; k < nnz(); ++k)
-    {
-      if (indices({k, 0}) == i && indices({k, 1}) == j)
-      {
-        values(k) = value;
-        return;
-      }
-    }
-    if (!(abs(value) > 0))
-    {
-      // Do not create an explicit zero entry in the coordinate list.
-      return;
-    }
-    index_t old = nnz();
-    // Appending preserves the coordinate/value pairing; no sorting is needed.
-    m_values.resize(old + 1);
-    m_indices.resize({old + 1, 2});
-    // Resizing may invalidate earlier views, so acquire views of the new storage.
-    auto values_after_resize = m_values.view();
-    auto indices_after_resize = m_indices.view();
-    values_after_resize(old) = value;
-    indices_after_resize({old, 0}) = i;
-    indices_after_resize({old, 1}) = j;
-  }
-
-  /**
-   * \brief Adds a scalar value at one coordinate.
-   */
-  void add_element(index_t i, index_t j, data_t value)
-  {
-    set_element(i, j, get_element(i, j) + value);
-  }
-
-  /**
-   * \brief Sets all stored values to zero without changing structure.
-   */
-  void zero_values()
-  {
-    m_values.fill_with_zeros();
-  }
-
-  /**
-   * \brief Scales all stored values.
-   */
-  void scale(data_t value)
-  {
-    m_values *= value;
-  }
 };
 
 /**
@@ -205,13 +147,33 @@ COOMatrix<data_t> from_dense_coo(Matrix<host_space, data_t> const& dense, data_t
   sparse_detail::check_tolerance(tolerance);
   COOMatrix<data_t> out(dense.rows(), dense.cols());
   auto dv = dense.const_view();
+  index_t number_nonzeros = 0;
   for (index_t i = 0; i < dense.rows(); ++i)
   {
     for (index_t j = 0; j < dense.cols(); ++j)
     {
       if (sparse_detail::keep(dv({i, j}), tolerance))
       {
-        out.set_element(i, j, dv({i, j}));
+        ++number_nonzeros;
+      }
+    }
+  }
+
+  out.m_values.resize({number_nonzeros});
+  out.m_indices.resize({number_nonzeros, 2});
+  auto values = out.m_values.view();
+  auto indices = out.m_indices.view();
+  index_t sparse_index = 0;
+  for (index_t i = 0; i < dense.rows(); ++i)
+  {
+    for (index_t j = 0; j < dense.cols(); ++j)
+    {
+      if (sparse_detail::keep(dv({i, j}), tolerance))
+      {
+        indices({sparse_index, 0}) = i;
+        indices({sparse_index, 1}) = j;
+        values(sparse_index) = dv({i, j});
+        ++sparse_index;
       }
     }
   }

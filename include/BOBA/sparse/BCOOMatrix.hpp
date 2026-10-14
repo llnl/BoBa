@@ -39,8 +39,8 @@ struct BCOOMatrix
  * \brief Constructs an empty block-sparse matrix with the given block
  *        and grid dimensions.
  *
- * The resulting matrix has no stored (nonzero) blocks initially;
- * blocks must be added separately (e.g., via an insert/set method).
+ * The resulting matrix has no stored (nonzero) blocks initially; callers
+ * populate the public block-coordinate and value arrays directly.
  *
  * \param br  Number of rows per block.
  * \param bc  Number of columns per block.
@@ -251,82 +251,6 @@ struct BCOOMatrix
     }
   }
 
-  /**
-   * \brief Replaces one scalar value, inserting storage when necessary.
-   */
-  void set_element(index_t i, index_t j, data_t value)
-  {
-    boba_always_assert(i < rows() && j < cols(), "Sparse coordinate out of bounds");
-    // Split the scalar coordinate into a local block coordinate and a block-grid
-    // coordinate; the latter identifies the stored block and the former its slot.
-    index_t u = 0, v = 0;
-    index_t p = row_block(i, u);
-    index_t q = col_block(j, v);
-    auto indices = m_indices.view();
-    auto values = m_values.view();
-    auto value_offsets = m_value_offsets.view();
-
-    // Update an existing block in place when its grid coordinate is present.
-    for (index_t k = 0; k < nnz(); ++k)
-    {
-      if (indices({k, 0}) == p && indices({k, 1}) == q)
-      {
-        values(value_offsets(k) + u * m_block_cols.const_view()(q) + v) = value;
-        return;
-      }
-    }
-    if (!(abs(value) > 0))
-    {
-      // Do not allocate a full block for an absent zero scalar.
-      return;
-    }
-    index_t old = nnz();
-    // A new BCOO entry allocates the dense block selected by its row and
-    // column block partitions.
-    const index_t block_size = m_block_rows.const_view()(p) * m_block_cols.const_view()(q);
-    const index_t value_offset = m_values.size();
-    m_indices.resize({old + 1, 2});
-    m_value_offsets.resize({old + 2});
-    m_values.resize({value_offset + block_size});
-    // Resizing may invalidate earlier views; initialize the new block through
-    // fresh views before writing its requested local value.
-    auto indices_after_resize = m_indices.view();
-    auto values_after_resize = m_values.view();
-    auto offsets_after_resize = m_value_offsets.view();
-    for (index_t offset = 0; offset < block_size; ++offset)
-    {
-      values_after_resize(value_offset + offset) = data_t{};
-    }
-    indices_after_resize({old, 0}) = p;
-    indices_after_resize({old, 1}) = q;
-    offsets_after_resize(old) = value_offset;
-    offsets_after_resize(old + 1) = value_offset + block_size;
-    values_after_resize(value_offset + u * m_block_cols.const_view()(q) + v) = value;
-  }
-
-  /**
-   * \brief Adds a scalar value at one coordinate.
-   */
-  void add_element(index_t i, index_t j, data_t value)
-  {
-    set_element(i, j, get_element(i, j) + value);
-  }
-
-  /**
-   * \brief Sets all stored values to zero without changing structure.
-   */
-  void zero_values()
-  {
-    m_values.fill_with_zeros();
-  }
-
-  /**
-   * \brief Scales all stored values.
-   */
-  void scale(data_t value)
-  {
-    m_values *= value;
-  }
 };
 
 /**
@@ -340,16 +264,77 @@ BCOOMatrix<data_t> from_dense_bcoo(Matrix<host_space, data_t> const& dense, inde
   boba_always_assert(dense.rows() % br == 0 && dense.cols() % bc == 0, "BCOO dimensions must be divisible by block dimensions");
   BCOOMatrix<data_t> out(br, bc, dense.rows() / br, dense.cols() / bc);
   auto dv = dense.const_view();
-  for (index_t i = 0; i < dense.rows(); ++i)
+  const index_t block_rows = dense.rows() / br;
+  const index_t block_cols = dense.cols() / bc;
+  index_t number_blocks = 0;
+  for (index_t p = 0; p < block_rows; ++p)
   {
-    for (index_t j = 0; j < dense.cols(); ++j)
+    for (index_t q = 0; q < block_cols; ++q)
     {
-      if (sparse_detail::keep(dv({i, j}), tolerance))
+      bool keep_block = false;
+      for (index_t u = 0; u < br && !keep_block; ++u)
       {
-        out.set_element(i, j, dv({i, j}));
+        for (index_t v = 0; v < bc; ++v)
+        {
+          if (sparse_detail::keep(dv({p * br + u, q * bc + v}), tolerance))
+          {
+            keep_block = true;
+            break;
+          }
+        }
+      }
+      if (keep_block)
+      {
+        ++number_blocks;
       }
     }
   }
+
+  const index_t block_size = br * bc;
+  out.m_indices.resize({number_blocks, 2});
+  out.m_value_offsets.resize({number_blocks + 1});
+  out.m_values.resize({number_blocks * block_size});
+  out.m_values.fill_with_zeros();
+  auto indices = out.m_indices.view();
+  auto offsets = out.m_value_offsets.view();
+  auto values = out.m_values.view();
+  index_t block_index = 0;
+  for (index_t p = 0; p < block_rows; ++p)
+  {
+    for (index_t q = 0; q < block_cols; ++q)
+    {
+      bool keep_block = false;
+      for (index_t u = 0; u < br && !keep_block; ++u)
+      {
+        for (index_t v = 0; v < bc; ++v)
+        {
+          if (sparse_detail::keep(dv({p * br + u, q * bc + v}), tolerance))
+          {
+            keep_block = true;
+            break;
+          }
+        }
+      }
+      if (keep_block)
+      {
+        indices({block_index, 0}) = p;
+        indices({block_index, 1}) = q;
+        offsets(block_index) = block_index * block_size;
+        for (index_t u = 0; u < br; ++u)
+        {
+          for (index_t v = 0; v < bc; ++v)
+          {
+            if (sparse_detail::keep(dv({p * br + u, q * bc + v}), tolerance))
+            {
+              values(block_index * block_size + u * bc + v) = dv({p * br + u, q * bc + v});
+            }
+          }
+        }
+        ++block_index;
+      }
+    }
+  }
+  offsets(number_blocks) = number_blocks * block_size;
   return out;
 }
 
@@ -368,16 +353,88 @@ BCOOMatrix<data_t> from_dense_bcoo(
   boba_always_assert_equal(dense.rows(), out.rows(), "BCOO row partitions do not match the dense matrix");
   boba_always_assert_equal(dense.cols(), out.cols(), "BCOO column partitions do not match the dense matrix");
   auto dv = dense.const_view();
-  for (index_t i = 0; i < dense.rows(); ++i)
+  auto row_blocks = out.m_block_rows.const_view();
+  auto col_blocks = out.m_block_cols.const_view();
+  index_t number_blocks = 0;
+  index_t total_values = 0;
+  index_t row_offset = 0;
+  for (index_t p = 0; p < out.m_block_rows.size(); ++p)
   {
-    for (index_t j = 0; j < dense.cols(); ++j)
+    index_t col_offset = 0;
+    for (index_t q = 0; q < out.m_block_cols.size(); ++q)
     {
-      if (sparse_detail::keep(dv({i, j}), tolerance))
+      bool keep_block = false;
+      for (index_t u = 0; u < row_blocks(p) && !keep_block; ++u)
       {
-        out.set_element(i, j, dv({i, j}));
+        for (index_t v = 0; v < col_blocks(q); ++v)
+        {
+          if (sparse_detail::keep(dv({row_offset + u, col_offset + v}), tolerance))
+          {
+            keep_block = true;
+            break;
+          }
+        }
       }
+      if (keep_block)
+      {
+        ++number_blocks;
+        total_values += row_blocks(p) * col_blocks(q);
+      }
+      col_offset += col_blocks(q);
     }
+    row_offset += row_blocks(p);
   }
+
+  out.m_indices.resize({number_blocks, 2});
+  out.m_value_offsets.resize({number_blocks + 1});
+  out.m_values.resize({total_values});
+  out.m_values.fill_with_zeros();
+  auto indices = out.m_indices.view();
+  auto offsets = out.m_value_offsets.view();
+  auto values = out.m_values.view();
+  index_t block_index = 0;
+  index_t value_offset = 0;
+  row_offset = 0;
+  for (index_t p = 0; p < out.m_block_rows.size(); ++p)
+  {
+    index_t col_offset = 0;
+    for (index_t q = 0; q < out.m_block_cols.size(); ++q)
+    {
+      bool keep_block = false;
+      for (index_t u = 0; u < row_blocks(p) && !keep_block; ++u)
+      {
+        for (index_t v = 0; v < col_blocks(q); ++v)
+        {
+          if (sparse_detail::keep(dv({row_offset + u, col_offset + v}), tolerance))
+          {
+            keep_block = true;
+            break;
+          }
+        }
+      }
+      if (keep_block)
+      {
+        indices({block_index, 0}) = p;
+        indices({block_index, 1}) = q;
+        offsets(block_index) = value_offset;
+        for (index_t u = 0; u < row_blocks(p); ++u)
+        {
+          for (index_t v = 0; v < col_blocks(q); ++v)
+          {
+            if (sparse_detail::keep(dv({row_offset + u, col_offset + v}), tolerance))
+            {
+              values(value_offset + u * col_blocks(q) + v) = dv({row_offset + u, col_offset + v});
+            }
+          }
+        }
+        value_offset += row_blocks(p) * col_blocks(q);
+        ++block_index;
+      }
+      col_offset += col_blocks(q);
+    }
+    row_offset += row_blocks(p);
+  }
+  offsets(number_blocks) = value_offset;
   return out;
 }
 

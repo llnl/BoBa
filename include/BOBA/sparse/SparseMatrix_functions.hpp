@@ -5,7 +5,6 @@
 #include "BOBA/sparse/BCOOMatrix.hpp"
 #include "BOBA/sparse/COOMatrix.hpp"
 #include "BOBA/sparse/CSRMatrix.hpp"
-#include "BOBA/sparse/DIAMatrix.hpp"
 #include "BOBA/sparse/ELLPACKMatrix.hpp"
 
 namespace boba
@@ -43,8 +42,6 @@ sparse_t from_dense(Matrix<host_space, data_t> const& dense, data_t tolerance = 
     return from_dense_csr(dense, tolerance);
   else if constexpr (std::is_same_v<sparse_t, ELLPACKMatrix<data_t>>)
     return from_dense_ellpack(dense, tolerance);
-  else if constexpr (std::is_same_v<sparse_t, DIAMatrix<data_t>>)
-    return from_dense_dia(dense, tolerance);
   else
     static_assert(std::is_same_v<sparse_t, void>, "BCOO from_dense requires block dimensions");
 }
