@@ -109,9 +109,17 @@ struct BCOOMatrix
     return static_cast<float>(std::floor(full_size / compressed_size * 100.0) / 100.0);
   }
 
-  /**
-   * \brief Returns a stored value or zero when the coordinate is absent.
-   */
+/**
+ * \brief Returns a stored value or zero when the coordinate is absent.
+ *
+ * The matrix is stored in block-sparse format: it is divided into a grid
+ * of fixed-size blocks, and only nonzero blocks are explicitly stored.
+ *
+ * \param i  Global row index.
+ * \param j  Global column index.
+ * \return   The value at (i, j) if the corresponding block is stored,
+ *           otherwise a default-constructed data_t (zero).
+ */
   data_t get_element(index_t i, index_t j) const
   {
     if (i >= rows() || j >= cols())
