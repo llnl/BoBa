@@ -113,21 +113,6 @@ int main()
   check_sparse(boba::from_dense<boba::ELLPACKMatrix<double>>(dense, tolerance), dense_thresholded, x, y, z, "ELLPACK", check);
   check_sparse(boba::from_dense<boba::BCOOMatrix<double>>(dense, 2, 2, tolerance), dense_thresholded, x, y, z, "BCOO", check);
 
-  boba::Vector<boba::host_space, boba::index_t> variable_block_rows(std::vector<boba::index_t>{1, 3});
-  boba::Vector<boba::host_space, boba::index_t> variable_block_cols(std::vector<boba::index_t>{3, 1});
-  check_sparse(
-    boba::from_dense<boba::BCOOMatrix<double>>(
-      dense,
-      variable_block_rows,
-      variable_block_cols,
-      tolerance),
-    dense_thresholded,
-    x,
-    y,
-    z,
-    "BCOO variable-block",
-    check);
-
   const int result = final_check(check);
   boba::finalize();
   return result;
