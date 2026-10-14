@@ -35,9 +35,20 @@ struct BCOOMatrix
    */
   BCOOMatrix() = default;
 
-  /**
-   * \brief Constructs a matrix with the requested dimensions.
-   */
+/**
+ * \brief Constructs an empty block-sparse matrix with the given block
+ *        and grid dimensions.
+ *
+ * The resulting matrix has no stored (nonzero) blocks initially;
+ * blocks must be added separately (e.g., via an insert/set method).
+ *
+ * \param br  Number of rows per block.
+ * \param bc  Number of columns per block.
+ * \param gr  Number of block-rows in the block grid
+ *            (i.e., overall matrix has br * gr rows).
+ * \param gc  Number of block-columns in the block grid
+ *            (i.e., overall matrix has bc * gc columns).
+ */
   BCOOMatrix(index_t br, index_t bc, index_t gr, index_t gc)
       : m_block_rows(std::vector<index_t>(gr, br)),
         m_block_cols(std::vector<index_t>(gc, bc)),
@@ -165,9 +176,17 @@ struct BCOOMatrix
     return static_cast<float>(std::floor(full_size / compressed_size * 100.0) / 100.0);
   }
 
-  /**
-   * \brief Returns a stored value or zero when the coordinate is absent.
-   */
+/**
+ * \brief Returns a stored value or zero when the coordinate is absent.
+ *
+ * The matrix is stored in block-sparse format: it is divided into a grid
+ * of fixed-size blocks, and only nonzero blocks are explicitly stored.
+ *
+ * \param i  Global row index.
+ * \param j  Global column index.
+ * \return   The value at (i, j) if the corresponding block is stored,
+ *           otherwise a default-constructed data_t (zero).
+ */
   data_t get_element(index_t i, index_t j) const
   {
     if (i >= rows() || j >= cols())
