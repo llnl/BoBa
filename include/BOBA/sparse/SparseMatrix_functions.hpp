@@ -12,6 +12,12 @@ namespace boba
 
 /**
  * \brief Computes `y = A*x` and returns a new dense vector.
+ *
+ * \tparam MatrixType Sparse matrix type providing `data_type`, `rows()`, and
+ *         `matvec()`.
+ * \param A Sparse matrix operand.
+ * \param x Dense input vector with length `A.cols()`.
+ * \return Dense result vector with length `A.rows()`.
  */
 template <typename MatrixType>
 Vector<host_space, typename MatrixType::data_type> matvec(MatrixType const& A, Vector<host_space, typename MatrixType::data_type> const& x)
@@ -23,6 +29,13 @@ Vector<host_space, typename MatrixType::data_type> matvec(MatrixType const& A, V
 
 /**
  * \brief Computes `y = alpha*A*x + beta*y` using caller-provided storage.
+ *
+ * \tparam MatrixType Sparse matrix type providing `data_type` and `matvec()`.
+ * \param A Sparse matrix operand.
+ * \param x Dense input vector with length `A.cols()`.
+ * \param y Dense output vector with length `A.rows()`.
+ * \param alpha Matrix-vector product coefficient.
+ * \param beta Existing-output coefficient.
  */
 template <typename MatrixType>
 void matvec(MatrixType const& A, Vector<host_space, typename MatrixType::data_type> const& x, Vector<host_space, typename MatrixType::data_type>& y, typename MatrixType::data_type alpha = 1, typename MatrixType::data_type beta = 0)
@@ -32,6 +45,12 @@ void matvec(MatrixType const& A, Vector<host_space, typename MatrixType::data_ty
 
 /**
  * \brief Imports a dense matrix into the selected sparse format using an absolute tolerance.
+ *
+ * \tparam sparse_t Sparse matrix type selected for the import.
+ * \tparam data_t Dense matrix scalar type.
+ * \param dense Dense matrix to import.
+ * \param tolerance Entries with magnitude no greater than this value are omitted.
+ * \return The imported sparse matrix.
  */
 template <typename sparse_t, typename data_t>
 sparse_t from_dense(Matrix<host_space, data_t> const& dense, data_t tolerance = 0)
@@ -48,6 +67,16 @@ sparse_t from_dense(Matrix<host_space, data_t> const& dense, data_t tolerance = 
 
 /**
  * \brief Imports a dense matrix into the selected sparse format using an absolute tolerance.
+ *
+ * This overload is defined for BCOO and supplies its fixed block dimensions.
+ *
+ * \tparam sparse_t Sparse matrix type; must be `BCOOMatrix<data_t>`.
+ * \tparam data_t Dense matrix scalar type.
+ * \param dense Dense matrix to import.
+ * \param br Number of rows in every BCOO block.
+ * \param bc Number of columns in every BCOO block.
+ * \param tolerance Entries with magnitude no greater than this value are omitted.
+ * \return The imported BCOO matrix.
  */
 template <typename sparse_t, typename data_t>
 sparse_t from_dense(Matrix<host_space, data_t> const& dense, index_t br, index_t bc, data_t tolerance = 0)

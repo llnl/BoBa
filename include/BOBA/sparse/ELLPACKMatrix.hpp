@@ -21,7 +21,9 @@ template <typename data_t = double>
 struct ELLPACKMatrix
 {
   using data_type = data_t;
-  index_t m_rows = 0, m_cols = 0, m_width = 0;
+  index_t m_rows = 0;
+  index_t m_cols = 0;
+  index_t m_width = 0;
   Matrix<host_space, data_t> m_values;
   Matrix<host_space, std::int64_t> m_column_indices;
 
@@ -32,6 +34,10 @@ struct ELLPACKMatrix
 
   /**
    * \brief Constructs a matrix with the requested dimensions.
+   *
+   * \param m Number of rows.
+   * \param n Number of columns.
+   * \param w Number of slots allocated per row.
    */
   ELLPACKMatrix(index_t m, index_t n, index_t w = 0)
       : m_rows(m),
@@ -40,14 +46,14 @@ struct ELLPACKMatrix
         m_values({m, w}),
         m_column_indices({m, w})
   {
-    ::boba::loop<host_space, 1>(0, m * w, [&](index_t i)
-    {
-      m_column_indices.data()[i] = -1;
-    });
+    m_values.fill_with_zeros();
+    m_column_indices.fill_with(-1);
   }
 
   /**
    * \brief Returns the number of matrix rows.
+   *
+   * \return Logical row count.
    */
   index_t rows() const noexcept
   {
@@ -56,6 +62,8 @@ struct ELLPACKMatrix
 
   /**
    * \brief Returns the number of matrix columns.
+   *
+   * \return Logical column count.
    */
   index_t cols() const noexcept
   {
@@ -64,6 +72,8 @@ struct ELLPACKMatrix
 
   /**
    * \brief Returns the logical matrix shape.
+   *
+   * \return `{rows(), cols()}`.
    */
   Array<index_t, 2> shape() const noexcept
   {
@@ -74,6 +84,8 @@ struct ELLPACKMatrix
    * \brief Returns the number of explicitly stored scalar entries.
    *
    * Unused ELLPACK slots have a column index of `-1` and are excluded.
+   *
+   * \return Number of non-sentinel column-index slots.
    */
   index_t nnz() const noexcept
   {
@@ -95,6 +107,8 @@ struct ELLPACKMatrix
    * The storage size counts the value and column-index slot for every row.
    * The result is truncated to two decimal places, matching tensor
    * compression-rate semantics.
+   *
+   * \return Dense scalar count divided by sparse storage count.
    */
   [[nodiscard]]
   float compression_rate() const noexcept
@@ -110,6 +124,10 @@ struct ELLPACKMatrix
 
   /**
    * \brief Returns a stored value or zero when the coordinate is absent.
+   *
+   * \param i Row index.
+   * \param j Column index.
+   * \return The stored value at `(i, j)`, or zero when it is absent or out of bounds.
    */
   data_t get_element(index_t i, index_t j) const
   {
@@ -131,6 +149,13 @@ struct ELLPACKMatrix
 
   /**
    * \brief Computes a dense-vector product using the native sparse storage.
+   *
+   * Computes `y = alpha * A * x + beta * y`.
+   *
+   * \param x Dense input vector with length `cols()`.
+   * \param y Dense output vector with length `rows()`.
+   * \param alpha Matrix-vector product coefficient.
+   * \param beta Existing-output coefficient.
    */
   void matvec(Vector<host_space, data_t> const& x, Vector<host_space, data_t>& y, data_t alpha = 1, data_t beta = 0) const
   {
@@ -155,6 +180,10 @@ struct ELLPACKMatrix
 
 /**
  * \brief Imports a dense matrix into ELLPACK storage using an absolute tolerance.
+ *
+ * \param dense Dense matrix to import.
+ * \param tolerance Entries with magnitude no greater than this value are omitted.
+ * \return ELLPACK storage containing the retained entries.
  */
 template <typename data_t>
 ELLPACKMatrix<data_t> from_dense_ellpack(Matrix<host_space, data_t> const& dense, data_t tolerance = 0)
@@ -191,6 +220,9 @@ ELLPACKMatrix<data_t> from_dense_ellpack(Matrix<host_space, data_t> const& dense
 
 /**
  * \brief Exports ELLPACK storage to a dense host matrix.
+ *
+ * \param sparse ELLPACK matrix to export.
+ * \return Dense matrix with unused slots and missing coordinates represented as zero.
  */
 template <typename data_t>
 Matrix<host_space, data_t> to_dense(ELLPACKMatrix<data_t> const& sparse)

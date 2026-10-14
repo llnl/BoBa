@@ -24,7 +24,8 @@ struct CSRMatrix
   using data_type = data_t;
   using value_container = Vector<host_space, data_t>;
   using index_container = Vector<host_space, index_t>;
-  index_t m_rows = 0, m_cols = 0;
+  index_t m_rows = 0;
+  index_t m_cols = 0;
   value_container m_values;
   index_container m_column_indices, m_row_offsets;
 
@@ -35,6 +36,9 @@ struct CSRMatrix
 
   /**
    * \brief Constructs a matrix with the requested dimensions.
+   *
+   * \param m Number of rows.
+   * \param n Number of columns.
    */
   CSRMatrix(index_t m, index_t n)
       : m_rows(m),
@@ -46,6 +50,8 @@ struct CSRMatrix
 
   /**
    * \brief Returns the number of matrix rows.
+   *
+   * \return Logical row count.
    */
   index_t rows() const noexcept
   {
@@ -54,6 +60,8 @@ struct CSRMatrix
 
   /**
    * \brief Returns the number of matrix columns.
+   *
+   * \return Logical column count.
    */
   index_t cols() const noexcept
   {
@@ -62,6 +70,8 @@ struct CSRMatrix
 
   /**
    * \brief Returns the logical matrix shape.
+   *
+   * \return `{rows(), cols()}`.
    */
   Array<index_t, 2> shape() const noexcept
   {
@@ -69,7 +79,9 @@ struct CSRMatrix
   }
 
   /**
-   * \brief Returns the number of stored entries or blocks.
+   * \brief Returns the number of explicitly stored scalar entries.
+   *
+   * \return Number of entries represented by the value/column arrays.
    */
   index_t nnz() const noexcept
   {
@@ -82,6 +94,8 @@ struct CSRMatrix
    * The storage size counts values, column indices, and row offsets. The
    * result is truncated to two decimal places, matching tensor
    * compression-rate semantics.
+   *
+   * \return Dense scalar count divided by sparse storage count.
    */
   [[nodiscard]]
   float compression_rate() const noexcept
@@ -93,6 +107,10 @@ struct CSRMatrix
 
   /**
    * \brief Returns a stored value or zero when the coordinate is absent.
+   *
+   * \param i Row index.
+   * \param j Column index.
+   * \return The stored value at `(i, j)`, or zero when it is absent or out of bounds.
    */
   data_t get_element(index_t i, index_t j) const
   {
@@ -115,6 +133,13 @@ struct CSRMatrix
 
   /**
    * \brief Computes a dense-vector product using the native sparse storage.
+   *
+   * Computes `y = alpha * A * x + beta * y`.
+   *
+   * \param x Dense input vector with length `cols()`.
+   * \param y Dense output vector with length `rows()`.
+   * \param alpha Matrix-vector product coefficient.
+   * \param beta Existing-output coefficient.
    */
   void matvec(Vector<host_space, data_t> const& x, Vector<host_space, data_t>& y, data_t alpha = 1, data_t beta = 0) const
   {
@@ -139,6 +164,10 @@ struct CSRMatrix
 
 /**
  * \brief Imports a dense matrix into CSR storage using an absolute tolerance.
+ *
+ * \param dense Dense matrix to import.
+ * \param tolerance Entries with magnitude no greater than this value are omitted.
+ * \return CSR storage containing the retained entries.
  */
 template <typename data_t>
 CSRMatrix<data_t> from_dense_csr(Matrix<host_space, data_t> const& dense, data_t tolerance = 0)
@@ -190,6 +219,9 @@ CSRMatrix<data_t> from_dense_csr(Matrix<host_space, data_t> const& dense, data_t
 
 /**
  * \brief Exports CSR storage to a dense host matrix.
+ *
+ * \param sparse CSR matrix to export.
+ * \return Dense matrix with missing coordinates initialized to zero.
  */
 template <typename data_t>
 Matrix<host_space, data_t> to_dense(CSRMatrix<data_t> const& sparse)

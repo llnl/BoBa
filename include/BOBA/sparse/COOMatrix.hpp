@@ -35,6 +35,9 @@ struct COOMatrix
 
   /**
    * \brief Constructs a matrix with the requested dimensions.
+   *
+   * \param m Number of rows.
+   * \param n Number of columns.
    */
   COOMatrix(index_t m, index_t n)
       : m_rows(m),
@@ -45,6 +48,8 @@ struct COOMatrix
 
   /**
    * \brief Returns the number of matrix rows.
+   *
+   * \return Logical row count.
    */
   index_t rows() const noexcept
   {
@@ -53,6 +58,8 @@ struct COOMatrix
 
   /**
    * \brief Returns the number of matrix columns.
+   *
+   * \return Logical column count.
    */
   index_t cols() const noexcept
   {
@@ -61,6 +68,8 @@ struct COOMatrix
 
   /**
    * \brief Returns the logical matrix shape.
+   *
+   * \return `{rows(), cols()}`.
    */
   Array<index_t, 2> shape() const noexcept
   {
@@ -68,7 +77,9 @@ struct COOMatrix
   }
 
   /**
-   * \brief Returns the number of stored entries or blocks.
+   * \brief Returns the number of explicitly stored scalar entries.
+   *
+   * \return Number of entries represented by the coordinate/value arrays.
    */
   index_t nnz() const noexcept
   {
@@ -81,6 +92,8 @@ struct COOMatrix
    * The storage size counts one value and two coordinate indices per entry.
    * The result is truncated to two decimal places, matching tensor
    * compression-rate semantics.
+   *
+   * \return Dense scalar count divided by sparse storage count.
    */
   [[nodiscard]]
   float compression_rate() const noexcept
@@ -96,6 +109,10 @@ struct COOMatrix
 
   /**
    * \brief Returns a stored value or zero when the coordinate is absent.
+   *
+   * \param i Row index.
+   * \param j Column index.
+   * \return The stored value at `(i, j)`, or zero when it is absent or out of bounds.
    */
   data_t get_element(index_t i, index_t j) const
   {
@@ -117,6 +134,13 @@ struct COOMatrix
 
   /**
    * \brief Computes a dense-vector product using the native sparse storage.
+   *
+   * Computes `y = alpha * A * x + beta * y`.
+   *
+   * \param x Dense input vector with length `cols()`.
+   * \param y Dense output vector with length `rows()`.
+   * \param alpha Matrix-vector product coefficient.
+   * \param beta Existing-output coefficient.
    */
   void matvec(Vector<host_space, data_t> const& x,
               Vector<host_space, data_t>& y,
@@ -140,6 +164,10 @@ struct COOMatrix
 
 /**
  * \brief Imports a dense matrix into COO storage using an absolute tolerance.
+ *
+ * \param dense Dense matrix to import.
+ * \param tolerance Entries with magnitude no greater than this value are omitted.
+ * \return COO storage containing the retained entries.
  */
 template <typename data_t>
 COOMatrix<data_t> from_dense_coo(Matrix<host_space, data_t> const& dense, data_t tolerance = 0)
@@ -182,6 +210,9 @@ COOMatrix<data_t> from_dense_coo(Matrix<host_space, data_t> const& dense, data_t
 
 /**
  * \brief Exports COO storage to a dense host matrix.
+ *
+ * \param sparse COO matrix to export.
+ * \return Dense matrix with missing coordinates initialized to zero.
  */
 template <typename data_t>
 Matrix<host_space, data_t> to_dense(COOMatrix<data_t> const& sparse)

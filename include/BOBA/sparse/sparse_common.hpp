@@ -16,6 +16,11 @@ namespace boba
 namespace sparse_detail
 {
 
+/**
+ * \brief Validates an absolute sparsity tolerance.
+ *
+ * \param tolerance Nonnegative finite tolerance used by dense imports.
+ */
 template <typename data_t>
 void check_tolerance(data_t tolerance)
 {
@@ -23,12 +28,25 @@ void check_tolerance(data_t tolerance)
   boba_always_assert(std::isfinite(static_cast<double>(tolerance)), "Sparse tolerance must be finite");
 }
 
+/**
+ * \brief Returns whether a value should be retained by a sparse import.
+ *
+ * \param value Candidate dense value.
+ * \param tolerance Nonnegative absolute retention tolerance.
+ * \return `true` when `abs(value)` is greater than `tolerance`.
+ */
 template <typename data_t>
 bool keep(data_t value, data_t tolerance)
 {
   return abs(value) > tolerance;
 }
 
+/**
+ * \brief Applies the beta portion of a sparse matrix-vector operation.
+ *
+ * \param y Output vector to initialize or scale.
+ * \param beta Existing-output coefficient.
+ */
 template <typename data_t>
 void initialize_output(Vector<host_space, data_t>& y, data_t beta)
 {

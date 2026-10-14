@@ -58,6 +58,8 @@ struct BCOOMatrix
 
   /**
    * \brief Returns the number of matrix rows.
+   *
+   * \return Logical row count.
    */
   index_t rows() const noexcept
   {
@@ -66,6 +68,8 @@ struct BCOOMatrix
 
   /**
    * \brief Returns the number of matrix columns.
+   *
+   * \return Logical column count.
    */
   index_t cols() const noexcept
   {
@@ -74,6 +78,8 @@ struct BCOOMatrix
 
   /**
    * \brief Returns the logical matrix shape.
+   *
+   * \return `{rows(), cols()}`.
    */
   Array<index_t, 2> shape() const noexcept
   {
@@ -82,6 +88,8 @@ struct BCOOMatrix
 
   /**
    * \brief Returns the number of explicitly stored blocks.
+   *
+   * \return Number of block-coordinate entries in `m_indices`.
    */
   index_t nonzero_blocks() const noexcept
   {
@@ -90,6 +98,9 @@ struct BCOOMatrix
 
   /**
    * \brief Returns the size of the dense block-value tensor.
+   *
+   * \return Total number of scalar slots in `m_values`, including zero-valued
+   *         slots inside stored blocks.
    */
   index_t nnz() const noexcept
   {
@@ -117,6 +128,11 @@ struct BCOOMatrix
 
   /**
    * \brief Returns a stored value or zero when the coordinate is absent.
+   *
+   * \param i Row index.
+   * \param j Column index.
+   * \return The stored value at `(i, j)`, or zero when its block is absent or
+   *         the coordinate is out of bounds.
    */
   data_t get_element(index_t i, index_t j) const
   {
@@ -143,6 +159,13 @@ struct BCOOMatrix
 
   /**
    * \brief Computes a dense-vector product using the native sparse storage.
+   *
+   * Computes `y = alpha * A * x + beta * y`.
+   *
+   * \param x Dense input vector with length `cols()`.
+   * \param y Dense output vector with length `rows()`.
+   * \param alpha Matrix-vector product coefficient.
+   * \param beta Existing-output coefficient.
    */
   void matvec(Vector<host_space, data_t> const& x,
               Vector<host_space, data_t>& y,
@@ -170,6 +193,15 @@ struct BCOOMatrix
 
 /**
  * \brief Imports a dense matrix into BCOO storage using fixed block dimensions.
+ *
+ * A block is stored when at least one value in it passes the tolerance test;
+ * values within that block that do not pass the test are initialized to zero.
+ *
+ * \param dense Dense matrix to import.
+ * \param br Number of rows in every block.
+ * \param bc Number of columns in every block.
+ * \param tolerance Entries with magnitude no greater than this value are omitted.
+ * \return BCOO storage containing the retained blocks.
  */
 template <typename data_t>
 BCOOMatrix<data_t> from_dense_bcoo(Matrix<host_space, data_t> const& dense,
@@ -253,6 +285,9 @@ BCOOMatrix<data_t> from_dense_bcoo(Matrix<host_space, data_t> const& dense,
 
 /**
  * \brief Exports BCOO storage to a dense host matrix.
+ *
+ * \param sparse BCOO matrix to export.
+ * \return Dense matrix with missing blocks initialized to zero.
  */
 template <typename data_t>
 Matrix<host_space, data_t> to_dense(BCOOMatrix<data_t> const& sparse)
