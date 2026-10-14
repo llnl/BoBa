@@ -127,37 +127,6 @@ struct BCOOMatrix
   }
 
   /**
-   * \brief Returns a stored value or zero when the coordinate is absent.
-   *
-   * \param i Row index.
-   * \param j Column index.
-   * \return The stored value at `(i, j)`, or zero when its block is absent or
-   *         the coordinate is out of bounds.
-   */
-  data_t get_element(index_t i, index_t j) const
-  {
-    if (i >= rows() || j >= cols())
-    {
-      return {};
-    }
-
-    const auto row_index = Multiindexer<2>::multiindex({m_rows_per_block, m_block_grid_rows}, i);
-    const auto col_index = Multiindexer<2>::multiindex({m_cols_per_block, m_block_grid_cols}, j);
-    const index_t u = row_index[0], p = row_index[1];
-    const index_t v = col_index[0], q = col_index[1];
-    auto indices = m_indices.const_view();
-    auto values = m_values.const_view();
-    for (index_t k = 0; k < nonzero_blocks(); ++k)
-    {
-      if (indices({k, 0}) == p && indices({k, 1}) == q)
-      {
-        return values({u, v, k});
-      }
-    }
-    return {};
-  }
-
-  /**
    * \brief Computes a dense-vector product using the native sparse storage.
    *
    * Computes `y = alpha * A * x + beta * y`.

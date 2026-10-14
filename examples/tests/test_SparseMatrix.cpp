@@ -11,7 +11,7 @@ using matrix_t = boba::Matrix<boba::host_space, double>;
 
 /**
  * \brief Takes a dense matrix and compares sparse construction from this matrix
- * Tests sparse lookup, to_dense export, and matvec
+ * Tests dense export and matvec for each sparse format.
  */
 template <typename Sparse>
 void check_sparse(Sparse const& sparse,
@@ -33,7 +33,6 @@ void check_sparse(Sparse const& sparse,
   {
     auto [i, j] = indices;
     error = std::max(error, boba::abs(dense_view({i, j}) - expected_view({i, j})));
-    error = std::max(error, boba::abs(sparse.get_element(i, j) - expected_view({i, j})));
   });
 
   pass_or_fail(check, error, 1.0e-14);

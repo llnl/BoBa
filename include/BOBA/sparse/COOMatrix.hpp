@@ -108,31 +108,6 @@ struct COOMatrix
   }
 
   /**
-   * \brief Returns a stored value or zero when the coordinate is absent.
-   *
-   * \param i Row index.
-   * \param j Column index.
-   * \return The stored value at `(i, j)`, or zero when it is absent or out of bounds.
-   */
-  data_t get_element(index_t i, index_t j) const
-  {
-    if (i >= m_rows || j >= m_cols)
-    {
-      return data_t{};
-    }
-    auto iv = m_indices.const_view();
-    auto vv = m_values.const_view();
-    for (index_t k = 0; k < nnz(); ++k)
-    {
-      if (iv({k, 0}) == i && iv({k, 1}) == j)
-      {
-        return vv(k);
-      }
-    }
-    return data_t{};
-  }
-
-  /**
    * \brief Computes a dense-vector product using the native sparse storage.
    *
    * Computes `y = alpha * A * x + beta * y`.

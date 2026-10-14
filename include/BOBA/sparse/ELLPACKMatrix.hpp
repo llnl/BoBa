@@ -123,31 +123,6 @@ struct ELLPACKMatrix
   }
 
   /**
-   * \brief Returns a stored value or zero when the coordinate is absent.
-   *
-   * \param i Row index.
-   * \param j Column index.
-   * \return The stored value at `(i, j)`, or zero when it is absent or out of bounds.
-   */
-  data_t get_element(index_t i, index_t j) const
-  {
-    if (i >= m_rows || j >= m_cols)
-    {
-      return {};
-    }
-    auto c = m_column_indices.const_view();
-    auto v = m_values.const_view();
-    for (index_t k = 0; k < m_width; ++k)
-    {
-      if (c({i, k}) == static_cast<std::int64_t>(j))
-      {
-        return v({i, k});
-      }
-    }
-    return {};
-  }
-
-  /**
    * \brief Computes a dense-vector product using the native sparse storage.
    *
    * Computes `y = alpha * A * x + beta * y`.
