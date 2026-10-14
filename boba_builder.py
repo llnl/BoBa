@@ -87,6 +87,7 @@ tpls['blt'] = {}
 tpls['fmt'] = {}
 tpls['camp'] = {}
 tpls['RAJA'] = {}
+tpls['kokkos'] = {}
 tpls['umpire'] = {}
 tpls['eigen'] = {}
 tpls['Caliper'] = {}
@@ -95,7 +96,7 @@ tpls['metal_cpp_compute'] = {}
 for tpl in tpls.keys():
     tpls[tpl]['cmake'] = {}
     default_choice = 'On'
-    if tpl == 'metal_cpp_compute':
+    if tpl in ['metal_cpp_compute', 'kokkos']:
         default_choice = 'Off'
     parser.add_argument(
         f'--{tpl}',
@@ -145,6 +146,7 @@ tpls['blt']['enable'] = args.blt
 tpls['fmt']['enable'] = args.fmt
 tpls['camp']['enable'] = args.camp
 tpls['RAJA']['enable'] = args.RAJA
+tpls['kokkos']['enable'] = args.kokkos
 tpls['umpire']['enable'] = args.umpire
 tpls['eigen']['enable'] = args.eigen
 tpls['Caliper']['enable'] = args.Caliper
@@ -159,6 +161,7 @@ boba_cmake_options['BOBA_ENABLE_FMT'] = tpls['fmt']['enable']
 boba_cmake_options['BOBA_ENABLE_CALIPER'] = tpls['Caliper']['enable']
 boba_cmake_options['BOBA_ENABLE_HDF5'] = tpls['hdf5']['enable']
 boba_cmake_options['BOBA_ENABLE_RAJA'] = tpls['RAJA']['enable']
+boba_cmake_options['BOBA_ENABLE_KOKKOS'] = tpls['kokkos']['enable']
 boba_cmake_options['BOBA_ENABLE_UMPIRE'] = tpls['umpire']['enable']
 boba_cmake_options['BOBA_ENABLE_METAL'] = tpls['metal_cpp_compute']['enable']
 boba_cmake_options['BOBA_ENABLE_CAMP'] = tpls['camp']['enable']
@@ -246,6 +249,7 @@ export_suffix["fmt"] = "lib/cmake/fmt"
 export_suffix["camp"] = "lib/cmake/camp"
 export_suffix["eigen"] = "share/eigen3/cmake"
 export_suffix["RAJA"] = "lib/cmake/raja"
+export_suffix["kokkos"] = "lib/cmake/Kokkos"
 export_suffix["umpire"] = "lib/cmake/umpire"
 export_suffix["metal_cpp_compute"] = "lib/cmake/metal_cpp_compute"
 
@@ -255,6 +259,7 @@ check_external_tpl_cmake_dir('blt', args.BLT_DIR, tpl_cmake_dirs)
 check_external_tpl_cmake_dir('fmt', args.FMT_DIR, tpl_cmake_dirs)
 check_external_tpl_cmake_dir('camp', args.CAMP_DIR, tpl_cmake_dirs)
 check_external_tpl_cmake_dir('RAJA', args.RAJA_DIR, tpl_cmake_dirs)
+check_external_tpl_cmake_dir('kokkos', args.KOKKOS_DIR, tpl_cmake_dirs)
 check_external_tpl_cmake_dir('metal_cpp_compute', args.METAL_CPP_COMPUTE_DIR, tpl_cmake_dirs)
 check_external_tpl_cmake_dir('umpire', args.UMPIRE_DIR, tpl_cmake_dirs)
 check_external_tpl_cmake_dir('eigen', args.EIGEN_DIR, tpl_cmake_dirs)
@@ -431,6 +436,15 @@ def build_tpl(cmake_dict, tpl, architecture):
 
     for (key, value) in cmake_dict[tpl]['cmake'].items():
         cmake_commands[key] = value
+
+    if tpl == 'kokkos' and cmake_commands.get('Kokkos_ENABLE_CUDA') == 'On':
+        host_compiler = cmake_commands.get('CMAKE_CXX_COMPILER')
+        cmake_commands['CMAKE_CXX_COMPILER'] = os.path.join(tpl_source_dir, 'bin', 'nvcc_wrapper')
+        if host_compiler:
+            os.environ['NVCC_WRAPPER_DEFAULT_COMPILER'] = host_compiler
+        if 'CUDA_TOOLKIT_ROOT_DIR' in cmake_commands:
+            cmake_commands['CUDA_ROOT'] = cmake_commands['CUDA_TOOLKIT_ROOT_DIR']
+            os.environ['CUDA_ROOT'] = cmake_commands['CUDA_TOOLKIT_ROOT_DIR']
 
     # If nothing to do for this tpl+arch, return
     if not cmake_commands.keys():

@@ -8,6 +8,9 @@
 #include "umpire/Umpire.hpp"
 #include "umpire/strategy/QuickPool.hpp"
 #endif
+#ifdef BOBA_KOKKOS
+#include <Kokkos_Core.hpp>
+#endif
 
 // This source file handles backend setup and initialization.
 
@@ -53,6 +56,10 @@ RandomContext& default_context()
 
 namespace detail
 {
+
+#ifdef BOBA_KOKKOS
+bool kokkos_initialized_by_boba = false;
+#endif
 
 #ifdef BOBA_CUDA_LIBS
 cublasHandle_t cublas_handle;
@@ -314,6 +321,14 @@ void init()
   // Cusolver handles
   // ---------------------------------
   checkpoint();
+
+#ifdef BOBA_KOKKOS
+  if (!Kokkos::is_initialized())
+  {
+    Kokkos::initialize();
+    detail::kokkos_initialized_by_boba = true;
+  }
+#endif
   detail::init_cuda_libs();
   detail::init_cutensor();
   detail::init_hip_libs();
@@ -347,6 +362,14 @@ void finalize()
   detail::finalize_hip_libs();
   detail::finalize_hiptensor();
   checkpoint();
+
+#ifdef BOBA_KOKKOS
+  if (detail::kokkos_initialized_by_boba && Kokkos::is_initialized() && !Kokkos::is_finalized())
+  {
+    Kokkos::finalize();
+    detail::kokkos_initialized_by_boba = false;
+  }
+#endif
 
   // ---------------------------------
   // end

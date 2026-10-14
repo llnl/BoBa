@@ -26,6 +26,26 @@ if(BOBA_ENABLE_HIP)
 endif()
 
 #------------------------------------------------------------------------------
+# Kokkos
+#------------------------------------------------------------------------------
+if (KOKKOS_DIR AND BOBA_ENABLE_KOKKOS)
+    if (NOT EXISTS "${KOKKOS_DIR}")
+        message(FATAL_ERROR "Given KOKKOS_DIR does not exist: ${KOKKOS_DIR}")
+    endif()
+    if (NOT IS_DIRECTORY "${KOKKOS_DIR}")
+        message(FATAL_ERROR "Given KOKKOS_DIR is not a directory: ${KOKKOS_DIR}")
+    endif()
+    find_package(Kokkos REQUIRED PATHS ${KOKKOS_DIR})
+    if (NOT TARGET Kokkos::kokkos)
+        message(FATAL_ERROR "Kokkos failed to load: ${KOKKOS_DIR}")
+    endif()
+    set(KOKKOS_FOUND TRUE CACHE BOOL "" FORCE)
+else()
+    message(STATUS "Kokkos support is OFF")
+    set(KOKKOS_FOUND FALSE CACHE BOOL "" FORCE)
+endif()
+
+#------------------------------------------------------------------------------
 # fmt
 #------------------------------------------------------------------------------
 if ((UMPIRE_DIR) AND NOT FMT_DIR)
@@ -355,7 +375,7 @@ if( ${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.13.0" )
 endif()
 list(APPEND _props INTERFACE_COMPILE_OPTIONS)
 
-foreach(_target RAJA camp umpire umpire_alloc Eigen3::Eigen caliper)
+foreach(_target RAJA Kokkos::kokkos camp umpire umpire_alloc Eigen3::Eigen caliper)
     if(TARGET ${_target})
 #        message(STATUS "Removing OpenMP Flags from target[${_target}]")
 

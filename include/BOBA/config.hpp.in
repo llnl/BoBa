@@ -51,14 +51,18 @@
 #cmakedefine BOBA_ENABLE_CALIPER
 #cmakedefine BOBA_ENABLE_HDF5
 #cmakedefine BOBA_ENABLE_RAJA
+#cmakedefine BOBA_ENABLE_KOKKOS
 
 /* Transition variables*/
+#ifndef BOBA_CI
 #cmakedefine BOBA_CI
+#endif
 #cmakedefine BOBA_CPU
 #cmakedefine BOBA_ENABLE_APPLE
 #cmakedefine BOBA_APPLE
 #cmakedefine BOBA_METAL
 #cmakedefine BOBA_RAJA
+#cmakedefine BOBA_KOKKOS
 #cmakedefine BOBA_CUDA
 #cmakedefine BOBA_CUDA_LIBS
 #cmakedefine BOBA_CUTENSOR

@@ -17,7 +17,7 @@ At its core, BoBa offers a variety of features for matrices and tensors:
 - Capabilities to create **views** of such objects, including 'atomic' and 'const' views.
 - Routines for calling open-source and vendor linear algebra operations, including **LU**, **Cholesky**, **QR**, **SVD**, and more.
 - Routines for calling open-source and vendor tensor algebra operations, including **permutations**, **contractions**, **reductions**, and more.
-- **Portable multi-dimensional loops and reductions** enabled by [RAJA](https://github.com/LLNL/RAJA).
+- Compatible with [RAJA](https://github.com/LLNL/RAJA) or [Kokkos](https://github.com/kokkos/kokkos).
 - **Dense object memory pooling** enabled by [Umpire](https://github.com/LLNL/Umpire).
 - **Static (compile-time sized) versions** of matrices and tensors, with relevant algorithms.
 - A **C++20 feature set**.
@@ -112,6 +112,7 @@ Third-party dependencies currently include:
 - fmt (MIT)
 - HDF5 (HDF5 license)
 - RAJA (BSD-3-Clause)
+- Kokkos (Apache-2.0 with LLVM exceptions)
 - Umpire (MIT)
 
 See [tpl/license/README.md](tpl/license/README.md) for more information.

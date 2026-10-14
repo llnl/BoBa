@@ -70,6 +70,21 @@ if (NOT TARGET camp AND "@CAMP_FOUND@")
   )
 endif ()
 #------------------------------------------------------------------------------
+# Kokkos
+#------------------------------------------------------------------------------
+if (NOT TARGET Kokkos::kokkos AND "@KOKKOS_FOUND@")
+  set(BOBA_KOKKOS_DIR "@KOKKOS_DIR@")
+  if(NOT Kokkos_DIR)
+    set(Kokkos_DIR ${BOBA_KOKKOS_DIR})
+  endif()
+
+  find_dependency(Kokkos CONFIG NO_DEFAULT_PATH PATHS
+    ${Kokkos_DIR}
+    ${Kokkos_DIR}/lib/cmake/Kokkos
+    ${BOBA_PREFIX_PATH}
+  )
+endif ()
+#------------------------------------------------------------------------------
 # RAJA
 #------------------------------------------------------------------------------
 if (NOT TARGET RAJA AND "@RAJA_FOUND@")

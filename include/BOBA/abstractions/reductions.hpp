@@ -4,24 +4,13 @@
 
 #include "BOBA/boba.hpp"
 
-#ifdef BOBA_RAJA
-#include "RAJA/RAJA.hpp"
-#endif
-
 namespace boba
 {
 
-#ifdef BOBA_RAJA
-using reducer_index_t = std::ptrdiff_t;
-#else
-using reducer_index_t = index_t;
-#endif
+using reducer_index_t = std::conditional_t<boba_raja_enabled(), std::ptrdiff_t, index_t>;
 
 namespace detail
 {
-
-template <boba::execution_space space>
-struct ExecutionSpaceTraits;
 
 enum struct reducer_t : std::size_t
 {
@@ -41,39 +30,6 @@ template <reducer_t reducer_type>
 concept IsLocReducer = (reducer_type == reducer_t::max_loc) or
                        (reducer_type == reducer_t::min_loc);
 
-#ifdef BOBA_RAJA
-
-template <>
-struct ExecutionSpaceTraits<execution_space::CPU>
-{
-  using raja_policy = RAJA::seq_exec;
-};
-
-#if defined(BOBA_HIP)
-static constexpr size_t boba_hip_reducer_block_size = 256;
-template <>
-struct ExecutionSpaceTraits<execution_space::HIP>
-{
-  using raja_policy = RAJA::hip_exec_async<boba_hip_reducer_block_size>;
-};
-#endif
-
-#if defined(BOBA_CUDA)
-static constexpr size_t boba_cuda_reducer_block_size = 256;
-template <>
-struct ExecutionSpaceTraits<execution_space::CUDA>
-{
-  using raja_policy = RAJA::cuda_exec_async<boba_cuda_reducer_block_size>;
-};
-#endif
-
-#else
-
-template <>
-struct ExecutionSpaceTraits<execution_space::CPU>
-{
-};
-
 template <typename data_t, reducer_t reducer_type>
 struct ReducerValue
 {
@@ -83,7 +39,7 @@ struct ReducerValue
    */
   template <reducer_t _reducer_type = reducer_type>
     requires IsValueReducer<_reducer_type>
-  ReducerValue(data_t val)
+  __boba_host_device__ ReducerValue(data_t val)
       : m_value(val)
   {
   }
@@ -95,7 +51,7 @@ struct ReducerValue
    */
   template <reducer_t _reducer_type = reducer_type>
     requires IsLocReducer<_reducer_type>
-  ReducerValue(data_t val, index_t loc)
+  __boba_host_device__ ReducerValue(data_t val, index_t loc)
       : m_value(val),
         m_loc(loc)
   {
@@ -105,7 +61,7 @@ struct ReducerValue
    * @brief Returns the stored reduction value.
    * @return Stored value reference.
    */
-  data_t& getVal()
+  __boba_host_device__ data_t& getVal()
   {
     return m_value;
   }
@@ -116,7 +72,7 @@ struct ReducerValue
    */
   template <reducer_t _reducer_type = reducer_type>
     requires IsLocReducer<_reducer_type>
-  index_t& getLoc()
+  __boba_host_device__ index_t& getLoc()
   {
     return m_loc;
   }
@@ -127,7 +83,7 @@ struct ReducerValue
    */
   template <reducer_t _reducer_type = reducer_type>
     requires IsLocReducer<_reducer_type>
-  std::pair<data_t, index_t> getPair() const
+  __boba_host_device__ std::pair<data_t, index_t> getPair() const
   {
     return std::make_pair(data_t(m_value), index_t(m_loc));
   }
@@ -146,7 +102,7 @@ struct ReducerOperator
    */
   template <reducer_t _reducer_type = reducer_type>
     requires IsValueReducer<_reducer_type>
-  ReducerOperator(ReducerValue<data_t, reducer_type>* value_ptr)
+  __boba_host_device__ ReducerOperator(ReducerValue<data_t, reducer_type>* value_ptr)
       : m_value_ptr(&value_ptr->getVal())
   {
   }
@@ -157,7 +113,7 @@ struct ReducerOperator
    */
   template <reducer_t _reducer_type = reducer_type>
     requires IsLocReducer<_reducer_type>
-  ReducerOperator(ReducerValue<data_t, reducer_type>* value_ptr)
+  __boba_host_device__ ReducerOperator(ReducerValue<data_t, reducer_type>* value_ptr)
       : m_value_ptr(&value_ptr->getVal()),
         m_loc_ptr(&value_ptr->getLoc())
   {
@@ -169,7 +125,7 @@ struct ReducerOperator
    */
   template <reducer_t _reducer_type = reducer_type>
     requires IsValueReducer<_reducer_type>
-  ReducerOperator(data_t* value_ptr)
+  __boba_host_device__ ReducerOperator(data_t* value_ptr)
       : m_value_ptr(value_ptr)
   {
   }
@@ -181,7 +137,7 @@ struct ReducerOperator
    */
   template <reducer_t _reducer_type = reducer_type>
     requires IsLocReducer<_reducer_type>
-  ReducerOperator(data_t* value_ptr, index_t* loc_ptr)
+  __boba_host_device__ ReducerOperator(data_t* value_ptr, index_t* loc_ptr)
       : m_value_ptr(value_ptr),
         m_loc_ptr(loc_ptr)
   {
@@ -194,7 +150,7 @@ struct ReducerOperator
    */
   template <reducer_t _reducer_type = reducer_type>
     requires(_reducer_type == reducer_t::min)
-  ReducerOperator& min(data_t val)
+  __boba_host_device__ ReducerOperator& min(data_t val)
   {
     if (val < *m_value_ptr)
     {
@@ -210,7 +166,7 @@ struct ReducerOperator
    */
   template <reducer_t _reducer_type = reducer_type>
     requires(_reducer_type == reducer_t::max)
-  ReducerOperator& max(data_t val)
+  __boba_host_device__ ReducerOperator& max(data_t val)
   {
     if (*m_value_ptr < val)
     {
@@ -227,7 +183,7 @@ struct ReducerOperator
    */
   template <reducer_t _reducer_type = reducer_type>
     requires(_reducer_type == reducer_t::min_loc)
-  ReducerOperator& minloc(data_t val, index_t loc)
+  __boba_host_device__ ReducerOperator& minloc(data_t val, index_t loc)
   {
     if (val < *m_value_ptr)
     {
@@ -245,7 +201,7 @@ struct ReducerOperator
    */
   template <reducer_t _reducer_type = reducer_type>
     requires(_reducer_type == reducer_t::max_loc)
-  ReducerOperator& maxloc(data_t val, index_t loc)
+  __boba_host_device__ ReducerOperator& maxloc(data_t val, index_t loc)
   {
     if (*m_value_ptr < val)
     {
@@ -262,7 +218,7 @@ struct ReducerOperator
    */
   template <reducer_t _reducer_type = reducer_type>
     requires(_reducer_type == reducer_t::sum)
-  ReducerOperator& operator+=(data_t value)
+  __boba_host_device__ ReducerOperator& operator+=(data_t value)
   {
     *m_value_ptr += value;
     return *this;
@@ -273,61 +229,22 @@ private:
   index_t* m_loc_ptr;
 };
 
-#endif
+} // namespace detail
 
-// ---------------------------------------------------------------------------
-// Reduction Loop
-// ---------------------------------------------------------------------------
+} // namespace boba
 
-/**
- * \brief
- * Loop with reducer.
- * @tparam space Execution space.
- * @tparam index_t Index type.
- * @tparam Reducer Reducer type.
- * @tparam Lambda Loop body type.
- * @param begin Inclusive lower bound.
- * @param end Exclusive upper bound.
- * @param reducer Reducer object.
- * @param lambda Loop body.
- */
+#include "BOBA/backends/boba_raja.hpp"
+#include "BOBA/backends/boba_kokkos.hpp"
 
-template <boba::execution_space space, typename Reducer, typename Lambda>
-inline void loop(
-  index_t begin,
-  index_t end,
-  Reducer&& reducer,
-  Lambda&& lambda)
+namespace boba
 {
-  if (end <= begin)
-  {
-    return;
-  }
 
-#ifdef BOBA_RAJA
-  using raja_policy = typename ExecutionSpaceTraits<space>::raja_policy;
-
-  RAJA::TypedRangeSegment<index_t> range(begin, end);
-
-  RAJA::forall<raja_policy>(
-    range,
-    std::forward<Reducer>(reducer),
-    std::forward<Lambda>(lambda));
-#else
-  for (index_t i = begin; i < end; ++i)
-  {
-    lambda(i, reducer);
-  }
-#endif
-}
+namespace detail
+{
 
 } // namespace detail
 
-// ---------------------------------------------------------------------------
-// Reduction Loop
-// ---------------------------------------------------------------------------
-
-#ifdef BOBA_RAJA
+#if defined(BOBA_RAJA)
 //
 // sum
 //
@@ -363,7 +280,42 @@ template <typename data_t>
 using max_loc_reducer_value = RAJA::expt::ValLocOp<data_t, reducer_index_t, RAJA::operators::maximum>;
 template <typename data_t>
 using max_loc_reducer_operator = RAJA::expt::ValLocOp<data_t, reducer_index_t, RAJA::operators::maximum>;
+#elif defined(BOBA_KOKKOS)
 //
+// sum
+//
+template <typename data_t>
+using sum_reducer_value = data_t;
+template <typename data_t>
+using sum_reducer_operator = detail::ReducerOperator<data_t, detail::reducer_t::sum>;
+//
+// min
+//
+template <typename data_t>
+using min_reducer_value = data_t;
+template <typename data_t>
+using min_reducer_operator = detail::ReducerOperator<data_t, detail::reducer_t::min>;
+//
+// max
+//
+template <typename data_t>
+using max_reducer_value = data_t;
+template <typename data_t>
+using max_reducer_operator = detail::ReducerOperator<data_t, detail::reducer_t::max>;
+//
+// min loc
+//
+template <typename data_t>
+using min_loc_reducer_value = detail::ReducerValue<data_t, detail::reducer_t::min_loc>;
+template <typename data_t>
+using min_loc_reducer_operator = detail::ReducerOperator<data_t, detail::reducer_t::min_loc>;
+//
+// max loc
+//
+template <typename data_t>
+using max_loc_reducer_value = detail::ReducerValue<data_t, detail::reducer_t::max_loc>;
+template <typename data_t>
+using max_loc_reducer_operator = detail::ReducerOperator<data_t, detail::reducer_t::max_loc>;
 #else
 //
 // sum
@@ -400,8 +352,58 @@ template <typename data_t>
 using max_loc_reducer_value = detail::ReducerValue<data_t, detail::reducer_t::max_loc>;
 template <typename data_t>
 using max_loc_reducer_operator = detail::ReducerOperator<data_t, detail::reducer_t::max_loc>;
-//
 #endif
+
+// ---------------------------------------------------------------------------
+// Reduction Loop
+// ---------------------------------------------------------------------------
+
+namespace detail
+{
+
+/**
+ * \brief
+ * Loop with reducer.
+ * @tparam space Execution space.
+ * @tparam index_t Index type.
+ * @tparam Reducer Reducer type.
+ * @tparam Lambda Loop body type.
+ * @param begin Inclusive lower bound.
+ * @param end Exclusive upper bound.
+ * @param reducer Reducer object.
+ * @param lambda Loop body.
+ */
+
+template <boba::execution_space space, typename Reducer, typename Lambda>
+inline void loop(
+  index_t begin,
+  index_t end,
+  Reducer&& reducer,
+  Lambda&& lambda)
+{
+  if (end <= begin)
+  {
+    return;
+  }
+
+  if constexpr (boba_raja_enabled())
+  {
+    backend::raja::loop<space>(begin, end, std::forward<Reducer>(reducer), std::forward<Lambda>(lambda));
+  }
+  else if constexpr (boba_kokkos_enabled())
+  {
+    backend::kokkos::loop<space>(begin, end, std::forward<Reducer>(reducer), std::forward<Lambda>(lambda));
+  }
+  else
+  {
+    for (index_t i = begin; i < end; ++i)
+    {
+      lambda(i, reducer);
+    }
+  }
+}
+
+} // namespace detail
 
 // ---------------------------------------------------------------------------
 // Loop wrapper
@@ -447,11 +449,18 @@ inline void sum_reduce(
   index_t end,
   Lambda&& lambda)
 {
-#ifdef BOBA_RAJA
-  detail::loop<space>(begin, end, RAJA::expt::Reduce<RAJA::operators::plus, data_t>(&initial_value), std::forward<Lambda>(lambda));
-#else
-  detail::loop<space>(begin, end, detail::ReducerOperator<data_t, detail::reducer_t::sum>(&initial_value), std::forward<Lambda>(lambda));
-#endif
+  if constexpr (boba_raja_enabled())
+  {
+    backend::raja::sum_reduce<space>(initial_value, begin, end, std::forward<Lambda>(lambda));
+  }
+  else if constexpr (boba_kokkos_enabled())
+  {
+    backend::kokkos::sum_reduce<space>(initial_value, begin, end, std::forward<Lambda>(lambda));
+  }
+  else
+  {
+    detail::loop<space>(begin, end, detail::ReducerOperator<data_t, detail::reducer_t::sum>(&initial_value), std::forward<Lambda>(lambda));
+  }
 }
 
 /**
@@ -472,11 +481,18 @@ inline void max_reduce(
   index_t end,
   Lambda&& lambda)
 {
-#ifdef BOBA_RAJA
-  detail::loop<space>(begin, end, RAJA::expt::Reduce<RAJA::operators::maximum, data_t>(&initial_value), std::forward<Lambda>(lambda));
-#else
-  detail::loop<space>(begin, end, detail::ReducerOperator<data_t, detail::reducer_t::max>(&initial_value), std::forward<Lambda>(lambda));
-#endif
+  if constexpr (boba_raja_enabled())
+  {
+    backend::raja::max_reduce<space>(initial_value, begin, end, std::forward<Lambda>(lambda));
+  }
+  else if constexpr (boba_kokkos_enabled())
+  {
+    backend::kokkos::max_reduce<space>(initial_value, begin, end, std::forward<Lambda>(lambda));
+  }
+  else
+  {
+    detail::loop<space>(begin, end, detail::ReducerOperator<data_t, detail::reducer_t::max>(&initial_value), std::forward<Lambda>(lambda));
+  }
 }
 
 /**
@@ -497,11 +513,18 @@ inline void min_reduce(
   index_t end,
   Lambda&& lambda)
 {
-#ifdef BOBA_RAJA
-  detail::loop<space>(begin, end, RAJA::expt::Reduce<RAJA::operators::minimum, data_t>(&initial_value), std::forward<Lambda>(lambda));
-#else
-  detail::loop<space>(begin, end, detail::ReducerOperator<data_t, detail::reducer_t::min>(&initial_value), std::forward<Lambda>(lambda));
-#endif
+  if constexpr (boba_raja_enabled())
+  {
+    backend::raja::min_reduce<space>(initial_value, begin, end, std::forward<Lambda>(lambda));
+  }
+  else if constexpr (boba_kokkos_enabled())
+  {
+    backend::kokkos::min_reduce<space>(initial_value, begin, end, std::forward<Lambda>(lambda));
+  }
+  else
+  {
+    detail::loop<space>(begin, end, detail::ReducerOperator<data_t, detail::reducer_t::min>(&initial_value), std::forward<Lambda>(lambda));
+  }
 }
 
 /**
@@ -524,14 +547,18 @@ inline void min_loc_reduce(
   index_t end,
   Lambda&& lambda)
 {
-#ifdef BOBA_RAJA
-  RAJA::expt::ValLoc<data_t> target(initial_value, static_cast<reducer_index_t>(initial_loc));
-  detail::loop<space>(begin, end, RAJA::expt::Reduce<RAJA::operators::minimum>(&target), std::forward<Lambda>(lambda));
-  initial_value = static_cast<data_t>(target.getVal());
-  initial_loc = static_cast<index_t>(target.getLoc());
-#else
-  detail::loop<space>(begin, end, detail::ReducerOperator<data_t, detail::reducer_t::min_loc>(&initial_value, &initial_loc), std::forward<Lambda>(lambda));
-#endif
+  if constexpr (boba_raja_enabled())
+  {
+    backend::raja::min_loc_reduce<space>(initial_value, initial_loc, begin, end, std::forward<Lambda>(lambda));
+  }
+  else if constexpr (boba_kokkos_enabled())
+  {
+    backend::kokkos::min_loc_reduce<space>(initial_value, initial_loc, begin, end, std::forward<Lambda>(lambda));
+  }
+  else
+  {
+    detail::loop<space>(begin, end, detail::ReducerOperator<data_t, detail::reducer_t::min_loc>(&initial_value, &initial_loc), std::forward<Lambda>(lambda));
+  }
 }
 
 /**
@@ -554,14 +581,18 @@ inline void max_loc_reduce(
   index_t end,
   Lambda&& lambda)
 {
-#ifdef BOBA_RAJA
-  RAJA::expt::ValLoc<data_t> target(initial_value, static_cast<reducer_index_t>(initial_loc));
-  detail::loop<space>(begin, end, RAJA::expt::Reduce<RAJA::operators::maximum>(&target), std::forward<Lambda>(lambda));
-  initial_value = static_cast<data_t>(target.getVal());
-  initial_loc = static_cast<index_t>(target.getLoc());
-#else
-  detail::loop<space>(begin, end, detail::ReducerOperator<data_t, detail::reducer_t::max_loc>(&initial_value, &initial_loc), std::forward<Lambda>(lambda));
-#endif
+  if constexpr (boba_raja_enabled())
+  {
+    backend::raja::max_loc_reduce<space>(initial_value, initial_loc, begin, end, std::forward<Lambda>(lambda));
+  }
+  else if constexpr (boba_kokkos_enabled())
+  {
+    backend::kokkos::max_loc_reduce<space>(initial_value, initial_loc, begin, end, std::forward<Lambda>(lambda));
+  }
+  else
+  {
+    detail::loop<space>(begin, end, detail::ReducerOperator<data_t, detail::reducer_t::max_loc>(&initial_value, &initial_loc), std::forward<Lambda>(lambda));
+  }
 }
 
 namespace reductions

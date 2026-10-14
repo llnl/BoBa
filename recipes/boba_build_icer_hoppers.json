@@ -130,6 +130,25 @@
         "HDF5_ENABLE_SZIP_SUPPORT": "Off"
       }
     },
+    "kokkos": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_COMPILER": "/opt/software-current/2023.06/x86_64/amd/zen4/software/GCCcore/12.3.0/bin/g++",
+        "CUDA_TOOLKIT_ROOT_DIR": "/opt/software-current/2023.06/x86_64/amd/zen4/software/NVHPC/23.7-CUDA-12.1.1/Linux_x86_64/23.7/compilers",
+        "CMAKE_CUDA_COMPILER": "/opt/software-current/2023.06/x86_64/amd/zen4/software/NVHPC/23.7-CUDA-12.1.1/Linux_x86_64/23.7/compilers/bin/nvcc",
+        "CUDA_ROOT": "/opt/software-current/2023.06/x86_64/amd/zen4/software/NVHPC/23.7-CUDA-12.1.1/Linux_x86_64/23.7/compilers",
+        "CMAKE_CXX_STANDARD": "20",
+        "CMAKE_CXX_EXTENSIONS": "Off",
+        "KOKKOS_DONT_ALLOW_EXTENSIONS": "On",
+        "CMAKE_CXX20_STANDARD_COMPILE_OPTION": "-std=c++20",
+        "Kokkos_ENABLE_CUDA": "On",
+        "Kokkos_ARCH_HOPPER90": "On",
+        "Kokkos_ENABLE_SERIAL": "On",
+        "Kokkos_ENABLE_OPENMP": "Off",
+        "Kokkos_ENABLE_TESTS": "Off",
+        "Kokkos_ENABLE_EXAMPLES": "Off"
+      }
+    },
     "BOBA": {
       "cmake": {
         "CMAKE_BUILD_TYPE": "Release",

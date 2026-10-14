@@ -4,7 +4,9 @@ project(example LANGUAGES CXX )
 set(USING_BOBA_DEFAULT_CUDA_TOOLCHAIN OFF)
 set(CMAKE_CXX_STANDARD 20)
 
-set(SOURCEFILE ../tests/test_boba_tensor_train.cpp)
+if(NOT SOURCEFILE)
+    set(SOURCEFILE ../tests/test_boba_tensor_train.cpp)
+endif()
 
 if(ENABLE_CUDA)
     enable_language(CUDA)
@@ -75,6 +77,5 @@ if (ENABLE_HIP)
     set_property(TARGET example PROPERTY CXX_STANDARD 20) # HIP uses CXX_STANDARD
     set_source_files_properties(${SOURCEFILE} PROPERTIES LANGUAGE HIP)
 endif()
-
 
 

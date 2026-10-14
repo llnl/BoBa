@@ -61,6 +61,10 @@ PackageName: RAJA\
 PackageHomePage: https://github.com/LLNL/RAJA \
 PackageLicenseDeclared: BSD-3-Clause
 
+PackageName: Kokkos\
+PackageHomePage: https://github.com/kokkos/kokkos \
+PackageLicenseDeclared: Apache-2.0 WITH LLVM-exception
+
 PackageName: Umpire\
 PackageHomePage: https://github.com/LLNL/Umpire \
 PackageLicenseDeclared: MIT

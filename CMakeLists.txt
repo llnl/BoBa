@@ -99,6 +99,7 @@ blt_list_append( TO boba_depends ELEMENTS hdf5-static IF HDF5_FOUND )
 blt_list_append( TO boba_depends ELEMENTS Eigen3::Eigen IF EIGEN_FOUND )
 blt_list_append( TO boba_depends ELEMENTS umpire IF UMPIRE_FOUND )
 blt_list_append( TO boba_depends ELEMENTS RAJA IF RAJA_FOUND )
+blt_list_append( TO boba_depends ELEMENTS Kokkos::kokkos IF KOKKOS_FOUND )
 blt_list_append( TO boba_depends ELEMENTS nvToolsExt IF BOBA_ENABLE_CUDA )
 blt_list_append( TO boba_depends ELEMENTS roc::hipblas IF HIPBLAS_FOUND )
 blt_list_append( TO boba_depends ELEMENTS roc::hipsolver IF HIPSOLVER_FOUND )
@@ -184,6 +185,11 @@ if(RAJA_FOUND AND NOT BOBA_EXTERNAL_RAJA)
     tpl/RAJA/COPYRIGHT)
 endif()
 
+if(KOKKOS_FOUND AND NOT BOBA_EXTERNAL_KOKKOS)
+  list(APPEND boba_license_files
+    tpl/kokkos/LICENSE)
+endif()
+
 if(CAMP_FOUND AND NOT BOBA_EXTERNAL_CAMP)
   list(APPEND boba_license_files
     tpl/camp/LICENSE
@@ -241,6 +247,11 @@ endif()
 if(RAJA_FOUND AND NOT BOBA_EXTERNAL_RAJA)
   list(APPEND boba_license_index_files
     tpl/license/raja)
+endif()
+
+if(KOKKOS_FOUND AND NOT BOBA_EXTERNAL_KOKKOS)
+  list(APPEND boba_license_index_files
+    tpl/license/kokkos)
 endif()
 
 if(CAMP_FOUND AND NOT BOBA_EXTERNAL_CAMP)

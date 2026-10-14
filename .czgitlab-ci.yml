@@ -24,7 +24,7 @@ variables:
   H100_MACHINE: "matrix"
   HIP_MACHINE: "tuolumne"
 
-  BOBA_TPL_FARM: "/usr/workspace/boba_dev/boba_tpl_build_farms/2026_05_20_python"
+  BOBA_TPL_FARM: "/usr/workspace/boba_dev/boba_tpl_build_farms/2026_10_07_kokkos"
 
 include:
   - project: 'lc-templates/id_tokens'
@@ -217,6 +217,19 @@ cmake_boba_h100:
     - squeue -p pci
     - time srun -n 1 ./example_cuda_h100/example
     - rm -rf example_cuda_h100
+
+cmake_boba_kokkos:
+  extends:
+    - .shell_h100
+    - .boba_base
+  stage: build_and_test
+  script:
+    - ${GCC_MATRIX_VERSION}
+    - ${MATRIX_CUDA_VERSION}
+    - ${CMAKE_VERSION}
+    - cd examples/cmake_examples
+    - echo Kokkos CUDA reduction example
+    - time srun -n 1 env KOKKOS_DIR="${BOBA_TPL_FARM}/install/kokkos_cuda_h100/lib/cmake/Kokkos" ./install_example_kokkos.bash
 
 .cmake_boba_hip:
   extends:

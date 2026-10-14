@@ -1,5 +1,23 @@
 {
   "libraries": {
+    "kokkos": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_COMPILER": "/opt/rocm-7.2.1/llvm/bin/amdclang++",
+        "ROCM_ROOT_DIR": "/opt/rocm-7.2.1",
+        "HIP_PATH": "/opt/rocm-7.2.1/llvm/bin",
+        "hip_DIR": "/opt/rocm-7.2.1/lib/cmake/hip",
+        "CMAKE_HIP_ARCHITECTURES": "gfx942",
+        "Kokkos_ARCH_AMD_GFX942": "On",
+        "CMAKE_PREFIX_PATH": "/opt/rocm-7.2.1",
+        "rocprim_DIR": "/opt/rocm-7.2.1/lib/cmake/rocprim",
+        "Kokkos_ENABLE_HIP": "On",
+        "Kokkos_ENABLE_SERIAL": "On",
+        "Kokkos_ENABLE_OPENMP": "Off",
+        "Kokkos_ENABLE_TESTS": "Off",
+        "Kokkos_ENABLE_EXAMPLES": "Off"
+      }
+    },
     "BOBA": {
       "cmake": {
         "CMAKE_BUILD_TYPE": "Release",

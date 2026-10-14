@@ -137,6 +137,25 @@
         "ENABLE_OPENMP": "Off"
       }
     },
+    "kokkos": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_COMPILER": "/usr/tce/packages/gcc/gcc-13.3.1/bin/g++",
+        "CUDA_TOOLKIT_ROOT_DIR": "/usr/tce/packages/cuda/cuda-12.6.0",
+        "CMAKE_CUDA_COMPILER": "/usr/tce/packages/cuda/cuda-12.6.0/bin/nvcc",
+        "CUDA_ROOT": "/usr/tce/packages/cuda/cuda-12.6.0",
+        "CMAKE_CXX_STANDARD": "20",
+        "CMAKE_CXX_EXTENSIONS": "Off",
+        "KOKKOS_DONT_ALLOW_EXTENSIONS": "On",
+        "CMAKE_CXX20_STANDARD_COMPILE_OPTION": "-std=c++20",
+        "Kokkos_ENABLE_CUDA": "On",
+        "Kokkos_ARCH_HOPPER90": "On",
+        "Kokkos_ENABLE_SERIAL": "On",
+        "Kokkos_ENABLE_OPENMP": "Off",
+        "Kokkos_ENABLE_TESTS": "Off",
+        "Kokkos_ENABLE_EXAMPLES": "Off"
+      }
+    },
     "BOBA": {
       "cmake": {
         "CMAKE_BUILD_TYPE": "Release",
