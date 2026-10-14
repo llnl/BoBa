@@ -34,9 +34,20 @@ struct BCOOMatrix
    */
   BCOOMatrix() = default;
 
-  /**
-   * \brief Constructs a matrix with the requested dimensions.
-   */
+/**
+ * \brief Constructs an empty block-sparse matrix with the given block
+ *        and grid dimensions.
+ *
+ * The resulting matrix has no stored (nonzero) blocks initially;
+ * blocks must be added separately (e.g., via an insert/set method).
+ *
+ * \param br  Number of rows per block.
+ * \param bc  Number of columns per block.
+ * \param gr  Number of block-rows in the block grid
+ *            (i.e., overall matrix has br * gr rows).
+ * \param gc  Number of block-columns in the block grid
+ *            (i.e., overall matrix has bc * gc columns).
+ */
   BCOOMatrix(index_t br, index_t bc, index_t gr, index_t gc)
       : m_block_rows(br),
         m_block_cols(bc),
