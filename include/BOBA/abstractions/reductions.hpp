@@ -464,6 +464,18 @@ inline void sum_reduce(
 }
 
 /**
+ *
+ */
+
+template <boba::execution_space space, typename data_t, typename index_t>
+inline data_t sum_reduce_naive(
+  const data_t*& data,
+  index_t length)
+{
+  return detail::sum_reduction<space>(data, length);
+}
+
+/**
  * @brief Performs a max reduction over a 1D index range.
  * @tparam space Execution space.
  * @tparam data_t Reduced value type.
