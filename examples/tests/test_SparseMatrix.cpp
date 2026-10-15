@@ -4,14 +4,17 @@
 
 #include <BOBA/boba.hpp>
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 
 using vector_t = boba::Vector<boba::host_space, double>;
 using matrix_t = boba::Matrix<boba::host_space, double>;
 
 /**
- * \brief Takes a dense matrix and compares sparse construction from this matrix
- * Tests naive lookup, dense export, and matvec for each sparse format.
+ * \brief Validates the common sparse-matrix API against a dense reference.
+ *
+ * This exercises shape metadata, naive lookup, dense export, compression-rate
+ * reporting, both matvec overloads, and the sparse matrix-vector operation.
  */
 template <typename Sparse>
 void check_sparse(Sparse const& sparse,
@@ -22,6 +25,11 @@ void check_sparse(Sparse const& sparse,
                   char const* format,
                   bool& check)
 {
+  pass_or_fail_bool(check, sparse.rows() == expected.rows());
+  pass_or_fail_bool(check, sparse.cols() == expected.cols());
+  const auto shape = sparse.shape();
+  pass_or_fail_bool(check, shape[0] == expected.rows() && shape[1] == expected.cols());
+
   auto dense = boba::to_dense(sparse);
   auto expected_view = expected.const_view();
   auto dense_view = dense.const_view();
@@ -37,7 +45,9 @@ void check_sparse(Sparse const& sparse,
   });
 
   pass_or_fail(check, error, 1.0e-14);
-  std::cout << format << " compression rate: " << sparse.compression_rate() << "x" << std::endl;
+  const auto compression_rate = sparse.compression_rate();
+  pass_or_fail_bool(check, std::isfinite(static_cast<double>(compression_rate)));
+  std::cout << format << " compression rate: " << compression_rate << "x" << std::endl;
 
   //
   // Verifies matvec
@@ -47,6 +57,27 @@ void check_sparse(Sparse const& sparse,
   double matvec_error = norm_difference_inf(z_matvec, z);
 
   pass_or_fail(check, matvec_error, 1.0e-13);
+
+  auto reference_matvec = expected * x;
+  auto wrapper_matvec = boba::matvec(sparse, x);
+  pass_or_fail(check, norm_difference_inf(wrapper_matvec, reference_matvec), 1.0e-13);
+  vector_t wrapper_output = y;
+  boba::matvec(sparse, x, wrapper_output, 3.0, 2.0);
+  pass_or_fail(check, norm_difference_inf(wrapper_output, z), 1.0e-13);
+}
+
+/**
+ * \brief Validates the zero-state metadata of a default-constructed matrix.
+ */
+template <typename Sparse>
+void check_empty_sparse(Sparse const& sparse, bool& check)
+{
+  pass_or_fail_bool(check, sparse.rows() == 0);
+  pass_or_fail_bool(check, sparse.cols() == 0);
+  const auto shape = sparse.shape();
+  pass_or_fail_bool(check, shape[0] == 0 && shape[1] == 0);
+  pass_or_fail_bool(check, sparse.nnz() == 0);
+  pass_or_fail(check, static_cast<double>(sparse.compression_rate()), 1.0e-14);
 }
 
 /**
@@ -57,6 +88,16 @@ int main()
   boba::init();
 
   bool check = true;
+
+  boba::COOMatrix<double> empty_coo;
+  boba::CSRMatrix<double> empty_csr;
+  boba::ELLPACKMatrix<double> empty_ellpack;
+  boba::BCOOMatrix<double> empty_bcoo;
+  check_empty_sparse(empty_coo, check);
+  check_empty_sparse(empty_csr, check);
+  check_empty_sparse(empty_ellpack, check);
+  check_empty_sparse(empty_bcoo, check);
+  pass_or_fail_bool(check, empty_bcoo.nonzero_blocks() == 0);
 
   //
   // Generate matrix

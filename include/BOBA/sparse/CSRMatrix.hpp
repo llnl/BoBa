@@ -100,6 +100,10 @@ struct CSRMatrix
   [[nodiscard]]
   float compression_rate() const noexcept
   {
+    if (m_values.size() == 0 && m_column_indices.size() == 0 && m_row_offsets.size() == 0)
+    {
+      return 0.0F;
+    }
     double compressed_size = static_cast<double>(m_values.size()) + static_cast<double>(m_column_indices.size()) + static_cast<double>(m_row_offsets.size());
     double full_size = static_cast<double>(m_rows) * static_cast<double>(m_cols);
     return static_cast<float>(std::floor(full_size / compressed_size * 100.0) / 100.0);
