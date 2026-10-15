@@ -138,10 +138,8 @@ struct BCOOMatrix
   {
     boba_assert(i >= 0 && i < rows() && j >= 0 && j < cols(), "Sparse coordinate out of bounds");
 
-    const auto row_index = Multiindexer<2>::multiindex({m_rows_per_block, m_block_grid_rows}, i);
-    const auto col_index = Multiindexer<2>::multiindex({m_cols_per_block, m_block_grid_cols}, j);
-    const index_t u = row_index[0], p = row_index[1];
-    const index_t v = col_index[0], q = col_index[1];
+    const auto [u, p] = Multiindexer<2>::multiindex({m_rows_per_block, m_block_grid_rows}, i);
+    const auto [v, q] = Multiindexer<2>::multiindex({m_cols_per_block, m_block_grid_cols}, j);
     auto indices = m_indices.const_view();
     auto values = m_values.const_view();
     for (index_t k = 0; k < nonzero_blocks(); ++k)
