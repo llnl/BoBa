@@ -375,6 +375,10 @@
     test_SparseTensor_functions:
       skip: []
 
+  test_SparseMatrix:
+    test_SparseMatrix:
+      skip: [cuda, hip]
+
   test_io:
     # Tensors
     test_tensor_io_3d_float:
