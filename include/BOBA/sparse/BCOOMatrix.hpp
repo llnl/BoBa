@@ -21,22 +21,117 @@ namespace boba
  * m_values(u, v, k)`. Block coordinates are unique but need not be sorted; a
  * missing block represents an all-zero block. Only full, rectangular blocks
  * are supported.
+ *
+ * \tparam space Execution space used by the block-coordinate and value storage.
+ * \tparam _data_t Scalar value type.
  */
-template <typename data_t = double>
+template <execution_space space, typename _data_t>
 struct BCOOMatrix
 {
-  using data_type = data_t;
+  using data_t = _data_t;
   index_t m_rows_per_block = 0;
   index_t m_cols_per_block = 0;
   index_t m_block_grid_rows = 0;
   index_t m_block_grid_cols = 0;
-  Tensor<3, host_space, data_t> m_values;
-  Matrix<host_space, index_t> m_indices;
+  Tensor<3, space, data_t> m_values;
+  Matrix<space, index_t> m_indices;
 
   /**
    * \brief Constructs an empty BCOO matrix.
    */
   BCOOMatrix() = default;
+
+  /**
+   * \brief Returns the execution space used by this matrix's storage.
+   *
+   * \return Matrix storage execution space.
+   */
+  static constexpr execution_space get_space() noexcept
+  {
+    return space;
+  }
+
+  /**
+   * \brief Copies a BCOO matrix from another execution space.
+   *
+   * \param rhs BCOO matrix to copy.
+   */
+  template <execution_space rhs_space>
+    requires(space != rhs_space)
+  BCOOMatrix(BCOOMatrix<rhs_space, data_t> const& rhs)
+      : m_rows_per_block(rhs.m_rows_per_block),
+        m_cols_per_block(rhs.m_cols_per_block),
+        m_block_grid_rows(rhs.m_block_grid_rows),
+        m_block_grid_cols(rhs.m_block_grid_cols),
+        m_values(rhs.m_values),
+        m_indices(rhs.m_indices)
+  {
+  }
+
+  /**
+   * \brief Moves a BCOO matrix from another execution space.
+   *
+   * The source is left empty after its data has been copied to the target
+   * execution space, following Tensor's cross-space move semantics.
+   *
+   * \param rhs BCOO matrix to move.
+   */
+  template <execution_space rhs_space>
+    requires(space != rhs_space)
+  BCOOMatrix(BCOOMatrix<rhs_space, data_t>&& rhs)
+      : m_rows_per_block(rhs.m_rows_per_block),
+        m_cols_per_block(rhs.m_cols_per_block),
+        m_block_grid_rows(rhs.m_block_grid_rows),
+        m_block_grid_cols(rhs.m_block_grid_cols),
+        m_values(rhs.m_values),
+        m_indices(rhs.m_indices)
+  {
+    rhs.m_rows_per_block = 0;
+    rhs.m_cols_per_block = 0;
+    rhs.m_block_grid_rows = 0;
+    rhs.m_block_grid_cols = 0;
+    rhs.m_values.resize({0, 0, 0});
+    rhs.m_indices.resize({0, 2});
+  }
+
+  /**
+   * \brief Copies a BCOO matrix from another execution space.
+   *
+   * \param rhs BCOO matrix to copy.
+   * \return This matrix after assignment.
+   */
+  template <execution_space rhs_space>
+    requires(space != rhs_space)
+  BCOOMatrix& operator=(BCOOMatrix<rhs_space, data_t> const& rhs)
+  {
+    m_rows_per_block = rhs.m_rows_per_block;
+    m_cols_per_block = rhs.m_cols_per_block;
+    m_block_grid_rows = rhs.m_block_grid_rows;
+    m_block_grid_cols = rhs.m_block_grid_cols;
+    m_values = rhs.m_values;
+    m_indices = rhs.m_indices;
+    return *this;
+  }
+
+  /**
+   * \brief Moves a BCOO matrix from another execution space.
+   *
+   * \param rhs BCOO matrix to move.
+   * \return This matrix after assignment.
+   */
+  template <execution_space rhs_space>
+    requires(space != rhs_space)
+  BCOOMatrix& operator=(BCOOMatrix<rhs_space, data_t>&& rhs)
+  {
+    *this = static_cast<BCOOMatrix<rhs_space, data_t> const&>(rhs);
+    rhs.m_rows_per_block = 0;
+    rhs.m_cols_per_block = 0;
+    rhs.m_block_grid_rows = 0;
+    rhs.m_block_grid_cols = 0;
+    rhs.m_values.resize({0, 0, 0});
+    rhs.m_indices.resize({0, 2});
+    return *this;
+  }
 
   /**
    * \brief Constructs an empty BCOO matrix with fixed block dimensions.
@@ -135,6 +230,7 @@ struct BCOOMatrix
    * \warning An out-of-bounds `i` or `j` value produces an error in debug mode.
    */
   data_t get_element_naive(index_t i, index_t j) const
+    requires(space == host_space)
   {
     boba_assert(i >= 0 && i < rows() && j >= 0 && j < cols(), "Sparse coordinate out of bounds");
 
@@ -161,11 +257,13 @@ struct BCOOMatrix
    * \param y Dense output vector with length `rows()`.
    * \param alpha Matrix-vector product coefficient.
    * \param beta Existing-output coefficient.
+   * \warning This operation is currently available only for host-space matrices.
    */
-  void matvec(Vector<host_space, data_t> const& x,
-              Vector<host_space, data_t>& y,
+  void matvec(Vector<space, data_t> const& x,
+              Vector<space, data_t>& y,
               data_t alpha = 1,
               data_t beta = 0) const
+    requires(space == host_space)
   {
     boba_always_assert_equal(x.size(), cols(), "BCOO matvec input has the wrong size");
     boba_always_assert_equal(y.size(), rows(), "BCOO matvec output has the wrong size");
@@ -197,19 +295,21 @@ struct BCOOMatrix
  * \param bc Number of columns in every block.
  * \param tolerance Entries with magnitude no greater than this value are omitted.
  * \return BCOO storage containing the retained blocks.
+ * \tparam space Must be `host_space`; dense conversion is host-only.
  */
-template <typename data_t>
-BCOOMatrix<data_t> from_dense_bcoo(Matrix<host_space, data_t> const& dense,
-                                   index_t br,
-                                   index_t bc,
-                                   data_t tolerance = 0)
+template <execution_space space, typename data_t>
+  requires(space == host_space)
+BCOOMatrix<space, data_t> from_dense_bcoo(Matrix<host_space, data_t> const& dense,
+                                          index_t br,
+                                          index_t bc,
+                                          data_t tolerance = 0)
 {
   sparse_detail::check_tolerance(tolerance);
   boba_always_assert(br > 0 && bc > 0, "BCOO block dimensions must be positive");
   boba_always_assert(dense.rows() % br == 0 && dense.cols() % bc == 0,
                      "BCOO dimensions must be divisible by block dimensions");
 
-  BCOOMatrix<data_t> out(br, bc, dense.rows() / br, dense.cols() / bc);
+  BCOOMatrix<space, data_t> out(br, bc, dense.rows() / br, dense.cols() / bc);
   auto dense_view = dense.const_view();
   index_t number_blocks = 0;
   for (index_t p = 0; p < out.m_block_grid_rows; ++p)
@@ -283,9 +383,11 @@ BCOOMatrix<data_t> from_dense_bcoo(Matrix<host_space, data_t> const& dense,
  *
  * \param sparse BCOO matrix to export.
  * \return Dense matrix with missing blocks initialized to zero.
+ * \tparam space Must be `host_space`; dense conversion is host-only.
  */
-template <typename data_t>
-Matrix<host_space, data_t> to_dense(BCOOMatrix<data_t> const& sparse)
+template <execution_space space, typename data_t>
+  requires(space == host_space)
+Matrix<host_space, data_t> to_dense(BCOOMatrix<space, data_t> const& sparse)
 {
   Matrix<host_space, data_t> out({sparse.rows(), sparse.cols()});
   out.fill_with_zeros();

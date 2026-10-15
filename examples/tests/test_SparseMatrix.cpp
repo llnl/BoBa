@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <utility>
 
 using vector_t = boba::Vector<boba::host_space, double>;
 using matrix_t = boba::Matrix<boba::host_space, double>;
@@ -81,6 +82,72 @@ void check_empty_sparse(Sparse const& sparse, bool& check)
 }
 
 /**
+ * \brief Verifies a COO host-device-host copy round trip.
+ * \param original Host COO matrix used as the reference.
+ * \param check Cumulative test status.
+ */
+void check_coo_round_trip(boba::COOMatrix<boba::host_space, double> const& original, bool& check)
+{
+  boba::COOMatrix<boba::default_execution_space, double> device_copy(original);
+  boba::COOMatrix<boba::host_space, double> round_trip(device_copy);
+  pass_or_fail_bool(check, original.m_values.sizes() == round_trip.m_values.sizes());
+  pass_or_fail(check, boba::norm_difference_inf(original.m_values, round_trip.m_values), 1.0e-14);
+  pass_or_fail_bool(check, original.m_indices.sizes() == round_trip.m_indices.sizes());
+  pass_or_fail(check, boba::norm_difference_inf(original.m_indices, round_trip.m_indices), 1.0e-14);
+  std::cout << "COO host-device-host copy: pass" << std::endl;
+}
+
+/**
+ * \brief Verifies a CSR host-device-host copy round trip.
+ * \param original Host CSR matrix used as the reference.
+ * \param check Cumulative test status.
+ */
+void check_csr_round_trip(boba::CSRMatrix<boba::host_space, double> const& original, bool& check)
+{
+  boba::CSRMatrix<boba::default_execution_space, double> device_copy(original);
+  boba::CSRMatrix<boba::host_space, double> round_trip(device_copy);
+  pass_or_fail_bool(check, original.m_values.sizes() == round_trip.m_values.sizes());
+  pass_or_fail(check, boba::norm_difference_inf(original.m_values, round_trip.m_values), 1.0e-14);
+  pass_or_fail_bool(check, original.m_column_indices.sizes() == round_trip.m_column_indices.sizes());
+  pass_or_fail(check, boba::norm_difference_inf(original.m_column_indices, round_trip.m_column_indices), 1.0e-14);
+  pass_or_fail_bool(check, original.m_row_offsets.sizes() == round_trip.m_row_offsets.sizes());
+  pass_or_fail(check, boba::norm_difference_inf(original.m_row_offsets, round_trip.m_row_offsets), 1.0e-14);
+  std::cout << "CSR host-device-host copy: pass" << std::endl;
+}
+
+/**
+ * \brief Verifies an ELLPACK host-device-host copy round trip.
+ * \param original Host ELLPACK matrix used as the reference.
+ * \param check Cumulative test status.
+ */
+void check_ellpack_round_trip(boba::ELLPACKMatrix<boba::host_space, double> const& original, bool& check)
+{
+  boba::ELLPACKMatrix<boba::default_execution_space, double> device_copy(original);
+  boba::ELLPACKMatrix<boba::host_space, double> round_trip(device_copy);
+  pass_or_fail_bool(check, original.m_values.sizes() == round_trip.m_values.sizes());
+  pass_or_fail(check, boba::norm_difference_inf(original.m_values, round_trip.m_values), 1.0e-14);
+  pass_or_fail_bool(check, original.m_column_indices.sizes() == round_trip.m_column_indices.sizes());
+  pass_or_fail(check, boba::norm_difference_inf(original.m_column_indices, round_trip.m_column_indices), 1.0e-14);
+  std::cout << "ELLPACK host-device-host copy: pass" << std::endl;
+}
+
+/**
+ * \brief Verifies a BCOO host-device-host copy round trip.
+ * \param original Host BCOO matrix used as the reference.
+ * \param check Cumulative test status.
+ */
+void check_bcoo_round_trip(boba::BCOOMatrix<boba::host_space, double> const& original, bool& check)
+{
+  boba::BCOOMatrix<boba::default_execution_space, double> device_copy(original);
+  boba::BCOOMatrix<boba::host_space, double> round_trip(device_copy);
+  pass_or_fail_bool(check, original.m_values.sizes() == round_trip.m_values.sizes());
+  pass_or_fail(check, boba::norm_difference_inf(original.m_values, round_trip.m_values), 1.0e-14);
+  pass_or_fail_bool(check, original.m_indices.sizes() == round_trip.m_indices.sizes());
+  pass_or_fail(check, boba::norm_difference_inf(original.m_indices, round_trip.m_indices), 1.0e-14);
+  std::cout << "BCOO host-device-host copy: pass" << std::endl;
+}
+
+/**
  * \brief Exercises all initial sparse matrix formats against dense storage.
  */
 int main()
@@ -89,15 +156,35 @@ int main()
 
   bool check = true;
 
-  boba::COOMatrix<double> empty_coo;
-  boba::CSRMatrix<double> empty_csr;
-  boba::ELLPACKMatrix<double> empty_ellpack;
-  boba::BCOOMatrix<double> empty_bcoo;
+  boba::COOMatrix<boba::host_space, double> empty_coo;
+  boba::CSRMatrix<boba::host_space, double> empty_csr;
+  boba::ELLPACKMatrix<boba::host_space, double> empty_ellpack;
+  boba::BCOOMatrix<boba::host_space, double> empty_bcoo;
   check_empty_sparse(empty_coo, check);
   check_empty_sparse(empty_csr, check);
   check_empty_sparse(empty_ellpack, check);
   check_empty_sparse(empty_bcoo, check);
   pass_or_fail_bool(check, empty_bcoo.nonzero_blocks() == 0);
+
+  // Cross-space copies and moves use the same host/device transfer semantics
+  // as the dense tensor containers. Empty objects keep this test backend-neutral.
+  constexpr auto device_space = boba::default_execution_space;
+  boba::COOMatrix<device_space, double> coo_alternate(empty_coo);
+  boba::COOMatrix<boba::host_space, double> coo_host(coo_alternate);
+  coo_alternate = empty_coo;
+  coo_host = std::move(coo_alternate);
+  boba::CSRMatrix<device_space, double> csr_alternate(empty_csr);
+  boba::CSRMatrix<boba::host_space, double> csr_host(csr_alternate);
+  csr_alternate = empty_csr;
+  csr_host = std::move(csr_alternate);
+  boba::ELLPACKMatrix<device_space, double> ellpack_alternate(empty_ellpack);
+  boba::ELLPACKMatrix<boba::host_space, double> ellpack_host(ellpack_alternate);
+  ellpack_alternate = empty_ellpack;
+  ellpack_host = std::move(ellpack_alternate);
+  boba::BCOOMatrix<device_space, double> bcoo_alternate(empty_bcoo);
+  boba::BCOOMatrix<boba::host_space, double> bcoo_host(bcoo_alternate);
+  bcoo_alternate = empty_bcoo;
+  bcoo_host = std::move(bcoo_alternate);
 
   //
   // Generate matrix
@@ -149,15 +236,19 @@ int main()
   //
   // Test sparse formats
   //
-  auto coo = boba::from_dense<boba::COOMatrix<double>>(dense, tolerance);
-  auto csr = boba::from_dense<boba::CSRMatrix<double>>(dense, tolerance);
-  auto ellpack = boba::from_dense<boba::ELLPACKMatrix<double>>(dense, tolerance);
-  auto bcoo = boba::from_dense<boba::BCOOMatrix<double>>(dense, 2, 2, tolerance);
+  auto coo = boba::from_dense<boba::COOMatrix<boba::host_space, double>>(dense, tolerance);
+  auto csr = boba::from_dense<boba::CSRMatrix<boba::host_space, double>>(dense, tolerance);
+  auto ellpack = boba::from_dense<boba::ELLPACKMatrix<boba::host_space, double>>(dense, tolerance);
+  auto bcoo = boba::from_dense<boba::BCOOMatrix<boba::host_space, double>>(dense, 2, 2, tolerance);
   pass_or_fail_bool(check, coo.nnz() == 9);
   pass_or_fail_bool(check, csr.nnz() == 9);
-  pass_or_fail_bool(check, ellpack.nnz() == 9);
+  pass_or_fail_bool(check, ellpack.nnz() == 12);
   pass_or_fail_bool(check, bcoo.nnz() == 12);
   pass_or_fail_bool(check, bcoo.nonzero_blocks() == 3);
+  check_coo_round_trip(coo, check);
+  check_csr_round_trip(csr, check);
+  check_ellpack_round_trip(ellpack, check);
+  check_bcoo_round_trip(bcoo, check);
   check_sparse(coo, dense_thresholded, x, y, z, "COO", check);
   check_sparse(csr, dense_thresholded, x, y, z, "CSR", check);
   check_sparse(ellpack, dense_thresholded, x, y, z, "ELLPACK", check);

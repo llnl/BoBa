@@ -15,13 +15,16 @@ namespace boba
  * `m_indices(k, 0)` for its row, `m_indices(k, 1)` for its column, and
  * `m_values(k)` for its scalar value. Coordinates are unique by contract but
  * need not be sorted. Missing coordinates represent zero.
+ *
+ * \tparam space Execution space used by the coordinate and value storage.
+ * \tparam _data_t Scalar value type.
  */
-template <typename data_t = double>
+template <execution_space space, typename _data_t>
 struct COOMatrix
 {
-  using data_type = data_t;
-  using index_container = Matrix<host_space, index_t>;
-  using value_container = Vector<host_space, data_t>;
+  using data_t = _data_t;
+  using index_container = Matrix<space, index_t>;
+  using value_container = Vector<space, data_t>;
 
   index_t m_rows = 0;
   index_t m_cols = 0;
@@ -32,6 +35,88 @@ struct COOMatrix
    * \brief Constructs an empty COO matrix.
    */
   COOMatrix() = default;
+
+  /**
+   * \brief Returns the execution space used by this matrix's storage.
+   *
+   * \return Matrix storage execution space.
+   */
+  static constexpr execution_space get_space() noexcept
+  {
+    return space;
+  }
+
+  /**
+   * \brief Copies a COO matrix from another execution space.
+   *
+   * \param rhs COO matrix to copy.
+   */
+  template <execution_space rhs_space>
+    requires(space != rhs_space)
+  COOMatrix(COOMatrix<rhs_space, data_t> const& rhs)
+      : m_rows(rhs.m_rows),
+        m_cols(rhs.m_cols),
+        m_values(rhs.m_values),
+        m_indices(rhs.m_indices)
+  {
+  }
+
+  /**
+   * \brief Moves a COO matrix from another execution space.
+   *
+   * The source is left empty after its data has been copied to the target
+   * execution space, following Tensor's cross-space move semantics.
+   *
+   * \param rhs COO matrix to move.
+   */
+  template <execution_space rhs_space>
+    requires(space != rhs_space)
+  COOMatrix(COOMatrix<rhs_space, data_t>&& rhs)
+      : m_rows(rhs.m_rows),
+        m_cols(rhs.m_cols),
+        m_values(rhs.m_values),
+        m_indices(rhs.m_indices)
+  {
+    rhs.m_rows = 0;
+    rhs.m_cols = 0;
+    rhs.m_values.resize({0});
+    rhs.m_indices.resize({0, 2});
+  }
+
+  /**
+   * \brief Copies a COO matrix from another execution space.
+   *
+   * \param rhs COO matrix to copy.
+   * \return This matrix after assignment.
+   */
+  template <execution_space rhs_space>
+    requires(space != rhs_space)
+  COOMatrix& operator=(COOMatrix<rhs_space, data_t> const& rhs)
+  {
+    m_rows = rhs.m_rows;
+    m_cols = rhs.m_cols;
+    m_values = rhs.m_values;
+    m_indices = rhs.m_indices;
+    return *this;
+  }
+
+  /**
+   * \brief Moves a COO matrix from another execution space.
+   *
+   * \param rhs COO matrix to move.
+   * \return This matrix after assignment.
+   */
+  template <execution_space rhs_space>
+    requires(space != rhs_space)
+  COOMatrix& operator=(COOMatrix<rhs_space, data_t>&& rhs)
+  {
+    *this = static_cast<COOMatrix<rhs_space, data_t> const&>(rhs);
+    rhs.m_rows = 0;
+    rhs.m_cols = 0;
+    rhs.m_values.resize({0});
+    rhs.m_indices.resize({0, 2});
+    return *this;
+  }
 
   /**
    * \brief Constructs a matrix with the requested dimensions.
@@ -116,6 +201,7 @@ struct COOMatrix
    * \warning An out-of-bounds `i` or `j` value produces an error in debug mode.
    */
   data_t get_element_naive(index_t i, index_t j) const
+    requires(space == host_space)
   {
     boba_assert(i >= 0 && i < m_rows && j >= 0 && j < m_cols, "Sparse coordinate out of bounds");
     auto indices = m_indices.const_view();
@@ -139,11 +225,13 @@ struct COOMatrix
    * \param y Dense output vector with length `rows()`.
    * \param alpha Matrix-vector product coefficient.
    * \param beta Existing-output coefficient.
+   * \warning This operation is currently available only for host-space matrices.
    */
-  void matvec(Vector<host_space, data_t> const& x,
-              Vector<host_space, data_t>& y,
+  void matvec(Vector<space, data_t> const& x,
+              Vector<space, data_t>& y,
               data_t alpha = 1,
               data_t beta = 0) const
+    requires(space == host_space)
   {
     boba_always_assert_equal(x.size(), m_cols, "COO matvec input has the wrong size");
     boba_always_assert_equal(y.size(), m_rows, "COO matvec output has the wrong size");
@@ -166,12 +254,14 @@ struct COOMatrix
  * \param dense Dense matrix to import.
  * \param tolerance Entries with magnitude no greater than this value are omitted.
  * \return COO storage containing the retained entries.
+ * \tparam space Must be `host_space`; dense conversion is host-only.
  */
-template <typename data_t>
-COOMatrix<data_t> from_dense_coo(Matrix<host_space, data_t> const& dense, data_t tolerance = 0)
+template <execution_space space, typename data_t>
+  requires(space == host_space)
+COOMatrix<space, data_t> from_dense_coo(Matrix<host_space, data_t> const& dense, data_t tolerance = 0)
 {
   sparse_detail::check_tolerance(tolerance);
-  COOMatrix<data_t> out(dense.rows(), dense.cols());
+  COOMatrix<space, data_t> out(dense.rows(), dense.cols());
   auto dv = dense.const_view();
   index_t number_nonzeros = 0;
   for (index_t i = 0; i < dense.rows(); ++i)
@@ -211,9 +301,11 @@ COOMatrix<data_t> from_dense_coo(Matrix<host_space, data_t> const& dense, data_t
  *
  * \param sparse COO matrix to export.
  * \return Dense matrix with missing coordinates initialized to zero.
+ * \tparam space Must be `host_space`; dense conversion is host-only.
  */
-template <typename data_t>
-Matrix<host_space, data_t> to_dense(COOMatrix<data_t> const& sparse)
+template <execution_space space, typename data_t>
+  requires(space == host_space)
+Matrix<host_space, data_t> to_dense(COOMatrix<space, data_t> const& sparse)
 {
   Matrix<host_space, data_t> out({sparse.rows(), sparse.cols()});
   out.fill_with_zeros();

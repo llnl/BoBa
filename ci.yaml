@@ -381,7 +381,7 @@
 
   test_SparseMatrix:
     test_SparseMatrix:
-      skip: [cuda, hip]
+      skip: []
 
   test_io:
     # Tensors

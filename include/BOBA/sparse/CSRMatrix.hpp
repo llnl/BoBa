@@ -17,13 +17,16 @@ namespace boba
  * Row offsets are nondecreasing, begin at zero, and end at the number of
  * stored entries. Column indices are unique within a row but need not be
  * sorted.
+ *
+ * \tparam space Execution space used by the row, column, and value storage.
+ * \tparam _data_t Scalar value type.
  */
-template <typename data_t = double>
+template <execution_space space, typename _data_t>
 struct CSRMatrix
 {
-  using data_type = data_t;
-  using value_container = Vector<host_space, data_t>;
-  using index_container = Vector<host_space, index_t>;
+  using data_t = _data_t;
+  using value_container = Vector<space, data_t>;
+  using index_container = Vector<space, index_t>;
   index_t m_rows = 0;
   index_t m_cols = 0;
   value_container m_values;
@@ -33,6 +36,93 @@ struct CSRMatrix
    * \brief Constructs an empty CSR matrix.
    */
   CSRMatrix() = default;
+
+  /**
+   * \brief Returns the execution space used by this matrix's storage.
+   *
+   * \return Matrix storage execution space.
+   */
+  static constexpr execution_space get_space() noexcept
+  {
+    return space;
+  }
+
+  /**
+   * \brief Copies a CSR matrix from another execution space.
+   *
+   * \param rhs CSR matrix to copy.
+   */
+  template <execution_space rhs_space>
+    requires(space != rhs_space)
+  CSRMatrix(CSRMatrix<rhs_space, data_t> const& rhs)
+      : m_rows(rhs.m_rows),
+        m_cols(rhs.m_cols),
+        m_values(rhs.m_values),
+        m_column_indices(rhs.m_column_indices),
+        m_row_offsets(rhs.m_row_offsets)
+  {
+  }
+
+  /**
+   * \brief Moves a CSR matrix from another execution space.
+   *
+   * The source is left empty after its data has been copied to the target
+   * execution space, following Tensor's cross-space move semantics.
+   *
+   * \param rhs CSR matrix to move.
+   */
+  template <execution_space rhs_space>
+    requires(space != rhs_space)
+  CSRMatrix(CSRMatrix<rhs_space, data_t>&& rhs)
+      : m_rows(rhs.m_rows),
+        m_cols(rhs.m_cols),
+        m_values(rhs.m_values),
+        m_column_indices(rhs.m_column_indices),
+        m_row_offsets(rhs.m_row_offsets)
+  {
+    rhs.m_rows = 0;
+    rhs.m_cols = 0;
+    rhs.m_values.resize({0});
+    rhs.m_column_indices.resize({0});
+    rhs.m_row_offsets.resize({0});
+  }
+
+  /**
+   * \brief Copies a CSR matrix from another execution space.
+   *
+   * \param rhs CSR matrix to copy.
+   * \return This matrix after assignment.
+   */
+  template <execution_space rhs_space>
+    requires(space != rhs_space)
+  CSRMatrix& operator=(CSRMatrix<rhs_space, data_t> const& rhs)
+  {
+    m_rows = rhs.m_rows;
+    m_cols = rhs.m_cols;
+    m_values = rhs.m_values;
+    m_column_indices = rhs.m_column_indices;
+    m_row_offsets = rhs.m_row_offsets;
+    return *this;
+  }
+
+  /**
+   * \brief Moves a CSR matrix from another execution space.
+   *
+   * \param rhs CSR matrix to move.
+   * \return This matrix after assignment.
+   */
+  template <execution_space rhs_space>
+    requires(space != rhs_space)
+  CSRMatrix& operator=(CSRMatrix<rhs_space, data_t>&& rhs)
+  {
+    *this = static_cast<CSRMatrix<rhs_space, data_t> const&>(rhs);
+    rhs.m_rows = 0;
+    rhs.m_cols = 0;
+    rhs.m_values.resize({0});
+    rhs.m_column_indices.resize({0});
+    rhs.m_row_offsets.resize({0});
+    return *this;
+  }
 
   /**
    * \brief Constructs a matrix with the requested dimensions.
@@ -118,6 +208,7 @@ struct CSRMatrix
    * \warning An out-of-bounds `i` or `j` value produces an error in debug mode.
    */
   data_t get_element_naive(index_t i, index_t j) const
+    requires(space == host_space)
   {
     boba_assert(i >= 0 && i < m_rows && j >= 0 && j < m_cols, "Sparse coordinate out of bounds");
     auto offsets = m_row_offsets.const_view();
@@ -142,8 +233,10 @@ struct CSRMatrix
    * \param y Dense output vector with length `rows()`.
    * \param alpha Matrix-vector product coefficient.
    * \param beta Existing-output coefficient.
+   * \warning This operation is currently available only for host-space matrices.
    */
-  void matvec(Vector<host_space, data_t> const& x, Vector<host_space, data_t>& y, data_t alpha = 1, data_t beta = 0) const
+  void matvec(Vector<space, data_t> const& x, Vector<space, data_t>& y, data_t alpha = 1, data_t beta = 0) const
+    requires(space == host_space)
   {
     boba_always_assert_equal(x.size(), m_cols, "CSR matvec input has the wrong size");
     boba_always_assert_equal(y.size(), m_rows, "CSR matvec output has the wrong size");
@@ -170,12 +263,14 @@ struct CSRMatrix
  * \param dense Dense matrix to import.
  * \param tolerance Entries with magnitude no greater than this value are omitted.
  * \return CSR storage containing the retained entries.
+ * \tparam space Must be `host_space`; dense conversion is host-only.
  */
-template <typename data_t>
-CSRMatrix<data_t> from_dense_csr(Matrix<host_space, data_t> const& dense, data_t tolerance = 0)
+template <execution_space space, typename data_t>
+  requires(space == host_space)
+CSRMatrix<space, data_t> from_dense_csr(Matrix<host_space, data_t> const& dense, data_t tolerance = 0)
 {
   sparse_detail::check_tolerance(tolerance);
-  CSRMatrix<data_t> out(dense.rows(), dense.cols());
+  CSRMatrix<space, data_t> out(dense.rows(), dense.cols());
   auto dv = dense.const_view();
   auto offsets = out.m_row_offsets.view();
   for (index_t i = 0; i < dense.rows(); ++i)
@@ -224,9 +319,11 @@ CSRMatrix<data_t> from_dense_csr(Matrix<host_space, data_t> const& dense, data_t
  *
  * \param sparse CSR matrix to export.
  * \return Dense matrix with missing coordinates initialized to zero.
+ * \tparam space Must be `host_space`; dense conversion is host-only.
  */
-template <typename data_t>
-Matrix<host_space, data_t> to_dense(CSRMatrix<data_t> const& sparse)
+template <execution_space space, typename data_t>
+  requires(space == host_space)
+Matrix<host_space, data_t> to_dense(CSRMatrix<space, data_t> const& sparse)
 {
   Matrix<host_space, data_t> out({sparse.rows(), sparse.cols()});
   out.fill_with_zeros();

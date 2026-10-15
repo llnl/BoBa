@@ -13,16 +13,20 @@ namespace boba
 /**
  * \brief Computes `y = A*x` and returns a new dense vector.
  *
- * \tparam MatrixType Sparse matrix type providing `data_type`, `rows()`, and
- *         `matvec()`.
+ * \tparam MatrixType Sparse matrix type providing `data_t`, `rows()`, and
+ *         `matvec()`, and `get_space()`.
  * \param A Sparse matrix operand.
  * \param x Dense input vector with length `A.cols()`.
  * \return Dense result vector with length `A.rows()`.
+ * \warning This operation is currently available only for host-space matrices.
  */
 template <typename MatrixType>
-Vector<host_space, typename MatrixType::data_type> matvec(MatrixType const& A, Vector<host_space, typename MatrixType::data_type> const& x)
+  requires(MatrixType::get_space() == host_space)
+Vector<host_space, typename MatrixType::data_t> matvec(
+    MatrixType const& A,
+    Vector<host_space, typename MatrixType::data_t> const& x)
 {
-  Vector<host_space, typename MatrixType::data_type> y({A.rows()});
+  Vector<host_space, typename MatrixType::data_t> y({A.rows()});
   A.matvec(x, y);
   return y;
 }
@@ -30,15 +34,23 @@ Vector<host_space, typename MatrixType::data_type> matvec(MatrixType const& A, V
 /**
  * \brief Computes `y = alpha*A*x + beta*y` using caller-provided storage.
  *
- * \tparam MatrixType Sparse matrix type providing `data_type` and `matvec()`.
+ * \tparam MatrixType Sparse matrix type providing `data_t`, `matvec()`, and
+ *         `get_space()`.
  * \param A Sparse matrix operand.
  * \param x Dense input vector with length `A.cols()`.
  * \param y Dense output vector with length `A.rows()`.
  * \param alpha Matrix-vector product coefficient.
  * \param beta Existing-output coefficient.
+ * \warning This operation is currently available only for host-space matrices.
  */
 template <typename MatrixType>
-void matvec(MatrixType const& A, Vector<host_space, typename MatrixType::data_type> const& x, Vector<host_space, typename MatrixType::data_type>& y, typename MatrixType::data_type alpha = 1, typename MatrixType::data_type beta = 0)
+  requires(MatrixType::get_space() == host_space)
+void matvec(
+    MatrixType const& A,
+    Vector<host_space, typename MatrixType::data_t> const& x,
+    Vector<host_space, typename MatrixType::data_t>& y,
+    typename MatrixType::data_t alpha = 1,
+    typename MatrixType::data_t beta = 0)
 {
   A.matvec(x, y, alpha, beta);
 }
@@ -46,23 +58,25 @@ void matvec(MatrixType const& A, Vector<host_space, typename MatrixType::data_ty
 /**
  * \brief Imports a dense matrix into the selected sparse format using an absolute tolerance.
  *
- * \tparam sparse_t Sparse matrix type selected for the import.
+ * \tparam sparse_t Host-space sparse matrix type selected for the import.
  * \tparam data_t Dense matrix scalar type.
  * \param dense Dense matrix to import.
  * \param tolerance Entries with magnitude no greater than this value are omitted.
  * \return The imported sparse matrix.
  */
 template <typename sparse_t, typename data_t>
+  requires(
+      std::is_same_v<sparse_t, COOMatrix<host_space, data_t>> ||
+      std::is_same_v<sparse_t, CSRMatrix<host_space, data_t>> ||
+      std::is_same_v<sparse_t, ELLPACKMatrix<host_space, data_t>>)
 sparse_t from_dense(Matrix<host_space, data_t> const& dense, data_t tolerance = 0)
 {
-  if constexpr (std::is_same_v<sparse_t, COOMatrix<data_t>>)
-    return from_dense_coo(dense, tolerance);
-  else if constexpr (std::is_same_v<sparse_t, CSRMatrix<data_t>>)
-    return from_dense_csr(dense, tolerance);
-  else if constexpr (std::is_same_v<sparse_t, ELLPACKMatrix<data_t>>)
-    return from_dense_ellpack(dense, tolerance);
+  if constexpr (std::is_same_v<sparse_t, COOMatrix<host_space, data_t>>)
+    return from_dense_coo<host_space>(dense, tolerance);
+  else if constexpr (std::is_same_v<sparse_t, CSRMatrix<host_space, data_t>>)
+    return from_dense_csr<host_space>(dense, tolerance);
   else
-    static_assert(std::is_same_v<sparse_t, void>, "BCOO from_dense requires block dimensions");
+    return from_dense_ellpack<host_space>(dense, tolerance);
 }
 
 /**
@@ -70,7 +84,8 @@ sparse_t from_dense(Matrix<host_space, data_t> const& dense, data_t tolerance = 
  *
  * This overload is defined for BCOO and supplies its fixed block dimensions.
  *
- * \tparam sparse_t Sparse matrix type; must be `BCOOMatrix<data_t>`.
+ * \tparam sparse_t Host-space sparse matrix type; must be
+ *         `BCOOMatrix<host_space, data_t>`.
  * \tparam data_t Dense matrix scalar type.
  * \param dense Dense matrix to import.
  * \param br Number of rows in every BCOO block.
@@ -79,10 +94,10 @@ sparse_t from_dense(Matrix<host_space, data_t> const& dense, data_t tolerance = 
  * \return The imported BCOO matrix.
  */
 template <typename sparse_t, typename data_t>
+  requires(std::is_same_v<sparse_t, BCOOMatrix<host_space, data_t>>)
 sparse_t from_dense(Matrix<host_space, data_t> const& dense, index_t br, index_t bc, data_t tolerance = 0)
 {
-  static_assert(std::is_same_v<sparse_t, BCOOMatrix<data_t>>, "Block-parameterized from_dense is only defined for BCOO");
-  return from_dense_bcoo(dense, br, bc, tolerance);
+  return from_dense_bcoo<host_space>(dense, br, bc, tolerance);
 }
 
 } // namespace boba
