@@ -284,6 +284,7 @@ test_tt_solvers${NAME_FLAG}.out: test_tt_solvers${NAME_FLAG}.o boba${NAME_FLAG}.
 
 test_tt_solvers${NAME_FLAG}.o: ${TESTS_DIR}/test_tt_solvers.cpp ${BOBA_INC} boba${NAME_FLAG}.o
 	${COMPILE} ${OPTS} -c ${TESTS_DIR}/test_tt_solvers.cpp -o test_tt_solvers${NAME_FLAG}.o
+
 ###############################
 test_backsolve: test_backsolve${NAME_FLAG}.out
 	echo "Done making $@${NAME_FLAG}.out"

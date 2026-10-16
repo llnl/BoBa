@@ -9,6 +9,15 @@
 
 constexpr boba::execution_space space = boba::default_execution_space;
 
+/**
+ * @brief Creates deterministic extents for a test tensor.
+ *
+ * The size of mode d is d + 2, which gives each test rank distinct
+ * mode sizes while keeping the tensors small.
+ *
+ * @tparam dimension Tensor rank.
+ * @return Mode extents for the test tensor.
+ */
 template <std::size_t dimension>
 ::boba::Array<::boba::index_t, dimension> make_sizes()
 {
@@ -20,6 +29,18 @@ template <std::size_t dimension>
   return sizes;
 }
 
+/**
+ * @brief Checks whether two entries agree on all contracted coordinates.
+ *
+ * @tparam contractions Number of contracted dimensions.
+ * @tparam dimension_A Rank of the left tensor.
+ * @tparam dimension_B Rank of the right tensor.
+ * @param indices_A Left tensor multi-index.
+ * @param indices_B Right tensor multi-index.
+ * @param contraction_dimensions_A Contracted dimensions in the left tensor.
+ * @param contraction_dimensions_B Contracted dimensions in the right tensor.
+ * @return True when every contracted coordinate matches.
+ */
 template <std::size_t contractions, std::size_t dimension_A, std::size_t dimension_B>
 bool contraction_indices_match(
   ::boba::Array<::boba::index_t, dimension_A> indices_A,
@@ -37,6 +58,21 @@ bool contraction_indices_match(
   return true;
 }
 
+/**
+ * @brief Builds the uncontracted output index for a pair of entries.
+ *
+ * The output order is all uncontracted left-tensor dimensions followed by all
+ * uncontracted right-tensor dimensions, matching the contraction API.
+ *
+ * @tparam contractions Number of contracted dimensions.
+ * @tparam dimension_A Rank of the left tensor.
+ * @tparam dimension_B Rank of the right tensor.
+ * @param indices_A Left tensor multi-index.
+ * @param indices_B Right tensor multi-index.
+ * @param contraction_dimensions_A Contracted dimensions in the left tensor.
+ * @param contraction_dimensions_B Contracted dimensions in the right tensor.
+ * @return Multi-index in the contracted output tensor.
+ */
 template <std::size_t contractions, std::size_t dimension_A, std::size_t dimension_B>
 ::boba::Array<::boba::index_t, dimension_A + dimension_B - 2 * contractions> contraction_output_indices(
   ::boba::Array<::boba::index_t, dimension_A> indices_A,
@@ -76,6 +112,17 @@ template <std::size_t contractions, std::size_t dimension_A, std::size_t dimensi
   return output_indices;
 }
 
+/**
+ * @brief Creates a deterministic dense tensor containing a sparse pattern.
+ *
+ * The seed changes which entries are retained. This gives the reference
+ * calculations both explicit zeros and signed nonzero values.
+ *
+ * @tparam dimension Tensor rank.
+ * @param sizes Tensor extents.
+ * @param seed Offset used to vary the retained-entry pattern.
+ * @return Dense host tensor used to construct sparse test inputs.
+ */
 template <std::size_t dimension>
 ::boba::Tensor<dimension, ::boba::host_space, double> make_sparse_test_tensor(
   ::boba::Array<::boba::index_t, dimension> sizes,
@@ -92,6 +139,18 @@ template <std::size_t dimension>
   return tensor;
 }
 
+/**
+ * @brief Compares a sparse tensor with a dense host reference.
+ *
+ * The sparse tensor is copied to host when necessary, then its implicit-zero
+ * expansion is compared using the infinity norm.
+ *
+ * @tparam dimension Tensor rank.
+ * @tparam sparse_space Execution space of the sparse tensor.
+ * @param sparse Sparse tensor under test.
+ * @param expected Dense reference tensor.
+ * @param check Accumulated test status.
+ */
 template <std::size_t dimension, ::boba::execution_space sparse_space>
 void compare_sparse_to_dense(
   ::boba::SparseTensor<dimension, sparse_space, double> const& sparse,
@@ -109,6 +168,13 @@ void compare_sparse_to_dense(
   pass_or_fail(check, error_inf_norm, 1.0e-14);
 }
 
+/**
+ * @brief Tests sparse permutation against an explicitly permuted dense tensor.
+ *
+ * @tparam dimension Tensor rank.
+ * @param permutation Output-to-input dimension permutation.
+ * @param check Accumulated test status.
+ */
 template <std::size_t dimension>
 void test_sparse_permutation(
   ::boba::Array<::boba::index_t, dimension> permutation,
@@ -141,6 +207,14 @@ void test_sparse_permutation(
   pass_or_fail(check, sparse_host_result.const_view()(::boba::filled_array<dimension>(static_cast<::boba::index_t>(0))) - expected.const_view()(0), 1.0e-14);
 }
 
+/**
+ * @brief Tests sparse reduction against a dense reference calculation.
+ *
+ * @tparam reductions Number of dimensions summed out.
+ * @tparam dimension Input tensor rank.
+ * @param reduction_dimensions Dimensions to reduce.
+ * @param check Accumulated test status.
+ */
 template <std::size_t reductions, std::size_t dimension>
 void test_sparse_reduction(
   ::boba::Array<size_t, reductions> reduction_dimensions,
@@ -172,6 +246,18 @@ void test_sparse_reduction(
   compare_sparse_to_dense(reduced, expected, check);
 }
 
+/**
+ * @brief Tests sparse-sparse contraction against dense enumeration.
+ *
+ * @tparam contractions Number of contracted dimensions.
+ * @tparam dimension_A Rank of the left tensor.
+ * @tparam dimension_B Rank of the right tensor.
+ * @param sizes_A Left tensor extents.
+ * @param sizes_B Right tensor extents.
+ * @param contraction_dimensions_A Contracted dimensions in the left tensor.
+ * @param contraction_dimensions_B Contracted dimensions in the right tensor.
+ * @param check Accumulated test status.
+ */
 template <std::size_t contractions, std::size_t dimension_A, std::size_t dimension_B>
 void test_sparse_contraction(
   ::boba::Array<::boba::index_t, dimension_A> sizes_A,
@@ -227,6 +313,85 @@ void test_sparse_contraction(
   compare_sparse_to_dense(contracted, expected, check);
 }
 
+/**
+ * @brief Tests both sparse-dense contraction operand orderings.
+ *
+ * The test first computes a dense-dense reference, then checks sparse-dense
+ * and dense-sparse contractions using positional and einsum-style APIs.
+ *
+ * @param check Accumulated test status.
+ */
+void test_mixed_contractions(bool& check)
+{
+  std::cout << "Testing sparse/dense contractions" << std::endl;
+
+  // Contract A(i,j) with B(j,k) over the shared j mode.
+  const ::boba::Array<::boba::index_t, 2> sizes_A{2, 3};
+  const ::boba::Array<::boba::index_t, 2> sizes_B{3, 4};
+  const ::boba::Array<size_t, 1> contraction_dimensions_A{1};
+  const ::boba::Array<size_t, 1> contraction_dimensions_B{0};
+
+  // Build dense inputs first so they can serve as both references and sparse sources.
+  auto dense_A = make_sparse_test_tensor(sizes_A, 0);
+  auto dense_B = make_sparse_test_tensor(sizes_B, 4);
+
+  // Convert each dense input independently; this exercises both sparse operand positions.
+  auto sparse_A = ::boba::convert_to_SparseTensor(dense_A, [](double value, auto)
+  {
+    return ::boba::abs(value) > 0.0;
+  });
+  auto sparse_B = ::boba::convert_to_SparseTensor(dense_B, [](double value, auto)
+  {
+    return ::boba::abs(value) > 0.0;
+  });
+
+  // Dense-dense contraction is the reference for both mixed contractions.
+  auto expected = ::boba::tensor_contraction<1, ::boba::host_space, 2, 2, double, true>(
+    dense_A,
+    dense_B,
+    contraction_dimensions_A,
+    contraction_dimensions_B);
+  auto sparse_dense = ::boba::tensor_contraction<1, ::boba::host_space, 2, 2, double, true>(
+    sparse_A,
+    dense_B,
+    contraction_dimensions_A,
+    contraction_dimensions_B);
+  auto dense_sparse = ::boba::tensor_contraction<1, ::boba::host_space, 2, 2, double, true>(
+    dense_A,
+    sparse_B,
+    contraction_dimensions_A,
+    contraction_dimensions_B);
+
+  // Check sparse-left/dense-right and dense-left/sparse-right positional overloads.
+  pass_or_fail(check, ::boba::norm_difference_inf(sparse_dense, expected), 1.0e-14);
+  pass_or_fail(check, ::boba::norm_difference_inf(dense_sparse, expected), 1.0e-14);
+
+  // Repeat both checks through the label-based overloads, including output ordering.
+  auto labeled_sparse_dense = ::boba::tensor_contraction<1, ::boba::host_space, 2, 2, double, true>(
+    ::boba::Array<std::string, 2>{"i", "j"},
+    sparse_A,
+    ::boba::Array<std::string, 2>{"j", "k"},
+    dense_B,
+    ::boba::Array<std::string, 2>{"i", "k"});
+  auto labeled_dense_sparse = ::boba::tensor_contraction<1, ::boba::host_space, 2, 2, double, true>(
+    ::boba::Array<std::string, 2>{"i", "j"},
+    dense_A,
+    ::boba::Array<std::string, 2>{"j", "k"},
+    sparse_B,
+    ::boba::Array<std::string, 2>{"i", "k"});
+
+  pass_or_fail(check, ::boba::norm_difference_inf(labeled_sparse_dense, expected), 1.0e-14);
+  pass_or_fail(check, ::boba::norm_difference_inf(labeled_dense_sparse, expected), 1.0e-14);
+}
+
+/**
+ * @brief Tests label-based sparse reduction and contraction APIs.
+ *
+ * Each label-based operation is compared with the corresponding positional
+ * operation after explicitly matching the output mode order.
+ *
+ * @param check Accumulated test status.
+ */
 void test_sparse_label_apis(bool& check)
 {
   std::cout << "Testing sparse label APIs" << std::endl;
@@ -289,6 +454,11 @@ void test_sparse_label_apis(bool& check)
   compare_sparse_to_dense(contracted, contraction_expected, check);
 }
 
+/**
+ * @brief Tests removal of entries that are tiny relative to the sparse norm.
+ *
+ * @param check Accumulated test status.
+ */
 void test_sparse_filter_small_entries(bool& check)
 {
   std::cout << "Testing sparse small-entry filtering" << std::endl;
@@ -307,6 +477,11 @@ void test_sparse_filter_small_entries(bool& check)
   pass_or_fail(check, filtered({3}) + 2.0, 1.0e-14);
 }
 
+/**
+ * @brief Runs the sparse tensor function test suite.
+ *
+ * @return Process status from the accumulated test checks.
+ */
 int main()
 {
   boba::init();
@@ -327,6 +502,7 @@ int main()
   test_sparse_contraction<2, 3, 3>({2, 3, 4}, {4, 5, 3}, {1, 2}, {2, 0}, check);
   test_sparse_contraction<1, 4, 3>({2, 2, 2, 2}, {2, 2, 2}, {1}, {0}, check);
   test_sparse_contraction<3, 6, 4>({2, 2, 2, 2, 2, 2}, {2, 2, 2, 2}, {0, 2, 5}, {1, 2, 3}, check);
+  test_mixed_contractions(check);
   test_sparse_label_apis(check);
   test_sparse_filter_small_entries(check);
 
