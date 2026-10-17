@@ -114,6 +114,63 @@ Array<index_t, dimension_A + dimension_B - 2 * contractions> sparse_contraction_
 /**
  * \brief Naively contracts a host sparse tensor with a host dense tensor.
  *
+ *
+ */
+template <bool sparse_first, size_t dimension_dense, size_t dimension_sparse, size_t dimension_out, typename accesor_dense_t, typename accesor_sparse_t, typename accesor_out_t>
+void sparse_dense_contraction_core_naive(
+  const TensorView<accesor_dense_t, dimension_dense>& dense_view,
+  const SparseTensorView<accesor_sparse_t, dimension_sparse>& sparse_view,
+  const auto& contracted_dense_mider,
+  auto sparse_contracted_dimension,
+  auto dense_contracted_dimension,
+  const TensorView<accesor_out_t, dimension_out>& out_view)
+{
+  ::boba::loop<host_space, 2>(
+    {contracted_dense_mider.size(), sparse_view.number_nonzeros()},
+    [&](Array<index_t, 2> indices)
+  {
+    const auto [cid_dense, id_sparse] = indices;
+    const auto mid_sparse = sparse_view.entry_multiindex(id_sparse);
+    auto contraction_ids = sparse_contracted_dimension;
+    for (size_t c = 0; c < contraction_ids.size(); ++c)
+    {
+      contraction_ids[c] = mid_sparse[sparse_contracted_dimension[c]];
+    }
+    const auto cmid_sparse = delete_elements(mid_sparse, sparse_contracted_dimension);
+    const auto cmid_dense = contracted_dense_mider.multiindex(cid_dense);
+
+    //
+    // Deduce dense contraction indices
+    //
+    const auto mid_dense = make_uncontracted_mid(cmid_dense, contraction_ids, dense_contracted_dimension);
+
+    //
+    // Deduce output contraction indices
+    //
+    const auto cmid_out = [&]()
+    {
+      if constexpr (sparse_first)
+      {
+        return concatenate(cmid_sparse, cmid_dense);
+      }
+      else
+      {
+        return concatenate(cmid_dense, cmid_sparse);
+      }
+    }();
+
+    //
+    // Contract
+    //
+    const auto value_dense = dense_view(mid_dense);
+    const auto value_sparse = sparse_view.values()[id_sparse];
+    out_view(cmid_out) += value_dense * value_sparse;
+  });
+}
+
+/**
+ * \brief Naively contracts a host sparse tensor with a host dense tensor.
+ *
  * The sparse operand is traversed only through its explicitly stored entries.
  * The dense operand is scanned to find entries matching each sparse entry's
  * contracted indices.
@@ -146,28 +203,19 @@ sparse_dense_contraction_naive(
 
   const auto sparse_view = tensor_A.const_view();
   const auto dense_view = tensor_B.const_view();
-  const auto sparse_values = tensor_A.values_tensor().const_view();
-  for (index_t entry_A = 0; entry_A < tensor_A.number_nonzeros(); ++entry_A)
-  {
-    const auto indices_A = sparse_view.entry_multiindex(entry_A);
-    for (index_t entry_B = 0; entry_B < tensor_B.size(); ++entry_B)
-    {
-      const auto indices_B = tensor_B.multiindex(entry_B);
-      if (sparse_contraction_indices_match(
-            indices_A,
-            indices_B,
-            contraction_dimensions_A,
-            contraction_dimensions_B))
-      {
-        const auto indices_C = sparse_contraction_output_indices(
-          indices_A,
-          indices_B,
-          contraction_dimensions_A,
-          contraction_dimensions_B);
-        tensor_C(indices_C) += sparse_values(entry_A) * dense_view(entry_B);
-      }
-    }
-  }
+
+  auto contracted_dense_mider = contracted_B_mider;
+  auto dense_contracted_dimension = contraction_dimensions_B;
+  auto sparse_contracted_dimension = contraction_dimensions_A;
+
+  sparse_dense_contraction_core_naive<true, dimension_B, dimension_A, new_dimension>(
+    dense_view,
+    sparse_view,
+    contracted_dense_mider,
+    sparse_contracted_dimension,
+    dense_contracted_dimension,
+    tensor_C.view());
+
   return tensor_C;
 }
 
@@ -204,30 +252,21 @@ dense_sparse_contraction_naive(
     concatenate(contracted_A_mider.sizes(), contracted_B_mider.sizes()));
   tensor_C.fill_with_zeros();
 
-  const auto dense_view = tensor_A.const_view();
   const auto sparse_view = tensor_B.const_view();
-  const auto sparse_values = tensor_B.values_tensor().const_view();
-  for (index_t entry_A = 0; entry_A < tensor_A.size(); ++entry_A)
-  {
-    const auto indices_A = tensor_A.multiindex(entry_A);
-    for (index_t entry_B = 0; entry_B < tensor_B.number_nonzeros(); ++entry_B)
-    {
-      const auto indices_B = sparse_view.entry_multiindex(entry_B);
-      if (sparse_contraction_indices_match(
-            indices_A,
-            indices_B,
-            contraction_dimensions_A,
-            contraction_dimensions_B))
-      {
-        const auto indices_C = sparse_contraction_output_indices(
-          indices_A,
-          indices_B,
-          contraction_dimensions_A,
-          contraction_dimensions_B);
-        tensor_C(indices_C) += dense_view(entry_A) * sparse_values(entry_B);
-      }
-    }
-  }
+  const auto dense_view = tensor_A.const_view();
+
+  auto contracted_dense_mider = contracted_A_mider;
+  auto dense_contracted_dimension = contraction_dimensions_A;
+  auto sparse_contracted_dimension = contraction_dimensions_B;
+
+  sparse_dense_contraction_core_naive<false, dimension_A, dimension_B, new_dimension>(
+    dense_view,
+    sparse_view,
+    contracted_dense_mider,
+    sparse_contracted_dimension,
+    dense_contracted_dimension,
+    tensor_C.view());
+
   return tensor_C;
 }
 

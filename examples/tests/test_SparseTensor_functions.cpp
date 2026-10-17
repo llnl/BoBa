@@ -314,77 +314,6 @@ void test_sparse_contraction(
 }
 
 /**
- * @brief Tests both sparse-dense contraction operand orderings.
- *
- * The test first computes a dense-dense reference, then checks sparse-dense
- * and dense-sparse contractions using positional and einsum-style APIs.
- *
- * @param check Accumulated test status.
- */
-void test_mixed_contractions(bool& check)
-{
-  std::cout << "Testing sparse/dense contractions" << std::endl;
-
-  // Contract A(i,j) with B(j,k) over the shared j mode.
-  const ::boba::Array<::boba::index_t, 2> sizes_A{2, 3};
-  const ::boba::Array<::boba::index_t, 2> sizes_B{3, 4};
-  const ::boba::Array<size_t, 1> contraction_dimensions_A{1};
-  const ::boba::Array<size_t, 1> contraction_dimensions_B{0};
-
-  // Build dense inputs first so they can serve as both references and sparse sources.
-  auto dense_A = make_sparse_test_tensor(sizes_A, 0);
-  auto dense_B = make_sparse_test_tensor(sizes_B, 4);
-
-  // Convert each dense input independently; this exercises both sparse operand positions.
-  auto sparse_A = ::boba::convert_to_SparseTensor(dense_A, [](double value, auto)
-  {
-    return ::boba::abs(value) > 0.0;
-  });
-  auto sparse_B = ::boba::convert_to_SparseTensor(dense_B, [](double value, auto)
-  {
-    return ::boba::abs(value) > 0.0;
-  });
-
-  // Dense-dense contraction is the reference for both mixed contractions.
-  auto expected = ::boba::tensor_contraction<1, ::boba::host_space, 2, 2, double, true>(
-    dense_A,
-    dense_B,
-    contraction_dimensions_A,
-    contraction_dimensions_B);
-  auto sparse_dense = ::boba::tensor_contraction<1, ::boba::host_space, 2, 2, double, true>(
-    sparse_A,
-    dense_B,
-    contraction_dimensions_A,
-    contraction_dimensions_B);
-  auto dense_sparse = ::boba::tensor_contraction<1, ::boba::host_space, 2, 2, double, true>(
-    dense_A,
-    sparse_B,
-    contraction_dimensions_A,
-    contraction_dimensions_B);
-
-  // Check sparse-left/dense-right and dense-left/sparse-right positional overloads.
-  pass_or_fail(check, ::boba::norm_difference_inf(sparse_dense, expected), 1.0e-14);
-  pass_or_fail(check, ::boba::norm_difference_inf(dense_sparse, expected), 1.0e-14);
-
-  // Repeat both checks through the label-based overloads, including output ordering.
-  auto labeled_sparse_dense = ::boba::tensor_contraction<1, ::boba::host_space, 2, 2, double, true>(
-    ::boba::Array<std::string, 2>{"i", "j"},
-    sparse_A,
-    ::boba::Array<std::string, 2>{"j", "k"},
-    dense_B,
-    ::boba::Array<std::string, 2>{"i", "k"});
-  auto labeled_dense_sparse = ::boba::tensor_contraction<1, ::boba::host_space, 2, 2, double, true>(
-    ::boba::Array<std::string, 2>{"i", "j"},
-    dense_A,
-    ::boba::Array<std::string, 2>{"j", "k"},
-    sparse_B,
-    ::boba::Array<std::string, 2>{"i", "k"});
-
-  pass_or_fail(check, ::boba::norm_difference_inf(labeled_sparse_dense, expected), 1.0e-14);
-  pass_or_fail(check, ::boba::norm_difference_inf(labeled_dense_sparse, expected), 1.0e-14);
-}
-
-/**
  * @brief Tests label-based sparse reduction and contraction APIs.
  *
  * Each label-based operation is compared with the corresponding positional
@@ -502,7 +431,6 @@ int main()
   test_sparse_contraction<2, 3, 3>({2, 3, 4}, {4, 5, 3}, {1, 2}, {2, 0}, check);
   test_sparse_contraction<1, 4, 3>({2, 2, 2, 2}, {2, 2, 2}, {1}, {0}, check);
   test_sparse_contraction<3, 6, 4>({2, 2, 2, 2, 2, 2}, {2, 2, 2, 2}, {0, 2, 5}, {1, 2, 3}, check);
-  test_mixed_contractions(check);
   test_sparse_label_apis(check);
   test_sparse_filter_small_entries(check);
 

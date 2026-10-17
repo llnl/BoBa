@@ -85,6 +85,7 @@ all: \
 	test_tensors \
 	test_SparseTensor \
 	test_SparseTensor_functions \
+	test_sparse_dense_contraction_benchmark \
 	test_SparseMatrix \
 	test_subtensorviews \
 	test_cp \
@@ -513,6 +514,16 @@ test_SparseTensor_functions${NAME_FLAG}.out: test_SparseTensor_functions${NAME_F
 
 test_SparseTensor_functions${NAME_FLAG}.o: ${TESTS_DIR}/test_SparseTensor_functions.cpp ${BOBA_INC} boba${NAME_FLAG}.o
 	${COMPILE} ${OPTS} -c ${TESTS_DIR}/test_SparseTensor_functions.cpp -o test_SparseTensor_functions${NAME_FLAG}.o
+
+###############################
+test_sparse_dense_contraction_benchmark: test_sparse_dense_contraction_benchmark${NAME_FLAG}.out
+	echo "Done making $@${NAME_FLAG}.out"
+
+test_sparse_dense_contraction_benchmark${NAME_FLAG}.out: test_sparse_dense_contraction_benchmark${NAME_FLAG}.o boba${NAME_FLAG}.o
+	${LINK} -o $@ $^ ${LIBS}
+
+test_sparse_dense_contraction_benchmark${NAME_FLAG}.o: ${TESTS_DIR}/test_sparse_dense_contraction_benchmark.cpp ${BOBA_INC} boba${NAME_FLAG}.o
+	${COMPILE} ${OPTS} -c ${TESTS_DIR}/test_sparse_dense_contraction_benchmark.cpp -o test_sparse_dense_contraction_benchmark${NAME_FLAG}.o
 
 ###############################
 test_SparseMatrix: test_SparseMatrix${NAME_FLAG}.out
