@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <limits>
+#include <type_traits>
 #include <utility>
 
 using vector_t = boba::Vector<boba::host_space, double>;
@@ -148,6 +150,164 @@ void check_bcoo_round_trip(boba::BCOOMatrix<boba::host_space, double> const& ori
 }
 
 /**
+ * \brief Returns a deterministic test value; complex types get a nonzero imaginary part.
+ */
+template <typename data_t>
+data_t csr_test_value(boba::index_t seed)
+{
+  const double real = 0.25 * static_cast<double>(seed % 7) - 0.5;
+  if constexpr (std::is_same_v<data_t, boba::complex<double>> || std::is_same_v<data_t, boba::complex<float>>)
+  {
+    using real_t = boba::real_type_t<data_t>;
+    return data_t{static_cast<real_t>(real), static_cast<real_t>(0.125 * static_cast<double>(seed % 5))};
+  }
+  else
+  {
+    return static_cast<data_t>(real);
+  }
+}
+
+/**
+ * \brief Fills a host vector with one value.
+ */
+template <typename data_t>
+void fill_with_value(boba::Vector<boba::host_space, data_t>& vector, data_t value)
+{
+  auto vector_view = vector.view();
+  for (boba::index_t i = 0; i < vector.size(); ++i)
+  {
+    vector_view(i) = value;
+  }
+}
+
+/**
+ * \brief Fills a dense host matrix with deterministic values.
+ */
+template <typename data_t>
+void fill_csr_test_values(boba::Matrix<boba::host_space, data_t>& matrix, boba::index_t offset)
+{
+  auto matrix_view = matrix.view();
+  boba::loop<boba::host_space, 2>({matrix.rows(), matrix.cols()}, [&](boba::Array<boba::index_t, 2> indices)
+  {
+    auto [i, j] = indices;
+    matrix_view({i, j}) = csr_test_value<data_t>(offset + 3 * i + 5 * j);
+  });
+}
+
+/**
+ * \brief Validates CSR SpMV and SpMM in `default_execution_space` against dense products.
+ *
+ * Covers both `sparse_op` values, accumulation with nonzero beta, overwrite
+ * with zero beta, and an empty matrix.
+ */
+template <typename data_t>
+void check_csr_backend(double tolerance, bool& check)
+{
+  constexpr auto space = boba::default_execution_space;
+  using host_matrix_t = boba::Matrix<boba::host_space, data_t>;
+  using host_vector_t = boba::Vector<boba::host_space, data_t>;
+  using real_t = boba::real_type_t<data_t>;
+  const auto alpha = boba::PotentiallyComplex<data_t>::value(static_cast<real_t>(3));
+  const auto beta = boba::PotentiallyComplex<data_t>::value(static_cast<real_t>(2));
+  const auto zero = boba::PotentiallyComplex<data_t>::value(static_cast<real_t>(0));
+
+  constexpr boba::index_t rows = 7;
+  constexpr boba::index_t cols = 5;
+  constexpr boba::index_t num_rhs = 3;
+  host_matrix_t dense({rows, cols});
+  dense.fill_with_zeros();
+  auto dense_view = dense.view();
+  for (boba::index_t i = 0; i < rows; ++i)
+  {
+    for (boba::index_t j = 0; j < cols; ++j)
+    {
+      if ((i + 2 * j) % 3 == 0)
+      {
+        dense_view({i, j}) = csr_test_value<data_t>(i * cols + j + 1);
+      }
+    }
+  }
+  const auto host_csr = boba::from_dense_csr<boba::host_space>(dense);
+  const boba::CSRMatrix<space, data_t> csr(host_csr);
+  const auto dense_transpose = dense.transpose();
+
+  for (const auto op : {boba::sparse_op::none, boba::sparse_op::transpose})
+  {
+    const bool transposed = op == boba::sparse_op::transpose;
+    const auto& op_dense = transposed ? dense_transpose : dense;
+    const auto in_size = op_dense.cols();
+    const auto out_size = op_dense.rows();
+
+    host_matrix_t B({in_size, num_rhs}), C0({out_size, num_rhs});
+    fill_csr_test_values(B, 11);
+    fill_csr_test_values(C0, 17);
+    const auto C_expected = alpha * (op_dense * B) + beta * C0;
+    const auto C_overwrite_expected = alpha * (op_dense * B);
+
+    boba::Matrix<space, data_t> B_device(B), C_device(C0);
+    csr.matmat(B_device, C_device, alpha, beta, op);
+    pass_or_fail(check, boba::norm_difference_inf(host_matrix_t(C_device), C_expected), tolerance);
+
+    // beta == 0 must overwrite, even when C holds NaN.
+    host_matrix_t C_nan({out_size, num_rhs});
+    auto C_nan_view = C_nan.view();
+    const auto nan = boba::PotentiallyComplex<data_t>::value(std::numeric_limits<real_t>::quiet_NaN());
+    for (boba::index_t k = 0; k < C_nan.size(); ++k)
+    {
+      C_nan_view.data()[k] = nan;
+    }
+    boba::Matrix<space, data_t> C_nan_device(C_nan);
+    boba::matmat(csr, B_device, C_nan_device, alpha, zero, op);
+    pass_or_fail(check, boba::norm_difference_inf(host_matrix_t(C_nan_device), C_overwrite_expected), tolerance);
+
+    host_vector_t x({in_size}), y0({out_size});
+    auto x_view = x.view();
+    auto y0_view = y0.view();
+    auto B_view = B.const_view();
+    auto C0_view = C0.const_view();
+    for (boba::index_t i = 0; i < in_size; ++i)
+    {
+      x_view(i) = B_view({i, 0});
+    }
+    for (boba::index_t i = 0; i < out_size; ++i)
+    {
+      y0_view(i) = C0_view({i, 0});
+    }
+    const auto y_expected = alpha * (op_dense * x) + beta * y0;
+
+    boba::Vector<space, data_t> x_device(x), y_device(y0);
+    csr.matvec(x_device, y_device, alpha, beta, op);
+    pass_or_fail(check, boba::norm_difference_inf(host_vector_t(y_device), y_expected), tolerance);
+
+    auto y_returned = boba::matvec(csr, x_device, op);
+    pass_or_fail(check, boba::norm_difference_inf(host_vector_t(y_returned), op_dense * x), tolerance);
+
+    auto C_returned = boba::matmat(csr, B_device, op);
+    pass_or_fail(check, boba::norm_difference_inf(host_matrix_t(C_returned), op_dense * B), tolerance);
+
+    // The naive kernel must agree with the vendor-library path.
+    boba::Matrix<space, data_t> C_naive(C0);
+    boba::sparse_matrix_matrix_product<space, data_t, true>(csr, B_device, C_naive, alpha, beta, op);
+    pass_or_fail(check, boba::norm_difference_inf(host_matrix_t(C_naive), C_expected), tolerance);
+
+    boba::Vector<space, data_t> y_naive(y0);
+    boba::sparse_matrix_vector_product<space, data_t, true>(csr, x_device, y_naive, alpha, beta, op);
+    pass_or_fail(check, boba::norm_difference_inf(host_vector_t(y_naive), y_expected), tolerance);
+  }
+
+  // Empty pattern: only the beta scaling applies.
+  const boba::CSRMatrix<space, data_t> empty_csr(boba::CSRMatrix<boba::host_space, data_t>(rows, cols));
+  host_vector_t x_empty({cols}), y_empty({rows});
+  fill_with_value(x_empty, alpha);
+  fill_with_value(y_empty, alpha);
+  boba::Vector<space, data_t> x_empty_device(x_empty), y_empty_device(y_empty);
+  empty_csr.matvec(x_empty_device, y_empty_device, alpha, beta);
+  pass_or_fail(check, boba::norm_difference_inf(host_vector_t(y_empty_device), beta * y_empty), tolerance);
+
+  std::cout << "CSR backend matvec/matmat: done" << std::endl;
+}
+
+/**
  * \brief Exercises all initial sparse matrix formats against dense storage.
  */
 int main()
@@ -165,6 +325,7 @@ int main()
   check_empty_sparse(empty_ellpack, check);
   check_empty_sparse(empty_bcoo, check);
   pass_or_fail_bool(check, empty_bcoo.nonzero_blocks() == 0);
+  pass_or_fail_bool(check, empty_csr.is_sorted());
 
   // Cross-space copies and moves use the same host/device transfer semantics
   // as the dense tensor containers. Empty objects keep this test backend-neutral.
@@ -242,6 +403,33 @@ int main()
   auto bcoo = boba::from_dense<boba::BCOOMatrix<boba::host_space, double>>(dense, 2, 2, tolerance);
   pass_or_fail_bool(check, coo.nnz() == 9);
   pass_or_fail_bool(check, csr.nnz() == 9);
+  pass_or_fail_bool(check, csr.is_sorted());
+  auto unsorted_csr = csr;
+  auto unsorted_columns = unsorted_csr.m_column_indices.view();
+  std::swap(unsorted_columns(0), unsorted_columns(1));
+  pass_or_fail_bool(check, !unsorted_csr.is_sorted());
+
+  // Mutable views update values in place; indices stay read-only.
+  auto scaled_csr = csr;
+  auto scaled_view = scaled_csr.view();
+  static_assert(std::is_same_v<decltype(scaled_view.column_indices_data()), std::int64_t const*>);
+  auto scaled_values = scaled_view.values_view();
+  pass_or_fail_bool(check, scaled_values.size() == csr.nnz());
+  for (boba::index_t k = 0; k < scaled_view.nnz(); ++k)
+  {
+    scaled_view.value(k) *= 2.0;
+  }
+  auto const csr_view = csr.const_view();
+  bool view_matches = scaled_view.rows() == csr_view.rows() && scaled_view.cols() == csr_view.cols();
+  for (boba::index_t i = 0; i < csr_view.rows(); ++i)
+  {
+    for (auto k = csr_view.row_begin(i); k < csr_view.row_end(i); ++k)
+    {
+      view_matches = view_matches && scaled_view.column_index(k) == csr_view.column_index(k);
+      view_matches = view_matches && std::abs(scaled_values(k) - 2.0 * csr_view.value(k)) < 1.0e-14;
+    }
+  }
+  pass_or_fail_bool(check, view_matches);
   pass_or_fail_bool(check, ellpack.nnz() == 12);
   pass_or_fail_bool(check, bcoo.nnz() == 12);
   pass_or_fail_bool(check, bcoo.nonzero_blocks() == 3);
@@ -253,6 +441,10 @@ int main()
   check_sparse(csr, dense_thresholded, x, y, z, "CSR", check);
   check_sparse(ellpack, dense_thresholded, x, y, z, "ELLPACK", check);
   check_sparse(bcoo, dense_thresholded, x, y, z, "BCOO", check);
+  check_csr_backend<double>(1.0e-13, check);
+  check_csr_backend<float>(1.0e-5, check);
+  // TODO<bugfix> does not build on cuda systems, see https://lc.llnl.gov/gitlab/boba/boba-oss/-/jobs/4086482
+  // check_csr_backend<boba::complex<double>>(1.0e-13, check);
 
   const int result = final_check(check);
   boba::finalize();

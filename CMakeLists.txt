@@ -103,6 +103,7 @@ blt_list_append( TO boba_depends ELEMENTS Kokkos::kokkos IF KOKKOS_FOUND )
 blt_list_append( TO boba_depends ELEMENTS nvToolsExt IF BOBA_ENABLE_CUDA )
 blt_list_append( TO boba_depends ELEMENTS roc::hipblas IF HIPBLAS_FOUND )
 blt_list_append( TO boba_depends ELEMENTS roc::hipsolver IF HIPSOLVER_FOUND )
+blt_list_append( TO boba_depends ELEMENTS roc::hipsparse IF HIPSPARSE_FOUND )
 blt_list_append( TO boba_depends ELEMENTS roc::rocsolver IF ROCSOLVER_FOUND )
 blt_list_append( TO boba_depends ELEMENTS roc::rocblas IF ROCBLAS_FOUND )
 

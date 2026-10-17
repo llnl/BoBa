@@ -35,8 +35,8 @@ void check_tolerance(data_t tolerance)
  * \param tolerance Nonnegative absolute retention tolerance.
  * \return `true` when `abs(value)` is greater than `tolerance`.
  */
-template <typename data_t>
-bool keep(data_t value, data_t tolerance)
+template <typename data_t, typename tolerance_t>
+bool keep(data_t value, tolerance_t tolerance)
 {
   return abs(value) > tolerance;
 }

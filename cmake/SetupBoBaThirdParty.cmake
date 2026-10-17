@@ -309,6 +309,37 @@ if(BOBA_ENABLE_HIP AND BOBA_HIP_LIBS)
         set(HIPBLAS_FOUND FALSE CACHE BOOL "" FORCE)
     endif()
 
+    if (NOT HIPSPARSE_DIR AND ROCM_ROOT_DIR AND EXISTS "${ROCM_ROOT_DIR}/lib/cmake/hipsparse")
+        set(HIPSPARSE_DIR "${ROCM_ROOT_DIR}/lib/cmake/hipsparse" CACHE PATH "hipsparse CMake config directory")
+    endif()
+
+    if (HIPSPARSE_DIR)
+        if (NOT EXISTS "${HIPSPARSE_DIR}")
+            message(FATAL_ERROR "Given HIPSPARSE_DIR does not exist: ${HIPSPARSE_DIR}")
+        endif()
+
+        if (NOT IS_DIRECTORY "${HIPSPARSE_DIR}")
+            message(FATAL_ERROR "Given HIPSPARSE_DIR is not a directory: ${HIPSPARSE_DIR}")
+        endif()
+
+        find_package(hipsparse REQUIRED PATHS ${HIPSPARSE_DIR} )
+
+        message(STATUS "Checking for expected hipsparse target 'roc::hipsparse'")
+        if (NOT TARGET roc::hipsparse)
+            message(FATAL_ERROR "hipsparse failed to load: ${HIPSPARSE_DIR}")
+        else()
+            message(STATUS "hipsparse loaded: ${HIPSPARSE_DIR}")
+            get_target_property(HIPSPARSE_INCLUDE_DIRS_BOBA roc::hipsparse INTERFACE_INCLUDE_DIRECTORIES)
+            message(STATUS "hipsparse Includes: ${HIPSPARSE_INCLUDE_DIRS_BOBA}")
+            set_property(TARGET roc::hipsparse
+                 APPEND PROPERTY INTERFACE_SYSTEM_INCLUDE_DIRECTORIES
+                ${HIPSPARSE_INCLUDE_DIRS_BOBA})
+            set(HIPSPARSE_FOUND TRUE CACHE BOOL "" FORCE)
+        endif()
+    else()
+        message(FATAL_ERROR "BOBA_HIP_LIBS requires hipsparse; set HIPSPARSE_DIR or ROCM_ROOT_DIR")
+    endif()
+
     if (ROCSOLVER_DIR)
         if (NOT EXISTS "${ROCSOLVER_DIR}")
             message(FATAL_ERROR "Given ROCSOLVER_DIR does not exist: ${ROCSOLVER_DIR}")

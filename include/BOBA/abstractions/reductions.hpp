@@ -610,7 +610,7 @@ namespace reductions
 template <execution_space space, typename data_t>
 data_t sum_reduce(const data_t* data, index_t size)
 {
-  data_t value = 0.0;
+  data_t value{};
 
   ::boba::sum_reduce<space>(value, index_t(0), size, [=] __boba_host_device__(index_t i, sum_reducer_operator<data_t> & local_value)
   {

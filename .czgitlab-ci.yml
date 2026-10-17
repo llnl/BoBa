@@ -24,7 +24,7 @@ variables:
   H100_MACHINE: "matrix"
   HIP_MACHINE: "tuolumne"
 
-  BOBA_TPL_FARM: "/usr/workspace/boba_dev/boba_tpl_build_farms/2026_10_07_kokkos"
+  BOBA_TPL_FARM: "/usr/workspace/boba_dev/boba_tpl_build_farms/2026_10_15_cub"
 
 include:
   - project: 'lc-templates/id_tokens'

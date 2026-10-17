@@ -81,7 +81,7 @@ auto benchmark(contraction_t contraction, std::size_t repetitions)
   {
     output = contraction();
     const auto output_view = output.const_view();
-    checksum += output_view(0) + output_view(output.size() / 2) + output_view(output.size() - 1);
+    checksum = checksum + output_view(0) + output_view(output.size() / 2) + output_view(output.size() - 1);
   }
   const auto end = std::chrono::steady_clock::now();
 

@@ -5,6 +5,7 @@
 #ifdef BOBA_HIP
 #include <hip/hip_runtime.h>
 #include <hip/hip_runtime_api.h>
+#include <hip/library_types.h>
 #endif
 
 // AMD Documentation
@@ -20,6 +21,36 @@ namespace detail
 {
 
 #ifdef BOBA_HIP
+
+template <typename data_t>
+struct hip_data_t;
+
+template <>
+struct hip_data_t<double>
+{
+  static constexpr hipDataType value = HIP_R_64F;
+};
+
+template <>
+struct hip_data_t<float>
+{
+  static constexpr hipDataType value = HIP_R_32F;
+};
+
+template <>
+struct hip_data_t<complex<double>>
+{
+  static constexpr hipDataType value = HIP_C_64F;
+};
+
+template <>
+struct hip_data_t<complex<float>>
+{
+  static constexpr hipDataType value = HIP_C_32F;
+};
+
+template <typename data_t>
+inline constexpr hipDataType hip_data_t_v = hip_data_t<data_t>::value;
 
 // -----------------------------------------------------
 // Debugging
