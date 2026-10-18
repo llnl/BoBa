@@ -464,6 +464,29 @@ inline void sum_reduce(
 }
 
 /**
+ * @brief TODO
+ */
+
+template <boba::execution_space space, typename data_t, typename tensorlike_t>
+inline void manual_sum_reduce(const tensorlike_t& tensorlike)
+{
+  if constexpr(boba_cuda_enabled() and space == execution_space::CUDA)
+  {
+    return sum_reduction(arraylike.data(), arraylike.size());
+  }
+  else
+  {
+    data_t sum = 0;
+    const auto* tensorlike_data = tensorlike.data();
+    for(index_t i = 0; i < tensorlike.size(); i++)
+    {
+      sum += tensorlike_data[i];
+    }
+    return sum;
+  }
+}
+
+/**
  *
  */
 

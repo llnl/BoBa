@@ -159,8 +159,7 @@ __launch_bounds__(block_size0 * block_size1 * block_size2)
  */
 
 template <typename data_t, typename index_t>
-inline data_t sum_reduction(
-  const data_t* data, index_t length)
+inline data_t sum_reduction(const data_t* data, index_t length)
 {
 #ifdef BOBA_CUDA
   // Output memory

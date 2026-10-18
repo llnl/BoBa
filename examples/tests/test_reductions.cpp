@@ -35,6 +35,33 @@ int main(int argc, char* argv[])
   args.parse_check();
 
   {
+    boba::Vector<boba::host_space, double, size_t> reduction_vector(N);
+    reduction_vector.fill_with_random();
+    boba::Vector<boba::default_execution_space, double, size_t> device_reduction_vector(reduction_vector);
+
+    auto device_result = boba::detail::manual_sum_reduce(device_reduction_vector);
+    auto host_result = boba::detail::manual_sum_reduce(reduction_vector);
+
+    pass_or_fail(check, device_result - host_result, 1.0e-13);
+  }
+
+  {
+    std::cout << " sum_{i=0}^{N} i " << std::endl;
+    size_t summation = 0;
+
+    ::boba::sum_reduce<space>(summation, 0_z, N + 1, [=] __boba_host_device__(size_t i, boba::sum_reducer_operator<size_t>& _summation)
+    {
+      _summation += i;
+    });
+
+    size_t exact = (N * (N + 1)) / 2;
+    boba_print(summation);
+    boba_print(exact);
+    pass_or_fail(check, exact - summation, 1.0e-13);
+    std::cout << std::endl;
+  }
+
+  {
     std::cout << " sum_{i=0}^{N} i " << std::endl;
     size_t summation = 0;
 
