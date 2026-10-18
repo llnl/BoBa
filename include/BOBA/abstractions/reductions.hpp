@@ -475,7 +475,7 @@ auto manual_sum_reduce(const tensorlike_t& tensorlike)
 
   if constexpr(boba_cuda_enabled() and space == execution_space::CUDA)
   {
-    return detail::sum_reduction(tensorlike.data(), tensorlike.size());
+    return detail::sum_reduction_driver(tensorlike.data(), tensorlike.size());
   }
   else
   {

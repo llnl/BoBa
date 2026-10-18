@@ -13,6 +13,8 @@ namespace boba
 namespace detail
 {
 
+constexpr size_t atomic_cutoff = 1024;
+
 #ifdef BOBA_DEVICE_CODE
 
 /**
@@ -150,7 +152,14 @@ __launch_bounds__(block_size)
   // thread 0 is warp 0, lane 0
   if(thread_id == 0)
   {
-    atomicAdd(result, block_sum);
+    if(bsize < atomic_cutoff)
+    {
+      atomicAdd(result, block_sum);
+    }
+    else
+    {
+      result[block_id] = block_sum;
+    }
   }
 #endif
 }
@@ -160,15 +169,16 @@ __launch_bounds__(block_size)
  */
 
 template <typename data_t, typename index_t>
-inline data_t sum_reduction(const data_t* data, index_t length)
+inline data_t sum_reduction_final(const data_t* data, index_t length)
 {
 #ifdef BOBA_CUDA
   // Output memory
   void* d_output = nullptr;
   cuda_assert(cudaMalloc(&d_output, sizeof(data_t)));
+  cudaStream_t stream = 0;
+  cuda_assert(cudaMemsetAsync(d_output, 0, sizeof(data_t), stream));
 
   size_t shared_memory_bytes = 0;
-  cudaStream_t stream = 0;
   static constexpr size_t block_size = 1024;
   size_t grid_size = (length + block_size - 1) / block_size;
   void* args[] = {(void*)&data, (void*)&length, (void*)&d_output};
@@ -189,6 +199,68 @@ inline data_t sum_reduction(const data_t* data, index_t length)
   data_t output{0};
 #endif
   return output;
+}
+
+template <typename data_t, typename index_t>
+inline void sum_reduction_workspace(const data_t* data, index_t length, data_t* d_output)
+{
+#ifdef BOBA_CUDA
+  size_t shared_memory_bytes = 0;
+  cudaStream_t stream = 0;
+  static constexpr size_t block_size = 1024;
+  size_t grid_size = (length + block_size - 1) / block_size;
+  void* args[] = {(void*)&data, (void*)&length, (void*)&d_output};
+  cuda_assert(cudaLaunchKernel(
+    (const void*)cuda_sum_reduce<block_size, data_t, index_t>,
+    grid_size,
+    block_size,
+    args,
+    shared_memory_bytes,
+    stream));
+#else
+  boba_ignore(data);
+  boba_ignore(length);
+  boba_ignore(output);
+#endif
+}
+
+
+template <typename data_t, typename index_t>
+inline data_t sum_reduction_driver(const data_t* data, index_t length)
+{
+  static int reductions = 0;
+
+  if(length < atomic_cutoff)
+  {
+
+    if(reductions > 1)
+    {
+      std::cout << "unexpected number of reductions = " << reductions << std::endl;
+    }
+    return sum_reduction_final(data, length);
+  }
+  reductions += 1;
+
+  //
+  // Prepare data to be reduced into grid_size block summations, stored in the workspace
+  //
+  size_t block_size = 1024;
+  auto grid_size = (length + block_size - 1) / block_size;
+  data_t* d_workspace = nullptr;
+  cuda_assert(cudaMalloc(&d_workspace, grid_size * sizeof(data_t)));
+
+  //
+  // Perform reduction
+  //
+  sum_reduction_workspace(data, length, d_workspace);
+
+  //
+  // Recursively call this function on the reduced workspace
+  //
+  auto recursed_value = sum_reduction_driver(d_workspace, grid_size);
+
+  cuda_assert(cudaFree(d_workspace));
+  return recursed_value;
 }
 
 } // namespace detail
