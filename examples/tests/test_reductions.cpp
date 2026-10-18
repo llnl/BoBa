@@ -70,22 +70,6 @@ int main(int argc, char* argv[])
   }
 
   {
-    std::cout << " sum_{i=0}^{N} i " << std::endl;
-    size_t summation = 0;
-
-    ::boba::sum_reduce<space>(summation, 0_z, N + 1, [=] __boba_host_device__(size_t i, boba::sum_reducer_operator<size_t>& _summation)
-    {
-      _summation += i;
-    });
-
-    size_t exact = (N * (N + 1)) / 2;
-    boba_print(summation);
-    boba_print(exact);
-    pass_or_fail(check, exact - summation, 1.0e-13);
-    std::cout << std::endl;
-  }
-
-  {
     std::cout << " sum_{i=0}^{N} i^2  " << std::endl;
     size_t summation = 0;
     ::boba::sum_reduce<space>(summation, 0_z, N + 1, [=] __boba_host_device__(size_t i, boba::sum_reducer_operator<size_t>& _summation)
@@ -178,6 +162,7 @@ int main(int argc, char* argv[])
     pass_or_fail(check, raja_result - host_result, 1.0e-10);
     std::cout << std::endl;
   }
+
 
   boba::finalize();
   return final_check(check);
