@@ -464,18 +464,22 @@ inline void sum_reduce(
 }
 
 /**
- * @brief TODO
+ * @brief Sum-reductions using manual backends for verification purposes
+ * @return Summation of all values of tensorlike
  */
 
-template <boba::execution_space space, typename data_t, typename tensorlike_t>
-inline void manual_sum_reduce(const tensorlike_t& tensorlike)
+template <typename tensorlike_t>
+auto manual_sum_reduce(const tensorlike_t& tensorlike)
 {
+  constexpr execution_space space = tensorlike_t::get_space();
+
   if constexpr(boba_cuda_enabled() and space == execution_space::CUDA)
   {
-    return sum_reduction(arraylike.data(), arraylike.size());
+    return detail::sum_reduction(tensorlike.data(), tensorlike.size());
   }
   else
   {
+    using data_t = typename tensorlike_t::data_t;
     data_t sum = 0;
     const auto* tensorlike_data = tensorlike.data();
     for(index_t i = 0; i < tensorlike.size(); i++)

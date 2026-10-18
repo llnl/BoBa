@@ -35,12 +35,12 @@ int main(int argc, char* argv[])
   args.parse_check();
 
   {
-    boba::Vector<boba::host_space, double, size_t> reduction_vector(N);
+    boba::Vector<boba::host_space, double> reduction_vector({N});
     reduction_vector.fill_with_random();
-    boba::Vector<boba::default_execution_space, double, size_t> device_reduction_vector(reduction_vector);
+    boba::Vector<boba::default_execution_space, double> device_reduction_vector(reduction_vector);
 
-    auto device_result = boba::detail::manual_sum_reduce(device_reduction_vector);
-    auto host_result = boba::detail::manual_sum_reduce(reduction_vector);
+    auto device_result = boba::manual_sum_reduce(device_reduction_vector);
+    auto host_result = boba::manual_sum_reduce(reduction_vector);
 
     pass_or_fail(check, device_result - host_result, 1.0e-13);
   }

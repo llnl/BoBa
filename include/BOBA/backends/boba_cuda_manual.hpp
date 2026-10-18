@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include boba_cuda.hpp
+#include "BOBA/backends/boba_cuda.hpp"
 
 // -----------------------------------------------------
 // Definitions
@@ -112,6 +112,7 @@ __device__ inline data_t block_sum_reduce(data_t value)
 
   return final_warp_value;
 }
+
 #endif
 
 /**
@@ -121,10 +122,11 @@ __device__ inline data_t block_sum_reduce(data_t value)
  * (3) each block atomically adds the result to the final pointer
  */
 
- template <typename data_t, typename index_t>
+ template <size_t block_size0, size_t block_size1, size_t block_size2, typename data_t, typename index_t>
 __launch_bounds__(block_size0 * block_size1 * block_size2)
   __global__ void sum_reduce(const data_t* data, index_t length, data_t* result)
 {
+#ifdef BOBA_DEVICE_CODE
   data_t sum = 0.0;
 
   auto block_id = blockIdx.x;
@@ -150,9 +152,8 @@ __launch_bounds__(block_size0 * block_size1 * block_size2)
   {
     atomic_add(result, block_sum);
   }
+#endif
 }
-
-#endif // BOBA_DEVICE_CODE
 
 /**
  * @brief sum reduction kernel, sums every value of array into a scalar output value on the host
@@ -170,7 +171,7 @@ inline data_t sum_reduction(const data_t* data, index_t length)
   cudaStream_t stream = 0;
   static constexpr size_t block_size = 256;
   size_t grid_size = (length + block_size - 1) / block_size;
-  void* args[] = {(void*)&data, (void*)&length,((void*)&d_output};
+  void* args[] = {(void*)&data, (void*)&length, (void*)&d_output};
   cuda_assert(cudaLaunchKernel(
     (const void*)sum_reduce<data_t, index_t>,
     grid_size,
@@ -180,7 +181,6 @@ inline data_t sum_reduction(const data_t* data, index_t length)
     stream));
 
   data_t output;
-  cudaStream_t stream = 0;
   cudaMemcpyKind kind = cudaMemcpyDefault;
   cuda_assert(cudaMemcpy(&output, d_output, stream, kind));
 #else
