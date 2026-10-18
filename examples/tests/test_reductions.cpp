@@ -2,6 +2,9 @@
 
 #include "common.hpp"
 
+#include <fstream>
+#include <iomanip>
+
 /*
   Tests for reductions.
 
@@ -26,13 +29,30 @@ int main(int argc, char* argv[])
   ::boba::argparser args(argc, argv);
 
   size_t N = 20;
+  std::string timing_filename = "reduction_timings.csv";
 
   args.add_optional_argument(N,
                              "-n",
                              "--resolution",
                              "Number of elements.");
+  args.add_optional_argument(timing_filename,
+                             "-t",
+                             "--timing-file",
+                             "CSV file to which manual reduction timings are appended.");
 
   args.parse_check();
+
+  std::ofstream timing_file(timing_filename, std::ios::app);
+  if (!timing_file)
+  {
+    std::cerr << "Unable to open timing file: " << timing_filename << std::endl;
+    boba::finalize();
+    return 1;
+  }
+  if (timing_file.tellp() == std::streampos(0))
+  {
+    timing_file << "N,device_ms,host_ms,raja_ms\n";
+  }
 
   {
     std::cout << " sum_{i=0}^{N} i " << std::endl;
@@ -129,16 +149,29 @@ int main(int argc, char* argv[])
     boba::Vector<boba::host_space, double> reduction_vector({N});
     reduction_vector.fill_with_random();
     boba::Vector<boba::default_execution_space, double> device_reduction_vector(reduction_vector);
+    auto vector_view = device_reduction_vector.const_view();
 
+    boba::TicToc<boba::tictoc_units::microseconds> timer;
+    timer.tic();
     auto device_result = boba::manual_sum_reduce(device_reduction_vector);
+    const double device_time_ms = static_cast<double>(timer.toc()) / 1000.0;
 
+    timer.tic();
     auto host_result = boba::manual_sum_reduce(reduction_vector);
+    const double host_time_ms = static_cast<double>(timer.toc()) / 1000.0;
 
-    size_t raja_result = 0;
-    ::boba::sum_reduce<space>(raja_result, 0_z, N + 1, [=] __boba_host_device__(size_t i, boba::sum_reducer_operator<size_t>& _summation)
+    double raja_result = 0.0;
+    timer.tic();
+    ::boba::sum_reduce<space>(raja_result, 0_z, vector_view.size(), [=] __boba_host_device__(size_t i, boba::sum_reducer_operator<double>& _summation)
     {
-      _summation += i;
+      _summation += vector_view(i);
     });
+    const double raja_time_ms = static_cast<double>(timer.toc()) / 1000.0;
+
+    timing_file << N << ','
+                << std::setprecision(17) << device_time_ms << ','
+                << host_time_ms << ','
+                << raja_time_ms << '\n';
 
     pass_or_fail(check, device_result - host_result, 1.0e-13);
     pass_or_fail(check, device_result - raja_result, 1.0e-13);
