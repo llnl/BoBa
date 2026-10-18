@@ -169,7 +169,7 @@ inline data_t sum_reduction(const data_t* data, index_t length)
 
   size_t shared_memory_bytes = 0;
   cudaStream_t stream = 0;
-  static constexpr size_t block_size = 256;
+  static constexpr size_t block_size = 1024;
   size_t grid_size = (length + block_size - 1) / block_size;
   void* args[] = {(void*)&data, (void*)&length, (void*)&d_output};
   cuda_assert(cudaLaunchKernel(
