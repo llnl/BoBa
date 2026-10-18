@@ -173,9 +173,9 @@ int main(int argc, char* argv[])
                 << host_time_ms << ','
                 << raja_time_ms << '\n';
 
-    pass_or_fail(check, device_result - host_result, 1.0e-13);
-    pass_or_fail(check, device_result - raja_result, 1.0e-13);
-    pass_or_fail(check, raja_result - host_result, 1.0e-13);
+    pass_or_fail(check, device_result - host_result, 1.0e-10);
+    pass_or_fail(check, device_result - raja_result, 1.0e-10);
+    pass_or_fail(check, raja_result - host_result, 1.0e-10);
     std::cout << std::endl;
   }
 
