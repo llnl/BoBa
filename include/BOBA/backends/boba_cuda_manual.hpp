@@ -28,7 +28,7 @@ __device__ inline data_t warp_sum_reduce(data_t value)
 {
   auto all_threads_active = 0xfffffffff;
 
-  // Assume we have 8 lanes (warpsize = 8)
+  // Assume we have 8 lanes (warpSize = 8)
   //    x0, x1, x2, x3, x4, x5, x6, x7
   // offset = 4
   // lane i pulls from lane i+4
@@ -38,7 +38,7 @@ __device__ inline data_t warp_sum_reduce(data_t value)
   //    x0+x4+x2+x6, x1+x5+x3+x6, (x2+x6+x4+x4, ...)
   // offset = 1
   //    x0+x4+x2+x6+x1+x5+x3+x6, (...)
-  for(int offset = warpsize / 2; offset > 0; offset /= 2)
+  for(int offset = warpSize / 2; offset > 0; offset /= 2)
   {
     value += __shfl_down_sync(all_threads_active, value, offset);
   }
@@ -63,11 +63,11 @@ __device__ inline data_t block_sum_reduce(data_t value)
   //
   //       warp 0                    warp 1                   warp 2
   //    [ lane 0, lane 1, ...  ]  [ lane 0, lane 1, ...  ]  [ lane 0, lane 1, ...  ]
-  // thread    0,      1, ...    warpsize + 0, warpsize + 1, ... 2*warpsize + 0, 2*warpsize + 1,
+  // thread    0,      1, ...    warpSize + 0, warpSize + 1, ... 2*warpSize + 0, 2*warpSize + 1,
   //
-  auto thread_id = threadIDx.x;
+  auto thread_id = threadIdx.x;
   auto tsize = blockDim.x;
-  boba::Multiindexer<2> block_mid({warpsize, tsize});
+  boba::Multiindexer<2> block_mid({warpSize, tsize});
   auto [lane_id, warp_id] = block_mid.multiindex(thread_id);
 
   //
@@ -79,9 +79,9 @@ __device__ inline data_t block_sum_reduce(data_t value)
   //
   auto warp_value = warp_sum_reduce(value);
 
-  if(lane == 0)
+  if(lane_id == 0)
   {
-    shared[warp] = warp_value;
+    shared[warp_id] = warp_value;
   }
 
   __syncthreads();
@@ -94,18 +94,18 @@ __device__ inline data_t block_sum_reduce(data_t value)
   //    [ lane 0,    lane 1, ... lane ?, ... ]  [ lane 0, lane 1, ...  ]  [ lane 0, lane 1, ...  ]
   //   shared[0], shared[1], ...    0.0,         0.0,   0.0, ....
   //
-  int warps_per_block = tsize / warpsize;
+  int warps_per_block = tsize / warpSize;
   data_t warpwise_sums{0.0};
   if(thread_id < warps_per_block)
   {
-    warpwise_sums = shared[lane];
+    warpwise_sums = shared[lane_id];
   }
 
   //
   // Reduce in warp 0
   //
   data_t final_warp_value{0.0};
-  if(warp == 0)
+  if(warp_id == 0)
   {
     final_warp_value = warp_sum_reduce(warpwise_sums);
   }
@@ -122,18 +122,18 @@ __device__ inline data_t block_sum_reduce(data_t value)
  * (3) each block atomically adds the result to the final pointer
  */
 
- template <size_t block_size0, size_t block_size1, size_t block_size2, typename data_t, typename index_t>
-__launch_bounds__(block_size0 * block_size1 * block_size2)
-  __global__ void sum_reduce(const data_t* data, index_t length, data_t* result)
+ template <size_t block_size, typename data_t, typename index_t>
+__launch_bounds__(block_size)
+  __global__ void cuda_sum_reduce(const data_t* data, index_t length, data_t* result)
 {
 #ifdef BOBA_DEVICE_CODE
   data_t sum = 0.0;
 
-  auto block_id = blockIdx.x;
-  auto thread_id = threadIDx.x;
+  index_t block_id = blockIdx.x;
+  index_t thread_id = threadIdx.x;
 
-  auto bsize = gridDim.x;
-  auto tsize = blockDim.x;
+  index_t bsize = gridDim.x;
+  index_t tsize = blockDim.x;
 
   boba::Multiindexer<2> grid_mid({tsize, bsize});
 
@@ -150,7 +150,7 @@ __launch_bounds__(block_size0 * block_size1 * block_size2)
   // thread 0 is warp 0, lane 0
   if(thread_id == 0)
   {
-    atomic_add(result, block_sum);
+    atomicAdd(result, block_sum);
   }
 #endif
 }
@@ -173,7 +173,7 @@ inline data_t sum_reduction(const data_t* data, index_t length)
   size_t grid_size = (length + block_size - 1) / block_size;
   void* args[] = {(void*)&data, (void*)&length, (void*)&d_output};
   cuda_assert(cudaLaunchKernel(
-    (const void*)sum_reduce<data_t, index_t>,
+    (const void*)cuda_sum_reduce<block_size, data_t, index_t>,
     grid_size,
     block_size,
     args,
@@ -182,7 +182,7 @@ inline data_t sum_reduction(const data_t* data, index_t length)
 
   data_t output;
   cudaMemcpyKind kind = cudaMemcpyDefault;
-  cuda_assert(cudaMemcpy(&output, d_output, stream, kind));
+  cuda_assert(cudaMemcpy(&output, d_output, sizeof(data_t), kind));
 #else
   boba_ignore(data);
   boba_ignore(length);
