@@ -143,7 +143,7 @@ __launch_bounds__(block_size)
   auto grid_size = grid_mid.size();
 
   // Multiindex the block and iterate over the whole array with stride = size of grid
-#if 1
+  // Use multiple accumulators to prevent serialization of the reads
   data_t sum0{0}, sum1{0}, sum2{0}, sum3{0};
 
   auto safe_access = [=](auto id) { return (id < length) ? data[id] : data_t{0.0}; };
@@ -166,12 +166,6 @@ __launch_bounds__(block_size)
     sum3 += safe_access(i + 3*grid_size);
   }
   sum = sum0 + sum1 + sum2 + sum3;
-#else
-  for(int i = thread_offset; i < length; i += grid_size)
-  {
-    sum += data[i];
-  }
-#endif
 
   // Reduce over the current block
   auto block_sum = block_sum_reduce(sum);
@@ -193,7 +187,7 @@ __launch_bounds__(block_size)
 }
 
 /**
- * @brief sum reduction kernel, sums every value of array into a scalar output value on the host
+ * @brief See sum_reduction_driver
  */
 
 template <typename data_t, typename index_t>
@@ -211,7 +205,7 @@ inline data_t sum_reduction_final(const data_t* data, index_t length)
   size_t grid_size = block_size;
   void* args[] = {(void*)&data, (void*)&length, (void*)&d_output};
   cuda_assert(cudaLaunchKernel(
-    (const void*)cuda_sum_reduce<block_size, data_t, index_t, true>,
+    (const void*)sum_reduction_final<block_size, data_t, index_t, true>,
     grid_size,
     block_size,
     args,
@@ -231,6 +225,10 @@ inline data_t sum_reduction_final(const data_t* data, index_t length)
   return output;
 }
 
+/**
+  * @brief See sum_reduction_driver
+  */
+
 template <size_t block_size, typename data_t, typename index_t>
 inline void sum_reduction_workspace(index_t grid_size, const data_t* data, index_t length, data_t* d_output)
 {
@@ -239,7 +237,7 @@ inline void sum_reduction_workspace(index_t grid_size, const data_t* data, index
   cudaStream_t stream = 0;
   void* args[] = {(void*)&data, (void*)&length, (void*)&d_output};
   cuda_assert(cudaLaunchKernel(
-    (const void*)cuda_sum_reduce<block_size, data_t, index_t, false>,
+    (const void*)sum_reduction_workspace<block_size, data_t, index_t, false>,
     grid_size,
     block_size,
     args,
@@ -252,7 +250,6 @@ inline void sum_reduction_workspace(index_t grid_size, const data_t* data, index
 #endif
 }
 
-
 template <typename data_t, typename index_t>
 inline data_t sum_reduction_driver(const data_t* data, index_t length)
 {
@@ -264,13 +261,12 @@ inline data_t sum_reduction_driver(const data_t* data, index_t length)
   cuda_assert(cudaMalloc(&d_workspace, grid_size * sizeof(data_t)));
 
   //
-  // Perform reduction
+  // Perform reduction into workspace
   //
-
   sum_reduction_workspace<reduction_block_size>(grid_size, data, length, d_workspace);
 
   //
-  // Recursively call this function on the reduced workspace
+  // Perform reduction on the workspace to a final scalar value.
   //
   auto recursed_value = sum_reduction_final(d_workspace, grid_size);
 
