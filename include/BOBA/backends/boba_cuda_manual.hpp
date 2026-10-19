@@ -203,7 +203,7 @@ inline data_t sum_reduction_final(const data_t* data, index_t length)
   size_t grid_size = block_size;
   void* args[] = {(void*)&data, (void*)&length, (void*)&d_output};
   cuda_assert(cudaLaunchKernel(
-    (const void*)sum_reduction_final<block_size, data_t, index_t, true>,
+    (const void*)cuda_sum_reduce<block_size, data_t, index_t, true>,
     grid_size,
     block_size,
     args,
@@ -235,7 +235,7 @@ inline void sum_reduction_workspace(index_t grid_size, const data_t* data, index
   cudaStream_t stream = 0;
   void* args[] = {(void*)&data, (void*)&length, (void*)&d_output};
   cuda_assert(cudaLaunchKernel(
-    (const void*)sum_reduction_workspace<block_size, data_t, index_t, false>,
+    (const void*)cuda_sum_reduce<block_size, data_t, index_t, false>,
     grid_size,
     block_size,
     args,
