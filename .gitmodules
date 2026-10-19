@@ -40,3 +40,6 @@
 [submodule "tpl/kokkos"]
 	path = tpl/kokkos
 	url = https://github.com/kokkos/kokkos.git
+[submodule "tpl/cccl"]
+	path = tpl/cccl
+	url = https://github.com/NVIDIA/cccl.git
