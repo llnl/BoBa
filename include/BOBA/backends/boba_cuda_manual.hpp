@@ -15,7 +15,7 @@ namespace detail
 
 constexpr size_t reduction_block_size = 512;
 
-#ifdef BOBA_DEVICE_CODE
+#ifdef BOBA_CUDA
 
 /**
  * @brief A warp-level reduction, where a warp of threads share information directly
