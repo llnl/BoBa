@@ -14,7 +14,6 @@ namespace detail
 {
 
 constexpr size_t reduction_block_size = 512;
-constexpr size_t atomic_cutoff = 2e9;//reduction_block_size * 2;
 
 #ifdef BOBA_DEVICE_CODE
 
@@ -152,19 +151,19 @@ __launch_bounds__(block_size)
   auto safe_iterations = length / (grid_size * 4);
   auto upper_bound = safe_iterations * (grid_size * 4);
 
-  for(int i = 0; i < upper_bound; i += grid_size * 4)
+  for(int i = thread_offset; i < upper_bound; i += grid_size * 4)
   {
-    sum0 += data[i + thread_offset + 0*grid_size];
-    sum1 += data[i + thread_offset + 1*grid_size];
-    sum2 += data[i + thread_offset + 2*grid_size];
-    sum3 += data[i + thread_offset + 3*grid_size];
+    sum0 += data[i + 0*grid_size];
+    sum1 += data[i + 1*grid_size];
+    sum2 += data[i + 2*grid_size];
+    sum3 += data[i + 3*grid_size];
   }
-  for(int i = upper_bound; i < length; i += grid_size * 4)
+  for(int i = upper_bound + thread_offset; i < length; i += grid_size * 4)
   {
-    sum0 += safe_access(i + thread_offset + 0*grid_size);
-    sum1 += safe_access(i + thread_offset + 1*grid_size);
-    sum2 += safe_access(i + thread_offset + 2*grid_size);
-    sum3 += safe_access(i + thread_offset + 3*grid_size);
+    sum0 += safe_access(i + 0*grid_size);
+    sum1 += safe_access(i + 1*grid_size);
+    sum2 += safe_access(i + 2*grid_size);
+    sum3 += safe_access(i + 3*grid_size);
   }
   sum = sum0 + sum1 + sum2 + sum3;
 #else
@@ -181,7 +180,7 @@ __launch_bounds__(block_size)
   // thread 0 is warp 0, lane 0
   if(thread_id == 0)
   {
-    if((length < atomic_cutoff) or (force_atomics))
+    if(force_atomics)
     {
       atomicAdd(result, block_sum);
     }
@@ -208,8 +207,8 @@ inline data_t sum_reduction_final(const data_t* data, index_t length)
   cuda_assert(cudaMemsetAsync(d_output, 0, sizeof(data_t), stream));
 
   size_t shared_memory_bytes = 0;
-  static constexpr size_t block_size = 512;
-  size_t grid_size = block_size * 64;
+  static constexpr size_t block_size = reduction_block_size;
+  size_t grid_size = block_size;
   void* args[] = {(void*)&data, (void*)&length, (void*)&d_output};
   cuda_assert(cudaLaunchKernel(
     (const void*)cuda_sum_reduce<block_size, data_t, index_t, true>,
@@ -257,38 +256,23 @@ inline void sum_reduction_workspace(index_t grid_size, const data_t* data, index
 template <typename data_t, typename index_t>
 inline data_t sum_reduction_driver(const data_t* data, index_t length)
 {
-  static int reductions = 0;
-
-  printf("length %lu  atomic_cutoff %lu\n", length, atomic_cutoff);
-
-  if(length < atomic_cutoff)
-  {
-    if(reductions > 1)
-    {
-      std::cout << "unexpected number of reductions = " << reductions << std::endl;
-    }
-    return sum_reduction_final(data, length);
-  }
-  reductions += 1;
-
   //
   // Prepare data to be reduced into grid_size block summations, stored in the workspace
   //
-  auto grid_size = (length + reduction_block_size - 1) / reduction_block_size;
+  auto grid_size = reduction_block_size;
   data_t* d_workspace = nullptr;
   cuda_assert(cudaMalloc(&d_workspace, grid_size * sizeof(data_t)));
 
   //
   // Perform reduction
   //
-  printf("grid_size %lu \n ", grid_size);
 
   sum_reduction_workspace<reduction_block_size>(grid_size, data, length, d_workspace);
 
   //
   // Recursively call this function on the reduced workspace
   //
-  auto recursed_value = sum_reduction_driver(d_workspace, grid_size);
+  auto recursed_value = sum_reduction_final(d_workspace, grid_size);
 
   cuda_assert(cudaFree(d_workspace));
   return recursed_value;
