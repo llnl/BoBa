@@ -379,6 +379,10 @@
     test_SparseTensor_functions:
       skip: []
 
+  test_SparseTensorTrainMatrix:
+    test_SparseTensorTrainMatrix:
+      skip: [cuda, hip]
+
   test_sparse_dense_contraction_benchmark:
     test_sparse_dense_contraction_benchmark:
       skip: []

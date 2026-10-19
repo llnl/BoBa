@@ -99,6 +99,7 @@
 #include "BOBA/TensorTrain/StaticTensorTrainView.hpp"
 #include "BOBA/TensorTrain/DynamicTensorTrainView.hpp"
 #include "BOBA/TensorTrain/TensorTrainMatrix.hpp"
+#include "BOBA/TensorTrain/SparseTensorTrainMatrix.hpp"
 #include "BOBA/TensorTrain/TensorTrainSplitMatrix.hpp"
 #include "BOBA/TensorTrain/TensorTrain_functions.hpp"
 #include "BOBA/TensorTrain/TensorTrainMatrix_functions.hpp"
