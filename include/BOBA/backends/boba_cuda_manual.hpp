@@ -115,8 +115,6 @@ __device__ inline data_t block_sum_reduce(data_t value)
   return final_warp_value;
 }
 
-#endif
-
 /**
  * @brief Device-wise reduction where
  * (1) the collection of threads iterate over the whole array,
@@ -128,7 +126,6 @@ __device__ inline data_t block_sum_reduce(data_t value)
 __launch_bounds__(block_size)
   __global__ void cuda_sum_reduce(const data_t* data, index_t length, data_t* result)
 {
-#ifdef BOBA_DEVICE_CODE
   data_t sum = 0.0;
 
   int block_id = blockIdx.x;
@@ -183,8 +180,9 @@ __launch_bounds__(block_size)
       result[block_id] = block_sum;
     }
   }
-#endif
 }
+
+#endif
 
 /**
  * @brief See sum_reduction_driver
@@ -244,15 +242,17 @@ inline void sum_reduction_workspace(index_t grid_size, const data_t* data, index
     shared_memory_bytes,
     stream));
 #else
+  boba_ignore(grid_size);
   boba_ignore(data);
   boba_ignore(length);
-  boba_ignore(output);
+  boba_ignore(d_output);
 #endif
 }
 
 template <typename data_t, typename index_t>
 inline data_t sum_reduction_driver(const data_t* data, index_t length)
 {
+#ifdef BOBA_CUDA
   //
   // Prepare data to be reduced into grid_size block summations, stored in the workspace
   //
@@ -272,6 +272,12 @@ inline data_t sum_reduction_driver(const data_t* data, index_t length)
 
   cuda_assert(cudaFree(d_workspace));
   return recursed_value;
+#else
+  boba_ignore(data);
+  boba_ignore(length);
+  boba_error("This function requires BOBA_CUDA=1");
+  return 0;
+#endif
 }
 
 } // namespace detail
