@@ -140,8 +140,12 @@ target_include_directories(BOBA PUBLIC
     )
 
 if(BOBA_ENABLE_CUDA)
+  set(CCCL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tpl/cccl" CACHE PATH "Path to the CCCL source tree")
+  if(NOT EXISTS "${CCCL_DIR}/cub")
+    message(FATAL_ERROR "CCCL_DIR does not contain the CCCL CUB headers: ${CCCL_DIR}")
+  endif()
   target_include_directories(BOBA PUBLIC
-      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/tpl/cccl/cub>)
+      $<BUILD_INTERFACE:${CCCL_DIR}/cub>)
 endif()
 
 install(TARGETS BOBA ${boba_name}
@@ -163,6 +167,12 @@ include(GNUInstallDirs)
 install(
   DIRECTORY include/BOBA
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+if(BOBA_ENABLE_CUDA AND NOT BOBA_EXTERNAL_CCCL)
+  install(
+    DIRECTORY tpl/cccl/cub/cub
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif()
 
 install(
   FILES LICENSE NOTICE
@@ -231,6 +241,11 @@ if(UMPIRE_FOUND AND NOT BOBA_EXTERNAL_UMPIRE)
     tpl/umpire/COPYRIGHT)
 endif()
 
+if(BOBA_ENABLE_CUDA AND NOT BOBA_EXTERNAL_CCCL)
+  list(APPEND boba_license_files
+    tpl/cccl/LICENSE)
+endif()
+
 if(boba_license_files)
   install(
     FILES ${boba_license_files}
@@ -283,6 +298,11 @@ endif()
 if(UMPIRE_FOUND AND NOT BOBA_EXTERNAL_UMPIRE)
   list(APPEND boba_license_index_files
     tpl/license/umpire)
+endif()
+
+if(BOBA_ENABLE_CUDA AND NOT BOBA_EXTERNAL_CCCL)
+  list(APPEND boba_license_index_files
+    tpl/license/cccl)
 endif()
 
 if(boba_license_index_files)
