@@ -141,10 +141,14 @@ target_include_directories(BOBA PUBLIC
 
 if(BOBA_ENABLE_CUDA)
   set(CCCL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tpl/cccl" CACHE PATH "Path to the CCCL source tree")
-  if(NOT EXISTS "${CCCL_DIR}/cub")
-    message(FATAL_ERROR "CCCL_DIR does not contain the CCCL CUB headers: ${CCCL_DIR}")
-  endif()
+  foreach(cccl_include_dir cub thrust libcudacxx/include)
+    if(NOT EXISTS "${CCCL_DIR}/${cccl_include_dir}")
+      message(FATAL_ERROR "CCCL_DIR does not contain ${cccl_include_dir}: ${CCCL_DIR}")
+    endif()
+  endforeach()
   target_include_directories(BOBA PUBLIC
+      $<BUILD_INTERFACE:${CCCL_DIR}/thrust>
+      $<BUILD_INTERFACE:${CCCL_DIR}/libcudacxx/include>
       $<BUILD_INTERFACE:${CCCL_DIR}/cub>)
 endif()
 
@@ -171,6 +175,12 @@ install(
 if(BOBA_ENABLE_CUDA AND NOT BOBA_EXTERNAL_CCCL)
   install(
     DIRECTORY tpl/cccl/cub/cub
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+  install(
+    DIRECTORY tpl/cccl/thrust/thrust
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+  install(
+    DIRECTORY tpl/cccl/libcudacxx/include/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 endif()
 
