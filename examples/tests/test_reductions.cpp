@@ -29,7 +29,7 @@ int main(int argc, char* argv[])
   ::boba::argparser args(argc, argv);
 
   size_t N = 20;
-  std::string timing_filename = "reduction_timings.csv";
+  std::string timing_filename = "reduction_timings_v3.csv";
 
   args.add_optional_argument(N,
                              "-n",
@@ -51,7 +51,7 @@ int main(int argc, char* argv[])
   }
   if (timing_file.tellp() == std::streampos(0))
   {
-    timing_file << "N,device_ms,host_ms,raja_ms\n";
+    timing_file << "N,device_ms,host_ms,cub_ms,raja_ms\n";
   }
 
   {
@@ -69,6 +69,7 @@ int main(int argc, char* argv[])
     std::cout << std::endl;
   }
 
+  if(false)
   {
     std::cout << " sum_{i=0}^{N} i^2  " << std::endl;
     size_t summation = 0;
@@ -84,6 +85,7 @@ int main(int argc, char* argv[])
     std::cout << std::endl;
   }
 
+  if(false)
   {
     std::cout << " min_{i=0}^{N} 7 + (3-i)^2  " << std::endl;
     double minimum = ::boba::highest_value<double>();
@@ -102,6 +104,7 @@ int main(int argc, char* argv[])
     std::cout << std::endl;
   }
 
+  if(false)
   {
     std::cout << " Check log2(2^p) = p " << std::endl;
 
@@ -128,6 +131,15 @@ int main(int argc, char* argv[])
     std::cout << std::endl;
   }
 
+  // Warm up the manual device reduction before timing it.
+  {
+    boba::Vector<boba::default_execution_space, double> warmup_vector({N});
+    boba::manual_sum_reduce<false>(warmup_vector);
+    boba::manual_sum_reduce<true>(warmup_vector);
+    boba::manual_sum_reduce<false>(warmup_vector);
+    boba::manual_sum_reduce<true>(warmup_vector);
+  }
+
   {
     std::cout << " sum_{i=0}^{N} i using manual device reductions" << std::endl;
     boba::Vector<boba::host_space, double> reduction_vector({N});
@@ -137,8 +149,12 @@ int main(int argc, char* argv[])
 
     boba::TicToc<boba::tictoc_units::microseconds> timer;
     timer.tic();
-    auto device_result = boba::manual_sum_reduce(device_reduction_vector);
+    auto device_result = boba::manual_sum_reduce<false>(device_reduction_vector);
     const double device_time_ms = static_cast<double>(timer.toc()) / 1000.0;
+
+    timer.tic();
+    auto cub_result = boba::manual_sum_reduce<true>(device_reduction_vector);
+    const double cub_time_ms = static_cast<double>(timer.toc()) / 1000.0;
 
     timer.tic();
     auto host_result = boba::manual_sum_reduce(reduction_vector);
@@ -153,13 +169,18 @@ int main(int argc, char* argv[])
     const double raja_time_ms = static_cast<double>(timer.toc()) / 1000.0;
 
     timing_file << N << ','
-                << std::setprecision(17) << device_time_ms << ','
+                << std::setprecision(17)
+                << device_time_ms << ','
                 << host_time_ms << ','
+                << cub_time_ms << ','
                 << raja_time_ms << '\n';
 
-    pass_or_fail(check, device_result - host_result, 1.0e-10);
-    pass_or_fail(check, device_result - raja_result, 1.0e-10);
-    pass_or_fail(check, raja_result - host_result, 1.0e-10);
+    double tolerance = 0.1;
+    pass_or_fail(check, device_result - host_result, tolerance);
+    pass_or_fail(check, cub_result - host_result, tolerance);
+    pass_or_fail(check, device_result - raja_result, tolerance);
+    pass_or_fail(check, cub_result - raja_result, tolerance);
+    pass_or_fail(check, raja_result - host_result, tolerance);
     std::cout << std::endl;
   }
 

@@ -468,12 +468,16 @@ inline void sum_reduce(
  * @return Summation of all values of tensorlike
  */
 
-template <typename tensorlike_t>
+template <bool cub = false, typename tensorlike_t>
 auto manual_sum_reduce(const tensorlike_t& tensorlike)
 {
   constexpr execution_space space = tensorlike_t::get_space();
 
-  if constexpr(boba_cuda_enabled() and space == execution_space::CUDA)
+  if constexpr(boba_cuda_enabled() and space == execution_space::CUDA and cub)
+  {
+    return detail::cuda_cccl_sum_reduce(tensorlike.data(), tensorlike.size());
+  }
+  else if constexpr(boba_cuda_enabled() and space == execution_space::CUDA)
   {
     return detail::sum_reduction_driver(tensorlike.data(), tensorlike.size());
   }

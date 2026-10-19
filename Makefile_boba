@@ -284,6 +284,7 @@ endif
 
 CXX=${CUDA_COMPILER}
 CXX_DEFINES := ${CXX_DEFINES} -DBOBA_CUDA -DBOBA_CUDA_LIBS
+INCLUDES := ${INCLUDES} -isystem ${BOBA_TOP_DIR}/tpl/cccl/cub
 LINKFLAGS= -std=c++20 -restrict -arch ${COMP_ARCH} --expt-extended-lambda --expt-relaxed-constexpr
 CXXFLAGS := ${CXXFLAGS} -x cu -std=c++20 -restrict -arch ${COMP_ARCH} --expt-extended-lambda --expt-relaxed-constexpr
 CXXFLAGS := ${CXXFLAGS} -Xcudafe "--diag_suppress=declared_but_not_referenced"

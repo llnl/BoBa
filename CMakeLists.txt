@@ -139,6 +139,11 @@ target_include_directories(BOBA PUBLIC
     $<INSTALL_INTERFACE:include>
     )
 
+if(BOBA_ENABLE_CUDA)
+  target_include_directories(BOBA PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/tpl/cccl/cub>)
+endif()
+
 install(TARGETS BOBA ${boba_name}
   EXPORT BOBATargets
   ARCHIVE DESTINATION lib
