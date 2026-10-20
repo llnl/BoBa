@@ -2,6 +2,9 @@
 
 #include "common.hpp"
 
+#include <fstream>
+#include <iomanip>
+
 /*
   Tests for reductions.
 
@@ -34,10 +37,10 @@ int main(int argc, char* argv[])
 
   args.parse_check();
 
+
   {
     std::cout << " sum_{i=0}^{N} i " << std::endl;
     size_t summation = 0;
-
     ::boba::sum_reduce<space>(summation, 0_z, N + 1, [=] __boba_host_device__(size_t i, boba::sum_reducer_operator<size_t>& _summation)
     {
       _summation += i;
@@ -106,6 +109,34 @@ int main(int argc, char* argv[])
     boba_print(index);
     pass_or_fail(check, maximum, 1.0e-13);
 
+    std::cout << std::endl;
+  }
+
+  {
+    std::cout << " sum_{i=0}^{N} i using manual device reductions" << std::endl;
+    boba::Vector<boba::host_space, double> reduction_vector({N});
+    reduction_vector.fill_with_random();
+    boba::Vector<boba::default_execution_space, double> device_reduction_vector(reduction_vector);
+    auto vector_view = device_reduction_vector.const_view();
+
+    auto device_result = boba::unary_sum_reduce<false>(device_reduction_vector);
+
+    auto cub_result = boba::unary_sum_reduce<true>(device_reduction_vector);
+
+    auto host_result = boba::unary_sum_reduce(reduction_vector);
+
+    double raja_result = 0.0;
+    ::boba::sum_reduce<space>(raja_result, 0_z, vector_view.size(), [=] __boba_host_device__(size_t i, boba::sum_reducer_operator<double>& _summation)
+    {
+      _summation += vector_view(i);
+    });
+
+    double tolerance = 0.1;
+    pass_or_fail(check, device_result - host_result, tolerance);
+    pass_or_fail(check, cub_result - host_result, tolerance);
+    pass_or_fail(check, device_result - raja_result, tolerance);
+    pass_or_fail(check, cub_result - raja_result, tolerance);
+    pass_or_fail(check, raja_result - host_result, tolerance);
     std::cout << std::endl;
   }
 

@@ -29,6 +29,7 @@ python3  ../../../boba_builder.py \
   --UMPIRE_DIR ${BOBA_TPL_FARM}/install/umpire_cuda_h100 \
   --RAJA_DIR ${BOBA_TPL_FARM}/install/RAJA_cuda_h100 \
   --BLT_DIR ${BOBA_TPL_FARM}/tpl/blt \
+  --CCCL_DIR ${BOBA_TPL_FARM}/tpl/cccl \
   --CAMP_DIR ${BOBA_TPL_FARM}/install/camp_cuda_h100 \
   --EIGEN_DIR ${BOBA_TPL_FARM}/install/eigen_cuda_h100 \
   --HDF5_DIR ${BOBA_TPL_FARM}/install/hdf5_cuda_h100 \

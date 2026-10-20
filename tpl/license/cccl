@@ -1,0 +1,7 @@
+CCCL
+====
+
+Upstream package: `tpl/cccl`
+Declared licenses: Apache License 2.0, Apache License 2.0 with LLVM
+exceptions, BSD 3-Clause, and bundled Thrust, CUB, and libcudacxx notices.
+Retain the upstream license file: `tpl/cccl/LICENSE`

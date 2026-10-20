@@ -23,6 +23,8 @@
 
 // Backends
 #include "BOBA/backends/boba_cuda.hpp"
+#include "BOBA/backends/boba_cuda_cccl.hpp"
+#include "BOBA/backends/boba_cuda_manual.hpp"
 #include "BOBA/backends/boba_hip.hpp"
 #include "BOBA/backends/boba_sequential.hpp"
 

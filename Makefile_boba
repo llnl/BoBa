@@ -7,6 +7,10 @@ ifndef BOBA_TPL_INSTALL_DIR
 	BOBA_TPL_INSTALL_DIR = ${BOBA_TOP_DIR}/install
 endif
 
+ifndef CCCL_DIR
+	CCCL_DIR = ${BOBA_TPL_INSTALL_DIR}/../tpl/cccl
+endif
+
 ######################################################
 #  Compiler setup
 ######################################################
@@ -284,6 +288,7 @@ endif
 
 CXX=${CUDA_COMPILER}
 CXX_DEFINES := ${CXX_DEFINES} -DBOBA_CUDA -DBOBA_CUDA_LIBS
+INCLUDES := ${INCLUDES} -I${CCCL_DIR}/thrust -I${CCCL_DIR}/libcudacxx/include -I${CCCL_DIR}/cub
 LINKFLAGS= -std=c++20 -restrict -arch ${COMP_ARCH} --expt-extended-lambda --expt-relaxed-constexpr
 CXXFLAGS := ${CXXFLAGS} -x cu -std=c++20 -restrict -arch ${COMP_ARCH} --expt-extended-lambda --expt-relaxed-constexpr
 CXXFLAGS := ${CXXFLAGS} -Xcudafe "--diag_suppress=declared_but_not_referenced"

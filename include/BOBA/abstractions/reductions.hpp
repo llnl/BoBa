@@ -464,6 +464,37 @@ inline void sum_reduce(
 }
 
 /**
+ * @brief Sum-reductions using manual backends for verification purposes
+ * @return Summation of all values of tensorlike
+ */
+
+template <bool cub = false, typename tensorlike_t>
+auto unary_sum_reduce(const tensorlike_t& tensorlike)
+{
+  constexpr execution_space space = tensorlike_t::get_space();
+
+  if constexpr(boba_cuda_enabled() and space == execution_space::CUDA and cub)
+  {
+    return detail::cuda_cccl_sum_reduce(tensorlike.data(), tensorlike.size());
+  }
+  else if constexpr(boba_cuda_enabled() and space == execution_space::CUDA)
+  {
+    return detail::sum_reduction_driver(tensorlike.data(), tensorlike.size());
+  }
+  else
+  {
+    using data_t = typename tensorlike_t::data_t;
+    data_t sum = 0;
+    const auto* tensorlike_data = tensorlike.data();
+    for(index_t i = 0; i < tensorlike.size(); i++)
+    {
+      sum += tensorlike_data[i];
+    }
+    return sum;
+  }
+}
+
+/**
  * @brief Performs a max reduction over a 1D index range.
  * @tparam space Execution space.
  * @tparam data_t Reduced value type.
