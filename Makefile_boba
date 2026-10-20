@@ -238,11 +238,17 @@ endif
 #  CUDA and related
 ######################################################
 ifdef BOBA_CUDA
-BOBA_RAJA=1
 IS_MATRIX := $(findstring matrix, ${HOSTNAME})
+IS_VENADITO := $(findstring vt-rfe, ${HOSTNAME})
 
-ifeq ($(IS_MATRIX), matrix)
+# RAJA does not build with CUDA 13 (Venadito); select Kokkos with BOBA_KOKKOS=1 instead
+ifneq ($(IS_VENADITO), vt-rfe)
+BOBA_RAJA=1
+endif
+
+ifneq ($(IS_MATRIX)$(IS_VENADITO),)
 	NAME_FLAG := ${NAME_FLAG}_cuda_h100
+	KOKKOS_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/kokkos_cuda_h100
 	RAJA_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/RAJA_cuda_h100
 	CAMP_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/camp_cuda_h100
 	FMT_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/fmt_cuda_h100
@@ -252,6 +258,7 @@ ifeq ($(IS_MATRIX), matrix)
 	HDF5_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/hdf5_cuda_h100
 else
 	NAME_FLAG := ${NAME_FLAG}_cuda
+	KOKKOS_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/kokkos_cuda
 	RAJA_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/RAJA_cuda
 	CAMP_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/camp_cuda
 	FMT_INSTALL_DIR=${BOBA_TPL_INSTALL_DIR}/fmt_cuda
@@ -264,6 +271,9 @@ endif
 ifeq ($(IS_MATRIX), matrix) # LC H100s
 	COMP_ARCH=sm_90
 endif
+ifeq ($(IS_VENADITO), vt-rfe) # LANL Venadito GH200
+	COMP_ARCH=sm_90
+endif
 ifeq ($(HOSTNAME), dev-amd20) # MSU v100s
 	COMP_ARCH=sm_70
 	CUTENSOR_INSTALL_DIR=" "
@@ -274,6 +284,11 @@ endif
 
 ifeq ($(IS_MATRIX), matrix) # CZ H100s, matrix
 	CUDA_COMPILER=/usr/tce/packages/cuda/cuda-12.6.0/bin/nvcc -ccbin /usr/tce/packages/gcc/gcc-13.3.1/bin/g++
+endif
+ifeq ($(IS_VENADITO), vt-rfe) # LANL Venadito GH200
+	VENADITO_CUDA_HOME=/usr/projects/hpcsoft/pe/installs/cos3-aarch64-cc90/cudatoolkit/13.4.2
+	VENADITO_GCC_HOME=/usr/projects/hpcsoft/uenv/stack-mount/sles-aarch64-cc90/prgenv-nvidia-openmpi/linux-aarch64/gcc-15.2.0-p3y2wogaex2rwnaob3drk4lhzzuhy33n
+	CUDA_COMPILER=${VENADITO_CUDA_HOME}/bin/nvcc -ccbin ${VENADITO_GCC_HOME}/bin/g++
 endif
 ifeq ($(HOSTNAME), dev-amd20-v100) # MSU v100s
 	CUDA_COMPILER=/opt/software/CUDA/11.8.0/bin/nvcc -ccbin /opt/software/GCCcore/10.2.0/bin/g++
@@ -300,6 +315,12 @@ LINKFLAGS := ${LINKFLAGS} -Xlinker -rpath=/usr/tce/packages/cuda/cuda-12.6.0/lib
 CXXFLAGS := ${CXXFLAGS} --diag-suppress=20014   #warnings caused by eigen
 CXXFLAGS := ${CXXFLAGS} --diag-suppress=20011   #warnings caused by eigen
 endif
+ifeq ($(IS_VENADITO), vt-rfe) # LANL Venadito GH200
+LINKFLAGS := ${LINKFLAGS} -Xlinker -rpath=${VENADITO_CUDA_HOME}/lib64
+LINKFLAGS := ${LINKFLAGS} -Xlinker -rpath=${VENADITO_GCC_HOME}/lib64
+CXXFLAGS := ${CXXFLAGS} --diag-suppress=20014   #warnings caused by eigen
+CXXFLAGS := ${CXXFLAGS} --diag-suppress=20011   #warnings caused by eigen
+endif
 ifdef BOBA_DEBUG
 LINKFLAGS := ${LINKFLAGS} -O1 -g -G
 CXXFLAGS := ${CXXFLAGS} -O1 -g -G
@@ -308,6 +329,9 @@ LINKFLAGS := ${LINKFLAGS} -O3 -g -lineinfo
 CXXFLAGS := ${CXXFLAGS} -O3 -g -lineinfo
 endif
 
+ifeq ($(IS_VENADITO), vt-rfe) # LANL Venadito GH200
+CUDA_LIBS := ${CUDA_LIBS} -L${VENADITO_CUDA_HOME}/lib64 -lcuda -lcusolver -lcudart -lcublas -lcublasLt -lcusparse -lcufft -lnvJitLink
+endif
 ifeq ($(IS_MATRIX), matrix) # matrix
 CUDA_LIBS := ${CUDA_LIBS} -lcuda -lcusolver -lcudart -lmetis_static -lcublas -lcublasLt -lcusparse -lculibos -lcufft -lnvJitLink
 CUTENSOR_INSTALL_DIR=/collab/usr/global/tools/nvidia/nvhpc/toss_4_x86_64_ib/nvhpc-25.1/Linux_x86_64/25.1/math_libs/12.6/targets/x86_64-linux
@@ -403,7 +427,7 @@ endif
 ifdef BOBA_KOKKOS
 	KOKKOS_INC_DIR =${KOKKOS_INSTALL_DIR}/include
 	KOKKOS_LIB_DIR =${KOKKOS_INSTALL_DIR}/lib
-	LIBS := ${LIBS} -L${KOKKOS_LIB_DIR} -lkokkos
+	LIBS := ${LIBS} -L${KOKKOS_LIB_DIR} -lkokkoscontainers -lkokkosalgorithms -lkokkoscore -ldl
 	INCLUDES := ${INCLUDES} -isystem ${KOKKOS_INC_DIR}
 	CXX_DEFINES := ${CXX_DEFINES} -DBOBA_KOKKOS
 endif
