@@ -119,11 +119,11 @@ int main(int argc, char* argv[])
     boba::Vector<boba::default_execution_space, double> device_reduction_vector(reduction_vector);
     auto vector_view = device_reduction_vector.const_view();
 
-    auto device_result = boba::manual_sum_reduce<false>(device_reduction_vector);
+    auto device_result = boba::unary_sum_reduce<false>(device_reduction_vector);
 
-    auto cub_result = boba::manual_sum_reduce<true>(device_reduction_vector);
+    auto cub_result = boba::unary_sum_reduce<true>(device_reduction_vector);
 
-    auto host_result = boba::manual_sum_reduce(reduction_vector);
+    auto host_result = boba::unary_sum_reduce(reduction_vector);
 
     double raja_result = 0.0;
     ::boba::sum_reduce<space>(raja_result, 0_z, vector_view.size(), [=] __boba_host_device__(size_t i, boba::sum_reducer_operator<double>& _summation)

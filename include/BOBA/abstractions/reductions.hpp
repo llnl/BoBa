@@ -469,7 +469,7 @@ inline void sum_reduce(
  */
 
 template <bool cub = false, typename tensorlike_t>
-auto manual_sum_reduce(const tensorlike_t& tensorlike)
+auto unary_sum_reduce(const tensorlike_t& tensorlike)
 {
   constexpr execution_space space = tensorlike_t::get_space();
 
