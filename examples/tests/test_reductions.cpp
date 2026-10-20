@@ -53,7 +53,6 @@ int main(int argc, char* argv[])
     std::cout << std::endl;
   }
 
-  if(false)
   {
     std::cout << " sum_{i=0}^{N} i^2  " << std::endl;
     size_t summation = 0;
@@ -69,7 +68,6 @@ int main(int argc, char* argv[])
     std::cout << std::endl;
   }
 
-  if(false)
   {
     std::cout << " min_{i=0}^{N} 7 + (3-i)^2  " << std::endl;
     double minimum = ::boba::highest_value<double>();
@@ -88,7 +86,6 @@ int main(int argc, char* argv[])
     std::cout << std::endl;
   }
 
-  if(false)
   {
     std::cout << " Check log2(2^p) = p " << std::endl;
 
@@ -113,15 +110,6 @@ int main(int argc, char* argv[])
     pass_or_fail(check, maximum, 1.0e-13);
 
     std::cout << std::endl;
-  }
-
-  // Warm up the manual device reduction before timing it.
-  {
-    boba::Vector<boba::default_execution_space, double> warmup_vector({N});
-    boba::manual_sum_reduce<false>(warmup_vector);
-    boba::manual_sum_reduce<true>(warmup_vector);
-    boba::manual_sum_reduce<false>(warmup_vector);
-    boba::manual_sum_reduce<true>(warmup_vector);
   }
 
   {
