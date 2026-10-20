@@ -2,7 +2,7 @@
 
 -  First, grab an allocation. You might want a longer allocation (try 5x longer) than normal since profiling has a significant overhead.
 ```
-lalloc 1 -W 200 --atsdisable
+salloc -N1 --gpus 1 -t 239
 ```
 - Load the nsight compute module 
 ```
@@ -10,11 +10,11 @@ ml nsight-compute
 ```
 - Then, try to build and run the study of interest
 ```
-make clean && make test_boba_scaling BOBA_CUDA=1 BOBA_PROFILING=1
+make clean && make test_...  BOBA_CUDA=1 BOBA_PROFILING=1
 ```
 - Now run the produced executable with extra arguments
 ```
-lrun -1 ncu -f -o boba_gpu_perf --set full --target-processes all ./*.out
+ncu -f -o boba_gpu_perf --set full --target-processes all ./*.out
 ```
 - Open a second terminal on a CPU cluster (such as `dane`). Load the nsight module there
 ```
