@@ -1084,7 +1084,11 @@ int main(int argc, char* argv[])
   size_t size_factor = 0;
   size_t which = 0;
   size_t precision = 0;
+#ifdef BOBA_CI
+  size_t repetitions = 1;
+#else
   size_t repetitions = 10;
+#endif
 
   ::boba::argparser args(argc, argv);
 
@@ -1109,6 +1113,7 @@ int main(int argc, char* argv[])
                              "Number of repetitions for each kernel.");
 
   args.parse_check();
+  boba_always_assert(repetitions > 0, "Repetitions must be positive.");
 
   bool run_single_precision = (precision == 0) or (precision == 1);
 

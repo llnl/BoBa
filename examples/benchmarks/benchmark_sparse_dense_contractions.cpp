@@ -249,6 +249,8 @@ int main(int argc, char* argv[])
                              "--repetitions",
                              "Number of repetitions for each contraction.");
   args.parse_check();
+  boba_always_assert(mode_size > 0, "Mode size must be positive.");
+  boba_always_assert(repetitions > 0, "Repetitions must be positive.");
 
 #ifdef BOBA_CI
   test_small_mixed_contractions(check);

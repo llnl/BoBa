@@ -744,7 +744,11 @@ int main(int argc, char* argv[])
   size_t in_cols = 0;
   size_t kernel = 0;
   size_t max_size = 10000;
+#ifdef BOBA_CI
+  size_t repetitions = 1;
+#else
   size_t repetitions = 10;
+#endif
 
   ::boba::argparser args(argc, argv);
 
@@ -776,6 +780,7 @@ int main(int argc, char* argv[])
   args.parse_check();
 
   boba_always_assert_equal((in_cols > 0), (in_rows > 0), "Set neither or both");
+  boba_always_assert(repetitions > 0, "Repetitions must be positive.");
 
   std::vector<size_t> rows_list = {5, 10, 15, 20, 50, 100};
   std::vector<size_t> cols_list = {5, 10, 15, 20, 50, 100};
