@@ -10,11 +10,11 @@ namespace boba
  * @return a tuple of Phi_out and its norm, phi_norm
  */
 
-template <size_t dimension, execution_space space, typename data_t>
+template <size_t dimension, execution_space space, typename data_t, typename tensor_4_t>
 std::pair<::boba::Tensor<3, space, data_t>, data_t> compute_next_Phi(
   const ::boba::Tensor<3, space, data_t>& Phi_prev,
   const ::boba::Tensor<3, space, data_t>& x,
-  const ::boba::Tensor<4, space, data_t>& A_core,
+  const tensor_4_t& A_core,
   const ::boba::Tensor<3, space, data_t>& y,
   bool sweep_left_right,
   data_t external_norm)
@@ -101,10 +101,10 @@ std::tuple<::boba::Tensor<3, space, data_t>, data_t> compute_next_Phi(
  * See https://github.com/oseledets/TT-Toolbox/blob/40d0d9dbef4195155be52730d4f30ca2ecf7b74e/solve/amen_solve2.m#L924
  */
 
-template <::boba::execution_space space, typename data_t>
+template <::boba::execution_space space, typename data_t, typename tensor_4_t>
 boba::Tensor<3, space, data_t> bfun3(
   const boba::Tensor<3, space, data_t>& Phi1,
-  const boba::Tensor<4, space, data_t>& A,
+  const tensor_4_t& A,
   const boba::Tensor<3, space, data_t>& Phi2,
   const boba::Tensor<3, space, data_t>& x)
 {
@@ -200,11 +200,13 @@ boba::Matrix<space, data_t> bfun3_matrix(
  * @brief A helper struct corresponding to the operator needed by to solve3d_2ml
  */
 
-template <::boba::execution_space space, typename data_t>
+template <::boba::execution_space space,
+          typename data_t,
+          typename tensor_4_t = boba::Tensor<4, space, data_t>>
 struct Solve3D2MLGMRESOperator
 {
   boba::Tensor<3, space, data_t> Phi1;
-  boba::Tensor<4, space, data_t> A;
+  tensor_4_t A;
   boba::Tensor<3, space, data_t> Phi2;
 
   [[nodiscard]]
@@ -235,10 +237,10 @@ struct Solve3D2MLOptions
  * See https://github.com/oseledets/TT-Toolbox/blob/master/solve/solve3d_2ml.m
  */
 
-template <::boba::execution_space space, typename data_t>
+template <::boba::execution_space space, typename data_t, typename tensor_4_t>
 boba::Tensor<3, space, data_t> solve3d_2ml(
   const boba::Tensor<3, space, data_t>& Phi1,
-  const boba::Tensor<4, space, data_t>& A,
+  const tensor_4_t& A,
   const boba::Tensor<3, space, data_t>& Phi2,
   const boba::Tensor<3, space, data_t>& y,
   data_t tol,
@@ -247,15 +249,27 @@ boba::Tensor<3, space, data_t> solve3d_2ml(
 {
   BOBA_CALI_MARK
   checkpoint();
+
   auto dy = y - bfun3(Phi1, A, Phi2, x0);
 
   auto norm_dy = ::boba::norm_frobenius(dy);
   auto real_tol = tol / norm_dy;
   auto x = x0;
 
-  if (space != host_space)
+  if constexpr (not IsSparseTensorType<tensor_4_t>)
   {
-    options.method = 1;
+    if (space != host_space)
+    {
+      options.method = 1;
+    }
+  }
+
+  if constexpr (IsSparseTensorType<tensor_4_t>)
+  {
+    if (options.method < 2)
+    {
+      boba_error("Methods 0 and 1 of solve3d_2ml require a dense Tensor<4> operator.");
+    }
   }
 
   if (real_tol < 1.0)
@@ -265,57 +279,73 @@ boba::Tensor<3, space, data_t> solve3d_2ml(
     {
     case 0: // Using Eigen GMRES
     {
-      auto x0_vector_norm = ::boba::norm_frobenius(x0);
-      auto dy_vector = flatten(dy);
-      auto bfun_operator = bfun3_matrix(Phi1, A, Phi2);
+      if constexpr (IsSparseTensorType<tensor_4_t>)
+      {
+        boba_error("Methods 0 and 1 of solve3d_2ml require a dense Tensor<4> operator.");
+        break;
+      }
+      else
+      {
+        auto x0_vector_norm = ::boba::norm_frobenius(x0);
+        auto dy_vector = flatten(dy);
+        auto bfun_operator = bfun3_matrix(Phi1, A, Phi2);
 
-      auto dx = detail::eigen_gmres(
-        bfun_operator,
-        dy_vector,
-        options.tolerance_relative * x0_vector_norm,
-        options.eigen_gmres_max_iterations,
-        options.eigen_gmres_sparsity);
+        auto dx = detail::eigen_gmres(
+          bfun_operator,
+          dy_vector,
+          options.tolerance_relative * x0_vector_norm,
+          options.eigen_gmres_max_iterations,
+          options.eigen_gmres_sparsity);
 
-      checkpoint();
-      auto dx_tensor = reshape<3>(dx, x.sizes());
-      x += dx_tensor; // x = x0 + dx
-      break;
+        checkpoint();
+        auto dx_tensor = reshape<3>(dx, x.sizes());
+        x += dx_tensor; // x = x0 + dx
+        break;
+      }
     }
     case 1: // BoBa GMRES
     {
-      using operator_t = Matrix<space, data_t>;
-      using vector_t = Vector<space, data_t>;
-      Krylov<operator_t, vector_t> solver(
-        options.outer_iterations,
-        options.inner_iterations,
-        real_tol);
+      if constexpr (IsSparseTensorType<tensor_4_t>)
+      {
+        boba_error("Methods 0 and 1 of solve3d_2ml require a dense Tensor<4> operator.");
+        break;
+      }
+      else
+      {
+        using operator_t = Matrix<space, data_t>;
+        using vector_t = Vector<space, data_t>;
+        Krylov<operator_t, vector_t> solver(
+          options.outer_iterations,
+          options.inner_iterations,
+          real_tol);
 
-      checkpoint();
-      auto bfun_operator = bfun3_matrix(Phi1, A, Phi2);
-      checkpoint();
-      solver.method = boba::KrylovMethods::gmres;
-      solver.set_matrix(bfun_operator);
-      solver.verbose = false;
-      solver.relative_threshold = options.tolerance_relative;
-      solver.absolute_threshold = options.tolerance_absolute;
+        checkpoint();
+        auto bfun_operator = bfun3_matrix(Phi1, A, Phi2);
+        checkpoint();
+        solver.method = boba::KrylovMethods::gmres;
+        solver.set_matrix(bfun_operator);
+        solver.verbose = false;
+        solver.relative_threshold = options.tolerance_relative;
+        solver.absolute_threshold = options.tolerance_absolute;
 
-      checkpoint();
-      auto dy_vector = flatten(dy);
-      vector_t dx_initial(dy_vector.sizes());
-      dx_initial.fill_with_zeros();
-      vector_t dx(dy_vector.sizes());
+        checkpoint();
+        auto dy_vector = flatten(dy);
+        vector_t dx_initial(dy_vector.sizes());
+        dx_initial.fill_with_zeros();
+        vector_t dx(dy_vector.sizes());
 
-      checkpoint();
-      solver.solve(dy_vector, dx_initial, dx);
+        checkpoint();
+        solver.solve(dy_vector, dx_initial, dx);
 
-      checkpoint();
-      auto dx_tensor = reshape<3>(dx, x.sizes());
-      x += dx_tensor; // x = x0 + dx
-      break;
+        checkpoint();
+        auto dx_tensor = reshape<3>(dx, x.sizes());
+        x += dx_tensor; // x = x0 + dx
+        break;
+      }
     }
     case 2:
     {
-      using operator_t = Solve3D2MLGMRESOperator<space, data_t>;
+      using operator_t = Solve3D2MLGMRESOperator<space, data_t, tensor_4_t>;
       using vector_t = Tensor<3, space, data_t>;
       Krylov<operator_t, vector_t> solver(
         options.outer_iterations,

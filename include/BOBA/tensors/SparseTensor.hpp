@@ -1018,6 +1018,25 @@ Tensor<dimension, space, data_t> to_dense(SparseTensor<dimension, space, data_t>
 }
 
 /**
+ * \brief Identifies whether a type is a SparseTensor specialization.
+ */
+template <typename tensor_t>
+struct is_sparse_tensor : std::false_type
+{
+};
+
+template <std::size_t dimension, execution_space space, typename data_t>
+struct is_sparse_tensor<SparseTensor<dimension, space, data_t>> : std::true_type
+{
+};
+
+/**
+ * \brief Concept satisfied by SparseTensor specializations, including cv/ref-qualified types.
+ */
+template <typename tensor_t>
+concept IsSparseTensorType = is_sparse_tensor<std::remove_cvref_t<tensor_t>>::value;
+
+/**
  * \brief Converts a dense tensor to a sparse tensor using a user filter.
  *
  * The filter is called as `filter(value, indices)` for each dense entry.

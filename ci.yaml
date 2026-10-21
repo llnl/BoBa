@@ -1008,6 +1008,12 @@
       inputs: "--rows 6 --columns 10"
 
   test_tt_solvers:
+    test_sparse_operator_iterative:
+      inputs: "--dimension 3 --sparse_solver --solve3d_2ml_method 2 --max_direct_solve_size -1"
+      skip: [hip, cuda]
+    test_sparse_operator_direct:
+      inputs: "--dimension 3 --sparse_solver --solve3d_2ml_method 2 --max_direct_solve_size 999999"
+      skip: [hip, cuda]
     test_amen_2d:
       inputs: "--dimension 2 --which 0"
       skip: [hip]

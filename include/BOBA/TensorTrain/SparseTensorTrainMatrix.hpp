@@ -20,6 +20,7 @@ struct SparseTensorTrainMatrix
 {
   using data_t = _data_t;
   using core_t = SparseTensor<4, space, data_t>;
+  using real_data_t = real_type_t<data_t>;
 
   std::string m_name = "SparseTensorTrainMatrix";
   Array<core_t, dimension> cores;

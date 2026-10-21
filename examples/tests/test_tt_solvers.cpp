@@ -9,7 +9,7 @@
 
 constexpr boba::execution_space space = ::boba::default_execution_space;
 constexpr boba::execution_space host_space = ::boba::host_space;
-constexpr boba::tictoc_units tictoc_units = boba::tictoc_units::seconds;
+constexpr boba::tictoc_units tictoc_units = boba::tictoc_units::microseconds;
 
 struct input
 {
@@ -24,10 +24,15 @@ struct input
 
   size_t N = 4;
   double convergence_tolerance = 1.0e-4;
-  size_t max_direct_solve_size = 1500;
+  int max_direct_solve_size = 1500;
   size_t solve3d_2ml_method = 2; // This is by far the fastest for DRMG at present
   double solve3d_2ml_tolerance_relative = 1.0e-3;
+  size_t max_sweeps = 20;
+  size_t kickrank = 4;
+  size_t max_allowed_ranks = 1000;
   double dx = 1.0;
+  bool timing_only = false;
+  bool verbose = false;
 };
 
 enum class solver_selection : size_t
@@ -85,26 +90,32 @@ boba::Tensor<dimension, space, double> make_exact_solution(
 template <typename solver_t>
 void configure_solver(solver_t& tt_solver, const input& parameters)
 {
-  tt_solver.max_direct_solve_size = parameters.max_direct_solve_size;
+  using solver_size_t = std::remove_cvref_t<decltype(tt_solver.max_direct_solve_size)>;
+  if constexpr (std::is_unsigned_v<solver_size_t>)
+  {
+    boba_always_assert(parameters.max_direct_solve_size >= 0, "DMRG max_direct_solve_size must be nonnegative.");
+  }
+  tt_solver.max_direct_solve_size = static_cast<solver_size_t>(parameters.max_direct_solve_size);
   tt_solver.convergence_tolerance = parameters.convergence_tolerance;
   tt_solver.solve3d_2ml_options.method = parameters.solve3d_2ml_method;
   tt_solver.solve3d_2ml_options.tolerance_relative = parameters.solve3d_2ml_tolerance_relative;
+  if constexpr (requires { tt_solver.max_sweeps; })
+  {
+    tt_solver.max_sweeps = parameters.max_sweeps;
+    tt_solver.kickrank = parameters.kickrank;
+    tt_solver.max_allowed_ranks = parameters.max_allowed_ranks;
+  }
+  if constexpr (requires { tt_solver.verbose; })
+  {
+    tt_solver.verbose = parameters.verbose;
+  }
 }
 
-template <size_t dimension, typename solver_t>
-void run_dimension_with_solver(
-  bool& check,
-  input parameters,
-  const char* solver_label)
+template <size_t dimension>
+boba::TensorTrainMatrix<dimension, space, double> make_operator(
+  input& parameters,
+  boba::Array<size_t, dimension> sizes)
 {
-  auto sizes = ::boba::filled_array<dimension>(parameters.N);
-
-  for (size_t d = 0; d < dimension; d++)
-  {
-    sizes[d] += d;
-  }
-
-  checkpoint();
   boba::TensorTrainMatrix<dimension, space, double> A_operator(sizes, sizes);
   A_operator.fill_with_zeros();
 
@@ -159,12 +170,15 @@ void run_dimension_with_solver(
     }
     A_operator += boba::make_ttm_from_matrices(array_of_matrices);
   }
+  return A_operator;
+}
 
-  checkpoint();
-
+template <size_t dimension>
+boba::TensorTrain<dimension, space, double> make_rhs(
+  boba::Array<size_t, dimension> sizes)
+{
   boba::TensorTrain<dimension, space, double> ttb(sizes);
   ttb.fill_with(1.0);
-  auto tt_initial_guess = ttb;
 
   boba::Array<boba::Vector<space, double>, dimension> rhs_second_term_vectors;
   for (size_t d = 0; d < dimension; d++)
@@ -182,6 +196,69 @@ void run_dimension_with_solver(
   auto rhs_second_term = boba::make_tt_from_vectors<dimension, space, double>(rhs_second_term_vectors);
   rhs_second_term *= 1.0e-2;
   ttb += rhs_second_term;
+  return ttb;
+}
+
+template <size_t dimension>
+void check_sparse_operator(
+  bool& check,
+  const boba::TensorTrainMatrix<dimension, space, double>& dense_operator,
+  const boba::SparseTensorTrainMatrix<dimension, space, double>& sparse_operator,
+  const boba::TensorTrain<dimension, space, double>& tt_initial_guess,
+  bool timing_only)
+{
+  pass_or_fail_bool(check, sparse_operator.rows() == dense_operator.rows());
+  pass_or_fail_bool(check, sparse_operator.cols() == dense_operator.cols());
+  pass_or_fail_bool(check, sparse_operator.get_number_elements() > 0);
+
+  if (not timing_only)
+  {
+    auto dense_application = dense_operator.TensorTrainMatrix_vector_multiply(tt_initial_guess);
+    auto sparse_application = sparse_operator.TensorTrainMatrix_vector_multiply(tt_initial_guess);
+    pass_or_fail(check, ::boba::norm_difference_frobenius(sparse_application, dense_application), 1.0e-10);
+  }
+}
+
+template <size_t dimension, typename solver_t, bool use_sparse_operator>
+void run_dimension_with_solver(
+  bool& check,
+  input parameters,
+  const char* solver_label)
+{
+  auto sizes = ::boba::filled_array<dimension>(parameters.N);
+
+  for (size_t d = 0; d < dimension; d++)
+  {
+    sizes[d] += d;
+  }
+
+  checkpoint();
+  auto dense_operator = make_operator<dimension>(parameters, sizes);
+
+  using dense_operator_t = boba::TensorTrainMatrix<dimension, space, double>;
+  using sparse_operator_t = boba::SparseTensorTrainMatrix<dimension, space, double>;
+  using operator_t = std::conditional_t<use_sparse_operator, sparse_operator_t, dense_operator_t>;
+  operator_t operator_to_solve;
+
+  if constexpr (use_sparse_operator)
+  {
+    operator_to_solve = boba::from_dense(dense_operator);
+  }
+  else
+  {
+    operator_to_solve = dense_operator;
+  }
+
+  checkpoint();
+
+  auto ttb = make_rhs<dimension>(sizes);
+  boba::TensorTrain<dimension, space, double> tt_initial_guess(sizes);
+  tt_initial_guess.fill_with(1.0);
+
+  if constexpr (use_sparse_operator)
+  {
+    check_sparse_operator(check, dense_operator, operator_to_solve, tt_initial_guess, parameters.timing_only);
+  }
 
   pass_or_fail_bool(check, ttb.get_ranks_right(0) == 2);
 
@@ -191,8 +268,13 @@ void run_dimension_with_solver(
 
   boba::TicToc<tictoc_units> timer;
   timer.tic();
-  auto solution = tt_solver.solve(A_operator, ttb, tt_initial_guess);
+  auto solution = tt_solver.solve(operator_to_solve, ttb, tt_initial_guess);
   timer.end_and_print(solver_label);
+
+  if (parameters.timing_only)
+  {
+    return;
+  }
 
   auto exact = make_exact_solution(sizes, parameters.dx);
 
@@ -200,7 +282,7 @@ void run_dimension_with_solver(
   auto error = solution_decompress - exact;
 
   boba::TensorTrain<dimension, space, double> solution_in_execution_space = solution;
-  auto residual = A_operator * solution_in_execution_space;
+  auto residual = dense_operator * solution_in_execution_space;
   residual -= ttb;
 
   auto solution_norm = ::boba::norm_frobenius(solution);
@@ -228,13 +310,38 @@ void run_dimension(
   switch (static_cast<solver_selection>(which))
   {
   case solver_selection::amen:
-    run_dimension_with_solver<dimension, boba::TensorTrainAMEN<double>>(check, parameters, "TensorTrainAMEN solver time:");
+    run_dimension_with_solver<dimension, boba::TensorTrainAMEN<double>, false>(check, parameters, "TensorTrainAMEN solver time:");
     break;
   case solver_selection::dmrg:
-    run_dimension_with_solver<dimension, boba::TensorTrainDMRG<double>>(check, parameters, "TensorTrainDMRG solver time:");
+    run_dimension_with_solver<dimension, boba::TensorTrainDMRG<double>, false>(check, parameters, "TensorTrainDMRG solver time:");
     break;
   default:
     boba_error("Invalid solver selector. Use --which 0 for AMEn or 1 for DMRG.");
+  }
+}
+
+template <size_t dimension>
+void run_selected_dimension(
+  bool& check,
+  input parameters,
+  size_t selected_dimension,
+  size_t which,
+  bool sparse_solver)
+{
+  if ((selected_dimension != 0) and (selected_dimension != dimension))
+  {
+    return;
+  }
+
+  boba_print("Running " + std::to_string(dimension) + "D test");
+  if (sparse_solver)
+  {
+    run_dimension_with_solver<dimension, boba::TensorTrainAMEN<double>, true>(
+      check, parameters, "TensorTrainAMEN sparse solver time:");
+  }
+  else
+  {
+    run_dimension<dimension>(check, parameters, which);
   }
 }
 
@@ -251,6 +358,7 @@ int main(int argc, char* argv[])
 
   size_t dimension = 0;
   size_t which = 1;
+  bool sparse_solver = false;
   input parameters;
 
   ::boba::argparser args(argc, argv);
@@ -285,41 +393,48 @@ int main(int argc, char* argv[])
                              "--solve3d_2ml_tolerance_relative",
                              "DMRG's iterative method tolerance.");
 
+  args.add_optional_argument(parameters.max_sweeps,
+                             "",
+                             "--max_sweeps",
+                             "Maximum number of AMEn sweeps.");
+
+  args.add_optional_argument(parameters.kickrank,
+                             "",
+                             "--kickrank",
+                             "AMEn residual enrichment rank.");
+
+  args.add_optional_argument(parameters.max_allowed_ranks,
+                             "",
+                             "--max_allowed_ranks",
+                             "Maximum AMEn TT rank during enrichment.");
+
+  args.add_optional_argument(parameters.timing_only,
+                             "",
+                             "--timing_only",
+                             "Run only the solver timing path without reference-solution checks.");
+
+  args.add_optional_argument(parameters.verbose,
+                             "",
+                             "--verbose",
+                             "Print AMEn sweep residual and rank diagnostics.");
+
   args.add_optional_argument(which,
                              "-w",
                              "--which",
                              "Which solver to run: 0=AMEn, 1=DMRG.");
 
+  args.add_optional_argument(sparse_solver,
+                             "",
+                             "--sparse_solver",
+                             "Use the sparse tensor-train operator path.");
+
   args.parse_check();
 
-  if ((dimension == 0) or (dimension == 2))
-  {
-    //
-    boba_print("Running 2D test");
-    //
-    run_dimension<2>(check, parameters, which);
-  }
-  if ((dimension == 0) or (dimension == 3))
-  {
-    //
-    boba_print("Running 3D test");
-    //
-    run_dimension<3>(check, parameters, which);
-  }
-  if ((dimension == 0) or (dimension == 4))
-  {
-    //
-    boba_print("Running 4D test");
-    //
-    run_dimension<4>(check, parameters, which);
-  }
-  if ((dimension == 0) or (dimension == 6))
-  {
-    //
-    boba_print("Running 6D test");
-    //
-    run_dimension<6>(check, parameters, which);
-  }
+  run_selected_dimension<2>(check, parameters, dimension, which, sparse_solver);
+  run_selected_dimension<3>(check, parameters, dimension, which, sparse_solver);
+  run_selected_dimension<4>(check, parameters, dimension, which, sparse_solver);
+  run_selected_dimension<5>(check, parameters, dimension, which, sparse_solver);
+  run_selected_dimension<6>(check, parameters, dimension, which, sparse_solver);
 
   boba::finalize();
   return final_check(check);
