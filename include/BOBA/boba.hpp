@@ -37,6 +37,7 @@
 #include "BOBA/abstractions/atomics.hpp"
 #include "BOBA/abstractions/loops.hpp"
 #include "BOBA/abstractions/reductions.hpp"
+#include "BOBA/backends/boba_cub.hpp"
 #include "BOBA/abstractions/tictoc.hpp"
 
 // Dynamic objects

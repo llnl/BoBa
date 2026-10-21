@@ -12,6 +12,9 @@ file_*
 # Codex
 .codex
 
+# Codegraph
+.codegraph
+
 # matlab
 *.asv
 *.mat

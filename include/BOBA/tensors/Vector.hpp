@@ -418,17 +418,28 @@ Vector<space, data_t> operator*(data_t const scalar, Vector<space, data_t> vecto
 }
 
 /**
- * \brief
- *  Sorts the Vector according to std::sort
+ * \brief Sorts the Vector in ascending order.
+ *
+ * Host vectors use std::sort. CUDA/HIP vectors built with BOBA_CUDA_LIBS or
+ * BOBA_HIP_LIBS use a CUB/hipCUB radix sort (arithmetic types only); other
+ * device configurations copy to host and back.
  */
 
 template <execution_space space, typename data_t>
-  requires(space == host_space)
 void sort(Vector<space, data_t>& input_vector)
 {
   if constexpr (space == host_space)
   {
     std::sort(input_vector.data(), input_vector.data() + input_vector.size());
+  }
+  else if constexpr (::boba::detail::cub_available<space>())
+  {
+    static_assert(std::is_arithmetic_v<data_t>, "Device sort requires an arithmetic value type");
+    Vector<space, data_t> sorted(input_vector.sizes());
+    const auto input_view = input_vector.const_view();
+    auto sorted_view = sorted.view();
+    ::boba::detail::sort_keys<space>(input_view.data(), sorted_view.data(), input_vector.size());
+    input_vector = std::move(sorted);
   }
   else
   {

@@ -408,7 +408,7 @@ void test_seeded_random_fill()
 
   boba::random::set_seed(1729);
   boba_always_assert_equal(
-    boba::random::current_seed(), 1729_z, "The default random seed was not retained");
+    boba::random::current_seed(), boba::random::seed_type{1729}, "The default random seed was not retained");
   first_default.fill_with_random();
   second_default.fill_with_random();
 

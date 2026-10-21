@@ -493,17 +493,7 @@ to_dense(SparseTensorTrainMatrix<dimension, input_space, data_t> const& sparse)
 
   for (size_t d = 0; d < dimension; ++d)
   {
-    SparseTensor<4, host_space, data_t> host_core(sparse.cores[d]);
-    Tensor<4, host_space, data_t> dense_core(host_core.sizes());
-    dense_core.fill_with_zeros();
-
-    auto dense_view = dense_core.view();
-    auto sparse_view = host_core.const_view();
-    for (index_t entry = 0; entry < host_core.number_nonzeros(); ++entry)
-    {
-      dense_view(sparse_view.entry_multiindex(entry)) = sparse_view.values()[entry];
-    }
-    output.cores[d] = dense_core;
+    output.cores[d] = to_dense(sparse.cores[d]);
   }
 
   return output;
