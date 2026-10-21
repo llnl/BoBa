@@ -347,6 +347,69 @@ void test_sparse_contraction(
 }
 
 /**
+ * @brief Tests sparse x dense and dense x sparse contractions against dense contraction.
+ *
+ * The unfolded SpMV/SpMM path is checked with vendor and naive CSR kernels,
+ * along with the naive host entry traversal.
+ *
+ * @tparam contractions Number of contracted dimension pairs.
+ * @tparam dimension_A Left tensor rank.
+ * @tparam dimension_B Right tensor rank.
+ * @param sizes_A Left tensor extents.
+ * @param sizes_B Right tensor extents.
+ * @param contraction_dimensions_A Contracted dimensions in the left tensor.
+ * @param contraction_dimensions_B Contracted dimensions in the right tensor.
+ * @param check Accumulated test status.
+ */
+template <std::size_t contractions, std::size_t dimension_A, std::size_t dimension_B>
+void test_mixed_contraction(
+  ::boba::Array<::boba::index_t, dimension_A> sizes_A,
+  ::boba::Array<::boba::index_t, dimension_B> sizes_B,
+  ::boba::Array<size_t, contractions> contraction_dimensions_A,
+  ::boba::Array<size_t, contractions> contraction_dimensions_B,
+  bool& check)
+{
+  std::cout << "Testing mixed contraction dimensions " << dimension_A << " and " << dimension_B << " contractions " << contractions << std::endl;
+  constexpr std::size_t output_dimension = dimension_A + dimension_B - 2 * contractions;
+  const auto is_nonzero = [](double value, auto)
+  {
+    return ::boba::abs(value) > 0.0;
+  };
+
+  const auto dense_A_host = make_sparse_test_tensor(sizes_A, 0);
+  const auto dense_B_host = make_sparse_test_tensor(sizes_B, 4);
+  const auto sparse_A_host = ::boba::convert_to_SparseTensor(dense_A_host, is_nonzero);
+  const auto sparse_B_host = ::boba::convert_to_SparseTensor(dense_B_host, is_nonzero);
+  const ::boba::Tensor<dimension_A, space, double> dense_A(dense_A_host);
+  const ::boba::Tensor<dimension_B, space, double> dense_B(dense_B_host);
+  const ::boba::SparseTensor<dimension_A, space, double> sparse_A(sparse_A_host);
+  const ::boba::SparseTensor<dimension_B, space, double> sparse_B(sparse_B_host);
+
+  const auto expected = ::boba::tensor_contraction<contractions, ::boba::host_space, dimension_A, dimension_B, double>(
+    dense_A_host, dense_B_host, contraction_dimensions_A, contraction_dimensions_B);
+
+  const auto compare = [&](auto const& result)
+  {
+    const ::boba::Tensor<output_dimension, ::boba::host_space, double> actual(result);
+    pass_or_fail_bool(check, actual.sizes() == expected.sizes());
+    pass_or_fail(check, ::boba::norm_difference_inf(actual, expected), 1.0e-12);
+  };
+
+  compare(::boba::tensor_contraction<contractions, space, dimension_A, dimension_B, double>(
+    sparse_A, dense_B, contraction_dimensions_A, contraction_dimensions_B));
+  compare(::boba::tensor_contraction<contractions, space, dimension_A, dimension_B, double>(
+    dense_A, sparse_B, contraction_dimensions_A, contraction_dimensions_B));
+  compare(::boba::tensor_contraction<contractions, space, dimension_A, dimension_B, double, true>(
+    sparse_A, dense_B, contraction_dimensions_A, contraction_dimensions_B));
+  compare(::boba::tensor_contraction<contractions, space, dimension_A, dimension_B, double, true>(
+    dense_A, sparse_B, contraction_dimensions_A, contraction_dimensions_B));
+  compare(::boba::tensor_contraction<contractions, ::boba::host_space, dimension_A, dimension_B, double, true>(
+    sparse_A_host, dense_B_host, contraction_dimensions_A, contraction_dimensions_B));
+  compare(::boba::tensor_contraction<contractions, ::boba::host_space, dimension_A, dimension_B, double, true>(
+    dense_A_host, sparse_B_host, contraction_dimensions_A, contraction_dimensions_B));
+}
+
+/**
  * @brief Tests label-based sparse reduction and contraction APIs.
  *
  * Each label-based operation is compared with the corresponding positional
@@ -662,6 +725,12 @@ int main()
   test_sparse_contraction<2, 3, 3>({2, 3, 4}, {4, 5, 3}, {1, 2}, {2, 0}, check);
   test_sparse_contraction<1, 4, 3>({2, 2, 2, 2}, {2, 2, 2}, {1}, {0}, check);
   test_sparse_contraction<3, 6, 4>({2, 2, 2, 2, 2, 2}, {2, 2, 2, 2}, {0, 2, 5}, {1, 2, 3}, check);
+  test_mixed_contraction<1, 2, 2>({2, 3}, {3, 4}, {1}, {0}, check);
+  test_mixed_contraction<1, 3, 2>({3, 4, 5}, {4, 2}, {1}, {0}, check);
+  test_mixed_contraction<2, 3, 3>({2, 3, 4}, {4, 5, 3}, {1, 2}, {2, 0}, check);
+  test_mixed_contraction<2, 4, 3>({2, 3, 4, 5}, {5, 3, 2}, {3, 1}, {0, 1}, check);
+  test_mixed_contraction<2, 3, 2>({2, 3, 4}, {4, 3}, {2, 1}, {0, 1}, check);
+  test_mixed_contraction<2, 2, 3>({4, 3}, {3, 5, 4}, {1, 0}, {0, 2}, check);
   test_sparse_label_apis(check);
   test_sparse_filter_small_entries(check);
   test_sparse_value_operations<2>(check);
