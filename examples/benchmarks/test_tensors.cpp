@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-#include "common.hpp"
+#include "../tests/common.hpp"
 
 #include <BOBA/boba.hpp>
 #include <iostream>

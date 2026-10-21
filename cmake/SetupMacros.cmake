@@ -3,7 +3,7 @@
 
 macro(boba_add_executable)
   set(options )
-  set(singleValueArgs NAME TUTORIAL TEST EXERCISE)
+  set(singleValueArgs NAME TUTORIAL TEST EXERCISE BENCHMARK)
   set(multiValueArgs SOURCES DEPENDS_ON)
 
   cmake_parse_arguments(arg
@@ -19,6 +19,8 @@ macro(boba_add_executable)
     set (_output_dir ${CMAKE_BINARY_DIR}/tutorial)
   elseif (${arg_EXERCISE})
     set (_output_dir ${CMAKE_BINARY_DIR}/exercise)
+  elseif (${arg_BENCHMARK})
+    set (_output_dir ${CMAKE_BINARY_DIR}/benchmark)
   else ()
     set (_output_dir ${CMAKE_BINARY_DIR}/bin)
   endif()

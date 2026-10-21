@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-#include "common.hpp"
+#include "../tests/common.hpp"
 
 constexpr boba::execution_space space = ::boba::default_execution_space;
 constexpr boba::tictoc_units tictoc_units = boba::tictoc_units::microseconds;
