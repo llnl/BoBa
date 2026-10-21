@@ -27,7 +27,7 @@ include ${BOBA_TOP_DIR}/Makefile_boba
 
 ###############################
 
-.PHONY: all clean cleanfiles install style style-check
+.PHONY: all benchmarks clean cleanfiles install style style-check
 
 install:
 	mkdir -p ${PREFIX} && /bin/cp -Rp include ${PREFIX}
@@ -106,6 +106,11 @@ all: \
 	example_implicit \
 	example_implicit_block \
 	example_eigel
+
+benchmarks: \
+	benchmark_linear_algebra \
+	benchmark_tensors \
+	benchmark_sparse_dense_contractions
 
 #######################################################
 # Tutorials
