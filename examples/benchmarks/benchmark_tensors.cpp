@@ -820,7 +820,7 @@ template <typename data_t, bool force_naive>
 void test_cases(bool& check, size_t size_factor, size_t which)
 {
   // TODO<external> hiptensor fails at certain sizes (set this to 8)
-  size_t max_size_factor = 6;
+  size_t max_size_factor = (size_factor > 0) ? 2 : 6;
 
   //
   // Test permutation
@@ -1084,6 +1084,7 @@ int main(int argc, char* argv[])
   size_t size_factor = 0;
   size_t which = 0;
   size_t precision = 0;
+  size_t repetitions = 10;
 
   ::boba::argparser args(argc, argv);
 
@@ -1102,8 +1103,12 @@ int main(int argc, char* argv[])
                              "--precision",
                              "Floating type precision: 0 - both, 1 - double 2, - single.");
 
+  args.add_optional_argument(repetitions,
+                             "-n",
+                             "--repetitions",
+                             "Number of repetitions for each kernel.");
+
   args.parse_check();
-  size_t repetitions = 1;
 
   bool run_single_precision = (precision == 0) or (precision == 1);
 

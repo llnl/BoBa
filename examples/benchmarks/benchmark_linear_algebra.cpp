@@ -744,6 +744,7 @@ int main(int argc, char* argv[])
   size_t in_cols = 0;
   size_t kernel = 0;
   size_t max_size = 10000;
+  size_t repetitions = 10;
 
   ::boba::argparser args(argc, argv);
 
@@ -767,6 +768,11 @@ int main(int argc, char* argv[])
                              "--maximum",
                              "Maximum matrix size (rows*cols) that will be attempted.");
 
+  args.add_optional_argument(repetitions,
+                             "-n",
+                             "--repetitions",
+                             "Number of repetitions for each kernel.");
+
   args.parse_check();
 
   boba_always_assert_equal((in_cols > 0), (in_rows > 0), "Set neither or both");
@@ -784,21 +790,24 @@ int main(int argc, char* argv[])
 
   bool check = true;
 
-  if (::boba::is_env_nonempty("linalg_test_single_precision"))
+  for (size_t repetition = 0; repetition < repetitions; repetition++)
   {
-    test_cases<float>("float", rows_list, cols_list, kernel, max_size, check);
-  }
-  else if (::boba::is_env_nonempty("linalg_test_complex_single_precision"))
-  {
-    test_cases<boba::complex<float>>("complex_float", rows_list, cols_list, kernel, max_size, check);
-  }
-  else if (::boba::is_env_nonempty("linalg_test_complex_double_precision"))
-  {
-    test_cases<boba::complex<double>>("complex_double", rows_list, cols_list, kernel, max_size, check);
-  }
-  else
-  {
-    test_cases<double>("double", rows_list, cols_list, kernel, max_size, check);
+    if (::boba::is_env_nonempty("linalg_test_single_precision"))
+    {
+      test_cases<float>("float", rows_list, cols_list, kernel, max_size, check);
+    }
+    else if (::boba::is_env_nonempty("linalg_test_complex_single_precision"))
+    {
+      test_cases<boba::complex<float>>("complex_float", rows_list, cols_list, kernel, max_size, check);
+    }
+    else if (::boba::is_env_nonempty("linalg_test_complex_double_precision"))
+    {
+      test_cases<boba::complex<double>>("complex_double", rows_list, cols_list, kernel, max_size, check);
+    }
+    else
+    {
+      test_cases<double>("double", rows_list, cols_list, kernel, max_size, check);
+    }
   }
 
   boba::finalize();

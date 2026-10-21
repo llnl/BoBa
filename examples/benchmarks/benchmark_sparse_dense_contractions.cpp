@@ -149,29 +149,36 @@ void test_small_mixed_contractions(bool& check)
   pass_or_fail(check, ::boba::norm_difference_inf(::boba::to_dense(labeled_sparse_sparse), dense_dense), 1.0e-14);
 }
 
-void benchmark_large_mixed_contractions()
+void benchmark_large_mixed_contractions(
+  ::boba::index_t mode_size,
+  std::size_t repetitions,
+  ::boba::index_t requested_sparsity_period)
 {
   std::cout << "Benchmarking large mixed contractions across sparsities" << std::endl;
 
-  const ::boba::Array<::boba::index_t, 4> sizes_A{24, 24, 24, 24};
-  const ::boba::Array<::boba::index_t, 3> sizes_B{24, 24, 24};
-  const ::boba::Array<size_t, 1> contraction_dimensions_A{3};
+  const ::boba::Array<::boba::index_t, 3> sizes_A{mode_size, mode_size, mode_size};
+  const ::boba::Array<::boba::index_t, 2> sizes_B{mode_size, mode_size};
+  const ::boba::Array<size_t, 1> contraction_dimensions_A{2};
   const ::boba::Array<size_t, 1> contraction_dimensions_B{0};
   const auto dense_A = make_dense_test_tensor(sizes_A, 0);
   const auto dense_B = make_dense_test_tensor(sizes_B, 1);
 
   const auto dense_dense = [&]()
   {
-    return ::boba::tensor_contraction<1, ::boba::host_space, 4, 3, data_t>(
+    return ::boba::tensor_contraction<1, ::boba::host_space, 3, 2, data_t>(
       dense_A, dense_B, contraction_dimensions_A, contraction_dimensions_B);
   };
 
-  constexpr std::size_t repetitions = 5;
   const auto dense_dense_result = benchmark(dense_dense, repetitions);
   constexpr ::boba::index_t sparsity_periods[] = {10, 100, 1000, 10000};
 
   for (const auto sparsity_period : sparsity_periods)
   {
+    if ((requested_sparsity_period > 0) and (requested_sparsity_period != sparsity_period))
+    {
+      continue;
+    }
+
     const auto sparse_source_A = make_sparsified_test_tensor(sizes_A, 0, sparsity_period);
     const auto sparse_source_B = make_sparsified_test_tensor(sizes_B, 1, sparsity_period);
     const auto sparse_A = ::boba::convert_to_SparseTensor(sparse_source_A, [](data_t value, auto)
@@ -185,12 +192,12 @@ void benchmark_large_mixed_contractions()
 
     const auto sparse_dense = [&]()
     {
-      return ::boba::tensor_contraction<1, ::boba::host_space, 4, 3, data_t, true>(
+      return ::boba::tensor_contraction<1, ::boba::host_space, 3, 2, data_t, true>(
         sparse_A, dense_B, contraction_dimensions_A, contraction_dimensions_B);
     };
     const auto dense_sparse = [&]()
     {
-      return ::boba::tensor_contraction<1, ::boba::host_space, 4, 3, data_t, true>(
+      return ::boba::tensor_contraction<1, ::boba::host_space, 3, 2, data_t, true>(
         dense_A, sparse_B, contraction_dimensions_A, contraction_dimensions_B);
     };
     const auto sparse_sparse = [&]()
@@ -205,6 +212,9 @@ void benchmark_large_mixed_contractions()
     const double sparsity = 1.0 / static_cast<double>(sparsity_period);
     std::cout << std::setprecision(10)
               << "MIXED_TIMING sparsity=" << sparsity
+              << " sparsity_percent=" << 100.0 * sparsity
+              << " mode_size=" << mode_size
+              << " repetitions=" << repetitions
               << " dense_dense_ms=" << dense_dense_result.milliseconds
               << " dense_sparse_ms=" << dense_sparse_result.milliseconds
               << " sparse_dense_ms=" << sparse_dense_result.milliseconds
@@ -216,15 +226,34 @@ void benchmark_large_mixed_contractions()
 
 } // namespace
 
-int main()
+int main(int argc, char* argv[])
 {
   ::boba::init();
 
   bool check = true;
+  ::boba::index_t mode_size = 100;
+  ::boba::index_t sparsity_period = 0;
+  std::size_t repetitions = 10;
+
+  ::boba::argparser args(argc, argv);
+  args.add_optional_argument(mode_size,
+                             "-m",
+                             "--mode-size",
+                             "Size of every tensor mode.");
+  args.add_optional_argument(sparsity_period,
+                             "-s",
+                             "--sparsity-period",
+                             "Keep one entry per period; zero runs 10%, 1%, 0.1%, and 0.01% nonzeros.");
+  args.add_optional_argument(repetitions,
+                             "-n",
+                             "--repetitions",
+                             "Number of repetitions for each contraction.");
+  args.parse_check();
+
 #ifdef BOBA_CI
   test_small_mixed_contractions(check);
 #else
-  benchmark_large_mixed_contractions();
+  benchmark_large_mixed_contractions(mode_size, repetitions, sparsity_period);
 #endif
 
   const int result = final_check(check);
