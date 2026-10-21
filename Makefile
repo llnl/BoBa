@@ -57,7 +57,7 @@ all: \
 	tutorial_6_htucker \
 	tutorial_7_quantized_tensor_trains \
 	tutorial_8_canonical_polyadic \
-	test_boba_linear_algebra \
+	benchmark_linear_algebra \
 	test_nnmf \
 	test_nnls \
 	test_ttm_norm \
@@ -83,12 +83,11 @@ all: \
 	test_preconditioner \
 	test_tensor_train_matrix \
 	test_quantized_tensor_train_matrix \
-	test_tensors \
+	benchmark_tensors \
 	test_SparseTensor \
 	test_SparseTensor_functions \
 	test_SparseTensorTrainMatrix \
-	test_sparse_contraction_benchmark \
-	test_sparse_dense_contraction_benchmark \
+	benchmark_sparse_dense_contractions \
 	test_SparseMatrix \
 	test_subtensorviews \
 	test_cp \
@@ -330,14 +329,14 @@ test_reductions${NAME_FLAG}.o: ${TESTS_DIR}/test_reductions.cpp ${BOBA_INC} boba
 	${COMPILE} ${OPTS} -c ${TESTS_DIR}/test_reductions.cpp -o test_reductions${NAME_FLAG}.o
 
 ###############################
-test_boba_linear_algebra: test_boba_linear_algebra${NAME_FLAG}.out
+benchmark_linear_algebra: benchmark_linear_algebra${NAME_FLAG}.out
 	echo "Done making $@${NAME_FLAG}.out"
 
-test_boba_linear_algebra${NAME_FLAG}.out: test_boba_linear_algebra${NAME_FLAG}.o boba${NAME_FLAG}.o
+benchmark_linear_algebra${NAME_FLAG}.out: benchmark_linear_algebra${NAME_FLAG}.o boba${NAME_FLAG}.o
 	${LINK} -o $@ $^ ${LIBS}
 
-test_boba_linear_algebra${NAME_FLAG}.o: ${BENCHMARKS_DIR}/test_boba_linear_algebra.cpp ${BOBA_INC} boba${NAME_FLAG}.o
-	${COMPILE} ${OPTS} -c ${BENCHMARKS_DIR}/test_boba_linear_algebra.cpp -o test_boba_linear_algebra${NAME_FLAG}.o
+benchmark_linear_algebra${NAME_FLAG}.o: ${BENCHMARKS_DIR}/benchmark_linear_algebra.cpp ${BOBA_INC} boba${NAME_FLAG}.o
+	${COMPILE} ${OPTS} -c ${BENCHMARKS_DIR}/benchmark_linear_algebra.cpp -o benchmark_linear_algebra${NAME_FLAG}.o
 
 ###############################
 test_nnmf: test_nnmf${NAME_FLAG}.out
@@ -489,14 +488,14 @@ test_preconditioner${NAME_FLAG}.o: ${TESTS_DIR}/test_preconditioner.cpp ${BOBA_I
 	${COMPILE} ${OPTS} -c ${TESTS_DIR}/test_preconditioner.cpp -o test_preconditioner${NAME_FLAG}.o
 
 ###############################
-test_tensors: test_tensors${NAME_FLAG}.out
+benchmark_tensors: benchmark_tensors${NAME_FLAG}.out
 	echo "Done making $@${NAME_FLAG}.out"
 
-test_tensors${NAME_FLAG}.out: test_tensors${NAME_FLAG}.o boba${NAME_FLAG}.o
+benchmark_tensors${NAME_FLAG}.out: benchmark_tensors${NAME_FLAG}.o boba${NAME_FLAG}.o
 	${LINK} -o $@ $^ ${LIBS}
 
-test_tensors${NAME_FLAG}.o: ${BENCHMARKS_DIR}/test_tensors.cpp ${BOBA_INC} boba${NAME_FLAG}.o
-	${COMPILE} ${OPTS} -c ${BENCHMARKS_DIR}/test_tensors.cpp -o test_tensors${NAME_FLAG}.o
+benchmark_tensors${NAME_FLAG}.o: ${BENCHMARKS_DIR}/benchmark_tensors.cpp ${BOBA_INC} boba${NAME_FLAG}.o
+	${COMPILE} ${OPTS} -c ${BENCHMARKS_DIR}/benchmark_tensors.cpp -o benchmark_tensors${NAME_FLAG}.o
 
 ###############################
 test_SparseTensor: test_SparseTensor${NAME_FLAG}.out
@@ -529,24 +528,14 @@ test_SparseTensorTrainMatrix${NAME_FLAG}.o: ${TESTS_DIR}/test_SparseTensorTrainM
 	${COMPILE} ${OPTS} -c ${TESTS_DIR}/test_SparseTensorTrainMatrix.cpp -o test_SparseTensorTrainMatrix${NAME_FLAG}.o
 
 ###############################
-test_sparse_contraction_benchmark: test_sparse_contraction_benchmark${NAME_FLAG}.out
+benchmark_sparse_dense_contractions: benchmark_sparse_dense_contractions${NAME_FLAG}.out
 	echo "Done making $@${NAME_FLAG}.out"
 
-test_sparse_contraction_benchmark${NAME_FLAG}.out: test_sparse_contraction_benchmark${NAME_FLAG}.o boba${NAME_FLAG}.o
+benchmark_sparse_dense_contractions${NAME_FLAG}.out: benchmark_sparse_dense_contractions${NAME_FLAG}.o boba${NAME_FLAG}.o
 	${LINK} -o $@ $^ ${LIBS}
 
-test_sparse_contraction_benchmark${NAME_FLAG}.o: ${TESTS_DIR}/test_sparse_contraction_benchmark.cpp ${BOBA_INC} boba${NAME_FLAG}.o
-	${COMPILE} ${OPTS} -c ${TESTS_DIR}/test_sparse_contraction_benchmark.cpp -o test_sparse_contraction_benchmark${NAME_FLAG}.o
-
-###############################
-test_sparse_dense_contraction_benchmark: test_sparse_dense_contraction_benchmark${NAME_FLAG}.out
-	echo "Done making $@${NAME_FLAG}.out"
-
-test_sparse_dense_contraction_benchmark${NAME_FLAG}.out: test_sparse_dense_contraction_benchmark${NAME_FLAG}.o boba${NAME_FLAG}.o
-	${LINK} -o $@ $^ ${LIBS}
-
-test_sparse_dense_contraction_benchmark${NAME_FLAG}.o: ${BENCHMARKS_DIR}/test_sparse_dense_contraction_benchmark.cpp ${BOBA_INC} boba${NAME_FLAG}.o
-	${COMPILE} ${OPTS} -c ${BENCHMARKS_DIR}/test_sparse_dense_contraction_benchmark.cpp -o test_sparse_dense_contraction_benchmark${NAME_FLAG}.o
+benchmark_sparse_dense_contractions${NAME_FLAG}.o: ${BENCHMARKS_DIR}/benchmark_sparse_dense_contractions.cpp ${BOBA_INC} boba${NAME_FLAG}.o
+	${COMPILE} ${OPTS} -c ${BENCHMARKS_DIR}/benchmark_sparse_dense_contractions.cpp -o benchmark_sparse_dense_contractions${NAME_FLAG}.o
 
 ###############################
 test_SparseMatrix: test_SparseMatrix${NAME_FLAG}.out

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
-FILE(GLOB boba_benchmarks test_*.cpp)
+FILE(GLOB boba_benchmarks benchmark_*.cpp)
 
 foreach(benchmark ${boba_benchmarks})
   get_filename_component(basename "${benchmark}" NAME_WLE)

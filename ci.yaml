@@ -149,7 +149,7 @@
     test_backsolve:
       skip: []
 
-  test_boba_linear_algebra:
+  benchmark_linear_algebra:
     # QR
     test_qr_double:
       inputs: "--which 1"
@@ -366,8 +366,8 @@
     test_quantized_tensor_train_matrix:
       skip: [hip, cuda]
 
-  test_tensors:
-    test_tensors:
+  benchmark_tensors:
+    benchmark_tensors:
       inputs: "--size_factor 1 --which 0"
       skip: []
 
@@ -388,6 +388,9 @@
       skip: []
     test_sparse_contraction_benchmark_density_5:
       inputs: "--density 0.05 --mode_size 8"
+
+  benchmark_sparse_dense_contractions:
+    benchmark_sparse_dense_contractions:
       skip: []
 
   test_SparseMatrix:
