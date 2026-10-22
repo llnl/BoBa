@@ -6,9 +6,12 @@
 #include "BOBA/sparse/COOMatrix.hpp"
 #include "BOBA/sparse/CSRMatrix.hpp"
 #include "BOBA/sparse/ELLPACKMatrix.hpp"
+#include "BOBA/tensors/SparseTensor.hpp"
 #include "BOBA/backends/boba_cusparse.hpp"
 #include "BOBA/backends/boba_eigen_sparse.hpp"
 #include "BOBA/backends/boba_hipsparse.hpp"
+
+#include <limits>
 
 namespace boba
 {
@@ -95,6 +98,176 @@ void naive_csr_transpose_accumulate(
       Y_atomic({A.column_index(k), r}) += A.value(k) * x;
     }
   });
+}
+
+/**
+ * \brief Builds the CSR form of the transpose of a column-major-sorted sparse matrix.
+ *
+ * \p unfolded stores strictly increasing keys `key = r + rows * c`, so sorting by
+ * key sorts by column `c` first and row `r` second. Read as the transpose, this
+ * is CSR order: CSR row `c`, CSR column `r`. No sort is needed.
+ *
+ * Example with a 2 x 3 matrix with keys {1, 2, 5} = {(1,0), (0,1), (1,2)}:
+ *
+ *   M = [0 a 0]    keys sorted by (c, r): (1,0) (0,1) (1,2)
+ *       [b 0 c]    Mᵀ CSR: row_offsets {0, 1, 2, 3}, columns {1, 0, 1}
+ *
+ * Column indices are `key % rows`; row offset `c` is the first entry with
+ * `key >= c * rows`, found by binary search.
+ *
+ * \param unfolded Rank-2 sparse tensor with sorted unique linear keys.
+ * \return CSR matrix of shape `(unfolded.sizes(1), unfolded.sizes(0))`.
+ */
+template <execution_space space, typename data_t>
+CSRMatrix<space, data_t> transposed_csr_from_sorted_keys(const SparseTensor<2, space, data_t>& unfolded)
+{
+  BOBA_CALI_MARK
+  const auto sizes = unfolded.sizes();
+  const index_t csr_rows = sizes[1];
+  const index_t csr_cols = sizes[0];
+  const index_t nnz = unfolded.nnz();
+  boba_always_assert(unfolded.size() <= static_cast<index_t>(std::numeric_limits<std::int64_t>::max()),
+                     "Unfolded sparse tensor is too large for int64 CSR indices");
+
+  CSRMatrix<space, data_t> csr(csr_rows, csr_cols);
+  csr.m_values = unfolded.values();
+  csr.m_column_indices = Vector<space, std::int64_t>({nnz});
+
+  const auto& keys = unfolded.linear_indices();
+  const auto keys_view = keys.const_view();
+  index_t const* key_data = keys_view.data();
+  auto column_view = csr.m_column_indices.view();
+  auto offsets_view = csr.m_row_offsets.view();
+
+  ::boba::loop<space, 1>(0_z, nnz, [=] __boba_host_device__(index_t entry)
+  {
+    column_view(entry) = static_cast<std::int64_t>(key_data[entry] % csr_cols);
+  });
+
+  // offsets(i) is the first entry whose key is at least i * csr_cols.
+  ::boba::loop<space, 1>(0_z, csr_rows + 1, [=] __boba_host_device__(index_t row)
+  {
+    const index_t target = row * csr_cols;
+    index_t low = 0;
+    index_t high = nnz;
+    while (low < high)
+    {
+      const index_t middle = low + (high - low) / 2;
+      if (key_data[middle] < target)
+      {
+        low = middle + 1;
+      }
+      else
+      {
+        high = middle;
+      }
+    }
+    offsets_view(row) = static_cast<std::int64_t>(low);
+  });
+
+  boba_assert(csr.is_sorted(), "CSR built from sparse tensor keys must have sorted rows");
+  return csr;
+}
+
+/**
+ * \brief Exclusive prefix sum of \p counts in \p space. Returns the total.
+ *
+ * Uses CUB/hipCUB when available and a single-thread loop otherwise.
+ */
+template <execution_space space>
+index_t exclusive_scan_with_total(Vector<space, index_t> const& counts, Vector<space, index_t>& offsets)
+{
+  const index_t n = counts.size();
+  if (n == 0)
+  {
+    return 0;
+  }
+  const auto counts_view = counts.const_view();
+  auto offsets_view = offsets.view();
+  if constexpr (cub_available<space>())
+  {
+    exclusive_scan<space>(counts_view.data(), offsets_view.data(), n);
+  }
+  else
+  {
+    ::boba::detail::loop<space>(0_z, 1_z, [=] __boba_host_device__(size_t)
+    {
+      index_t running = 0;
+      for (index_t i = 0; i < n; ++i)
+      {
+        offsets_view(i) = running;
+        running += counts_view(i);
+      }
+    });
+  }
+
+  index_t last_offset = 0;
+  index_t last_count = 0;
+  ::boba::detail::memcpy<host_space, space>(&last_offset, offsets_view.data() + (n - 1), 1);
+  ::boba::detail::memcpy<host_space, space>(&last_count, counts_view.data() + (n - 1), 1);
+  ::boba::detail::synchronize<space>();
+  return last_offset + last_count;
+}
+
+/**
+ * \brief Expand-sort-compress SpGEMM `C = A * B` in any execution space.
+ *
+ * 1. Count the products `a_ik * b_kj` of each row of A and scan to offsets.
+ * 2. Write every product with key `j + B.cols() * i`, the column-major key of Cᵀ.
+ * 3. Sort and sum duplicate keys with the SparseTensor constructor
+ *    (CUB/hipCUB on device, otherwise a host round-trip).
+ * 4. Read the sorted keys of Cᵀ as CSR of C.
+ *
+ * \note Memory is O(number of products), which can greatly exceed nnz(C).
+ */
+template <execution_space space, typename data_t>
+CSRMatrix<space, data_t> esc_csr_spgemm(CSRMatrix<space, data_t> const& A, CSRMatrix<space, data_t> const& B)
+{
+  BOBA_CALI_MARK
+  const auto A_view = A.const_view();
+  const auto B_view = B.const_view();
+  const index_t rows = A.rows();
+  const index_t cols = B.cols();
+
+  Vector<space, index_t> counts({rows});
+  auto counts_view = counts.view();
+  ::boba::loop<space, 1>(0_z, rows, [=] __boba_host_device__(index_t i)
+  {
+    index_t count = 0;
+    for (auto k = A_view.row_begin(i); k < A_view.row_end(i); ++k)
+    {
+      const auto b_row = A_view.column_index(k);
+      count += B_view.row_end(b_row) - B_view.row_begin(b_row);
+    }
+    counts_view(i) = count;
+  });
+
+  Vector<space, index_t> offsets({rows});
+  const index_t products = exclusive_scan_with_total(counts, offsets);
+
+  Vector<space, index_t> keys({products});
+  Vector<space, data_t> values({products});
+  const auto offsets_view = offsets.const_view();
+  auto keys_view = keys.view();
+  auto values_view = values.view();
+  ::boba::loop<space, 1>(0_z, rows, [=] __boba_host_device__(index_t i)
+  {
+    index_t out = offsets_view(i);
+    for (auto k = A_view.row_begin(i); k < A_view.row_end(i); ++k)
+    {
+      const auto b_row = A_view.column_index(k);
+      const auto a_value = A_view.value(k);
+      for (auto l = B_view.row_begin(b_row); l < B_view.row_end(b_row); ++l)
+      {
+        keys_view(out) = B_view.column_index(l) + cols * i;
+        values_view(out) = a_value * B_view.value(l);
+        ++out;
+      }
+    }
+  });
+
+  const SparseTensor<2, space, data_t> C_transposed({cols, rows}, std::move(keys), std::move(values));
+  return transposed_csr_from_sorted_keys(C_transposed);
 }
 
 } // namespace detail
@@ -263,6 +436,93 @@ void sparse_matrix_matrix_product(
     return;
   }
   detail::naive_csr_product<space>(A_view, B_view, C_view, alpha, beta);
+}
+
+/**
+ * \brief Computes the sparse product `C = A * B` of two CSR matrices.
+ *
+ * Dispatches to cuSPARSE, hipSPARSE, or Eigen when available for `space` and
+ * `data_t`, and otherwise to an expand-sort-compress kernel. Exact
+ * cancellations may be kept as stored zeros. The result has sorted rows.
+ *
+ * \tparam force_naive Skip vendor libraries and use the expand-sort-compress kernel.
+ * \param A Left CSR matrix with sorted rows.
+ * \param B Right CSR matrix with sorted rows and `A.cols()` rows.
+ * \return CSR matrix of shape `(A.rows(), B.cols())`.
+ */
+template <execution_space space, typename data_t, bool force_naive = false>
+CSRMatrix<space, data_t> sparse_matrix_sparse_matrix_product(
+  CSRMatrix<space, data_t> const& A,
+  CSRMatrix<space, data_t> const& B)
+{
+  BOBA_CALI_OBJECT_MARK
+
+  boba_always_assert_equal(A.cols(), B.rows(), "CSR SpGEMM inner dimensions must match");
+  boba_assert(A.is_sorted(), "CSR SpGEMM requires sorted column indices in each row of A");
+  boba_assert(B.is_sorted(), "CSR SpGEMM requires sorted column indices in each row of B");
+  boba_always_assert(A.rows() * B.cols() <= static_cast<index_t>(std::numeric_limits<std::int64_t>::max()),
+                     "CSR SpGEMM output is too large for int64 indices");
+
+  CSRMatrix<space, data_t> C(A.rows(), B.cols());
+  if (A.nnz() == 0 || B.nnz() == 0)
+  {
+    return C;
+  }
+
+  auto const A_view = A.const_view();
+  auto const B_view = B.const_view();
+
+  if constexpr (
+    (space == ::boba::execution_space::CUDA) and
+    ::boba::boba_cuda_enabled() and
+    ::boba::boba_cuda_libs_enabled() and
+    detail::is_sparse_library_type_v<data_t> and
+    not(force_naive))
+  {
+    ::boba::detail::cusparse_spgemm(A_view, B_view, C);
+    return C;
+  }
+  else if constexpr (
+    (space == ::boba::execution_space::HIP) and
+    ::boba::boba_hip_enabled() and
+    ::boba::boba_hip_libs_enabled() and
+    detail::is_sparse_library_type_v<data_t> and
+    not(force_naive))
+  {
+    ::boba::detail::hipsparse_spgemm(A_view, B_view, C);
+    return C;
+  }
+  else if constexpr (
+    (space == ::boba::execution_space::CPU) and
+    ::boba::is_cpu_enabled() and
+    ::boba::boba_eigen_enabled() and
+    not(force_naive))
+  {
+    ::boba::detail::eigen_csr_spgemm(A_view, B_view, C);
+    return C;
+  }
+  else
+  {
+    return detail::esc_csr_spgemm(A, B);
+  }
+}
+
+/**
+ * \brief Converts a rank-2 sparse tensor to a CSR matrix.
+ *
+ * Sparse tensor keys are column-major, so one transpose (a sort) puts them in
+ * CSR order. Contractions avoid that sort by unfolding into the transposed
+ * layout and calling detail::transposed_csr_from_sorted_keys() directly.
+ *
+ * \param matrix Rank-2 sparse tensor.
+ * \return CSR matrix with the same shape and entries.
+ */
+template <execution_space space, typename data_t>
+CSRMatrix<space, data_t> convert_to_CSRMatrix(SparseTensor<2, space, data_t> const& matrix)
+{
+  auto transposed = matrix;
+  permute(transposed, Array<index_t, 2>{1, 0});
+  return detail::transposed_csr_from_sorted_keys(transposed);
 }
 
 /**

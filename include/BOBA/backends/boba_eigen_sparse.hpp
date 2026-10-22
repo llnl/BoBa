@@ -123,6 +123,31 @@ void eigen_csr_spmm(
   eigen_csr_product(A, B_map, C_map, alpha, beta, op);
 }
 
+/**
+ * @brief Computes the sparse product `C = A * B` with Eigen.
+ * @param A Host CSR view.
+ * @param B Host CSR view.
+ * @param C CSR matrix of shape `(A.rows(), B.cols())`; its storage is replaced.
+ */
+template <typename A_view_t, typename B_view_t, typename C_matrix_t>
+void eigen_csr_spgemm(
+  A_view_t const& A,
+  B_view_t const& B,
+  C_matrix_t& C)
+{
+  using data_t = typename C_matrix_t::data_t;
+  const Eigen::SparseMatrix<data_t, Eigen::RowMajor, std::int64_t> product = get_eigen_csr_map(A) * get_eigen_csr_map(B);
+  const auto nnz = static_cast<index_t>(product.nonZeros());
+  C.m_values.resize(nnz);
+  C.m_column_indices.resize(nnz);
+  auto values_view = C.m_values.view();
+  auto columns_view = C.m_column_indices.view();
+  auto offsets_view = C.m_row_offsets.view();
+  std::copy(product.valuePtr(), product.valuePtr() + nnz, values_view.data());
+  std::copy(product.innerIndexPtr(), product.innerIndexPtr() + nnz, columns_view.data());
+  std::copy(product.outerIndexPtr(), product.outerIndexPtr() + C.rows() + 1, offsets_view.data());
+}
+
 #else
 
 /**
@@ -155,6 +180,20 @@ void eigen_csr_spmm(
 {
   detail::ignore(A, B, C, alpha, beta, op);
   boba_error("Build error! You are trying to run eigen_csr_spmm without BOBA_ENABLE_EIGEN");
+}
+
+
+/**
+ * @brief Reports that Eigen CSR SpGEMM support is unavailable.
+ */
+template <typename A_view_t, typename B_view_t, typename C_matrix_t>
+void eigen_csr_spgemm(
+  A_view_t const& A,
+  B_view_t const& B,
+  C_matrix_t& C)
+{
+  detail::ignore(A, B, C);
+  boba_error("Build error! You are trying to run eigen_csr_spgemm without BOBA_ENABLE_EIGEN");
 }
 
 #endif

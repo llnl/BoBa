@@ -275,6 +275,73 @@ void hipsparse_spmm(
     workspace.data()));
 }
 
+/**
+ * @brief Computes the sparse product `C = A * B` with hipsparse SpGEMM.
+ *
+ * Only non-transposed operands are supported by the library. Output rows are
+ * sorted.
+ *
+ * @param A Device CSR view.
+ * @param B Device CSR view.
+ * @param C CSR matrix of shape `(A.rows(), B.cols())` with allocated row
+ *        offsets; its column and value storage is replaced.
+ */
+template <typename A_view_t, typename B_view_t, typename C_matrix_t>
+void hipsparse_spgemm(
+  A_view_t const& A,
+  B_view_t const& B,
+  C_matrix_t& C)
+{
+  using data_t = typename C_matrix_t::data_t;
+  const data_t alpha{1};
+  const data_t beta{0};
+  const auto operation = HIPSPARSE_OPERATION_NON_TRANSPOSE;
+  constexpr auto algorithm = HIPSPARSE_SPGEMM_DEFAULT;
+  constexpr auto compute_type = hip_data_t_v<data_t>;
+
+  hipsparse_csr_descriptor A_descriptor(A);
+  hipsparse_csr_descriptor B_descriptor(B);
+  auto C_view = C.view();
+  hipsparse_csr_descriptor C_descriptor(C_view);
+
+  hipsparseSpGEMMDescr_t spgemm_descriptor = nullptr;
+  hipsparse_assert(hipsparseSpGEMM_createDescr(&spgemm_descriptor));
+
+  size_t work_size = 0;
+  hipsparse_assert(hipsparseSpGEMM_workEstimation(
+    hipsparse_handle, operation, operation, &alpha, A_descriptor.get(), B_descriptor.get(), &beta, C_descriptor.get(),
+    compute_type, algorithm, spgemm_descriptor, &work_size, nullptr));
+  Vector<execution_space::HIP, unsigned char> work_buffer({work_size});
+  hipsparse_assert(hipsparseSpGEMM_workEstimation(
+    hipsparse_handle, operation, operation, &alpha, A_descriptor.get(), B_descriptor.get(), &beta, C_descriptor.get(),
+    compute_type, algorithm, spgemm_descriptor, &work_size, work_buffer.data()));
+
+  size_t compute_size = 0;
+  hipsparse_assert(hipsparseSpGEMM_compute(
+    hipsparse_handle, operation, operation, &alpha, A_descriptor.get(), B_descriptor.get(), &beta, C_descriptor.get(),
+    compute_type, algorithm, spgemm_descriptor, &compute_size, nullptr));
+  Vector<execution_space::HIP, unsigned char> compute_buffer({compute_size});
+  hipsparse_assert(hipsparseSpGEMM_compute(
+    hipsparse_handle, operation, operation, &alpha, A_descriptor.get(), B_descriptor.get(), &beta, C_descriptor.get(),
+    compute_type, algorithm, spgemm_descriptor, &compute_size, compute_buffer.data()));
+
+  int64_t rows = 0;
+  int64_t cols = 0;
+  int64_t nnz = 0;
+  hipsparse_assert(hipsparseSpMatGetSize(C_descriptor.get(), &rows, &cols, &nnz));
+  C.m_values.resize(static_cast<index_t>(nnz));
+  C.m_column_indices.resize(static_cast<index_t>(nnz));
+  auto values_view = C.m_values.view();
+  auto columns_view = C.m_column_indices.view();
+  auto offsets_view = C.m_row_offsets.view();
+  hipsparse_assert(hipsparseCsrSetPointers(C_descriptor.get(), offsets_view.data(), columns_view.data(), values_view.data()));
+
+  hipsparse_assert(hipsparseSpGEMM_copy(
+    hipsparse_handle, operation, operation, &alpha, A_descriptor.get(), B_descriptor.get(), &beta, C_descriptor.get(),
+    compute_type, algorithm, spgemm_descriptor));
+  hipsparse_assert(hipsparseSpGEMM_destroyDescr(spgemm_descriptor));
+}
+
 #else
 
 /**
@@ -307,6 +374,20 @@ void hipsparse_spmm(
 {
   detail::ignore(A, B, C, alpha, beta, op);
   boba_error("Build error! You are trying to run hipsparse_spmm without BOBA_HIP_LIBS");
+}
+
+
+/**
+ * @brief Reports that hipsparse SpGEMM support is unavailable.
+ */
+template <typename A_view_t, typename B_view_t, typename C_matrix_t>
+void hipsparse_spgemm(
+  A_view_t const& A,
+  B_view_t const& B,
+  C_matrix_t& C)
+{
+  detail::ignore(A, B, C);
+  boba_error("Build error! You are trying to run hipsparse_spgemm without BOBA_HIP_LIBS");
 }
 
 #endif
