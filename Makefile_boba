@@ -291,6 +291,7 @@ ifeq ($(IS_MATRIX), matrix) # CZ H100s, matrix
 endif
 ifeq ($(IS_VENADITO), vt-rfe) # LANL Venadito GH200
 	VENADITO_CUDA_HOME=/usr/projects/hpcsoft/pe/installs/cos3-aarch64-cc90/cudatoolkit/13.4.2
+	VENADITO_CUDA_TARGETS=${VENADITO_CUDA_HOME}/targets/sbsa-linux
 	VENADITO_GCC_HOME=/usr/projects/hpcsoft/uenv/stack-mount/sles-aarch64-cc90/prgenv-nvidia-openmpi/linux-aarch64/gcc-15.2.0-p3y2wogaex2rwnaob3drk4lhzzuhy33n
 	CUDA_COMPILER=${VENADITO_CUDA_HOME}/bin/nvcc -ccbin ${VENADITO_GCC_HOME}/bin/g++
 endif
@@ -322,6 +323,8 @@ CXXFLAGS := ${CXXFLAGS} --diag-suppress=20011   #warnings caused by eigen
 endif
 ifeq ($(IS_VENADITO), vt-rfe) # LANL Venadito GH200
 LINKFLAGS := ${LINKFLAGS} -Xlinker -rpath=${VENADITO_CUDA_HOME}/lib64
+LINKFLAGS := ${LINKFLAGS} -Xlinker -rpath=${VENADITO_CUDA_TARGETS}/lib
+LINKFLAGS := ${LINKFLAGS} -Xlinker -rpath-link=${VENADITO_CUDA_TARGETS}/lib
 LINKFLAGS := ${LINKFLAGS} -Xlinker -rpath=${VENADITO_GCC_HOME}/lib64
 CXXFLAGS := ${CXXFLAGS} --diag-suppress=20014   #warnings caused by eigen
 CXXFLAGS := ${CXXFLAGS} --diag-suppress=20011   #warnings caused by eigen
@@ -335,7 +338,7 @@ CXXFLAGS := ${CXXFLAGS} -O3 -g -lineinfo
 endif
 
 ifeq ($(IS_VENADITO), vt-rfe) # LANL Venadito GH200
-CUDA_LIBS := ${CUDA_LIBS} -L${VENADITO_CUDA_HOME}/lib64 -lcuda -lcusolver -lcudart -lcublas -lcublasLt -lcusparse -lcufft -lnvJitLink
+CUDA_LIBS := ${CUDA_LIBS} -L${VENADITO_CUDA_TARGETS}/lib -L${VENADITO_CUDA_HOME}/lib64 -lcuda -lcusolver -lcudart -lcublas -lcublasLt -lcusparse -lcufft -lnvJitLink
 endif
 ifeq ($(IS_MATRIX), matrix) # matrix
 CUDA_LIBS := ${CUDA_LIBS} -lcuda -lcusolver -lcudart -lmetis_static -lcublas -lcublasLt -lcusparse -lculibos -lcufft -lnvJitLink
@@ -350,7 +353,7 @@ endif
 ifdef BOBA_CUTENSOR
 ifeq ($(IS_VENADITO), vt-rfe) # LANL Venadito GH200
 	ifndef CUTENSOR_INSTALL_DIR
-		CUTENSOR_INSTALL_DIR=${VENADITO_CUDA_HOME}
+		CUTENSOR_INSTALL_DIR=/usr/projects/hpcsoft/pe/installs/cos3-aarch64-cc90/cutensor/2.4.1.4
 	endif
 endif
 INCLUDES := ${INCLUDES} -I${CUTENSOR_INSTALL_DIR}/include
@@ -362,7 +365,8 @@ endif
 ifeq ($(IS_VENADITO), vt-rfe) # LANL Venadito GH200
 CUTENSOR_LIBS = -L${CUTENSOR_INSTALL_DIR}/lib -L${CUTENSOR_INSTALL_DIR}/lib64 \
 	-Xlinker -rpath=${CUTENSOR_INSTALL_DIR}/lib \
-	-Xlinker -rpath=${CUTENSOR_INSTALL_DIR}/lib64 -lcutensor
+	-Xlinker -rpath=${CUTENSOR_INSTALL_DIR}/lib64 \
+	-Xlinker -rpath-link=${VENADITO_CUDA_TARGETS}/lib -lcutensor
 endif
 
 CUDA_LIBS := ${CUDA_LIBS} ${CUTENSOR_LIBS}
