@@ -18,6 +18,9 @@ namespace
 using data_t = double;
 constexpr ::boba::execution_space device_space = ::boba::default_execution_space;
 
+/**
+ * @brief Builds a host tensor with signed nonzeros where `(index + seed)` is a multiple of 3 or 7, zeros elsewhere.
+ */
 template <std::size_t dimension>
 ::boba::Tensor<dimension, ::boba::host_space, data_t> make_mixed_test_tensor(
   ::boba::Array<::boba::index_t, dimension> sizes,
@@ -34,6 +37,9 @@ template <std::size_t dimension>
   return tensor;
 }
 
+/**
+ * @brief Builds a fully dense host tensor with deterministic signed values in `[-17, 17]`.
+ */
 template <std::size_t dimension>
 ::boba::Tensor<dimension, ::boba::host_space, data_t> make_dense_test_tensor(
   ::boba::Array<::boba::index_t, dimension> sizes,
@@ -49,6 +55,9 @@ template <std::size_t dimension>
   return tensor;
 }
 
+/**
+ * @brief Builds a host tensor with one nonzero every \p period entries, offset by \p seed.
+ */
 template <std::size_t dimension>
 ::boba::Tensor<dimension, ::boba::host_space, data_t> make_sparsified_test_tensor(
   ::boba::Array<::boba::index_t, dimension> sizes,
@@ -66,6 +75,9 @@ template <std::size_t dimension>
   return tensor;
 }
 
+/**
+ * @brief Last output of a timed contraction and its mean time per repetition.
+ */
 template <typename output_t>
 struct benchmark_result
 {
@@ -73,6 +85,12 @@ struct benchmark_result
   double milliseconds = 0.0;
 };
 
+/**
+ * @brief Runs \p contraction \p repetitions times and reports the mean wall time in milliseconds.
+ *
+ * Each output feeds a printed checksum so the compiler cannot skip repetitions.
+ * Device outputs contribute their size because entries are not host-readable.
+ */
 template <typename contraction_t>
 auto benchmark(contraction_t contraction, std::size_t repetitions)
 {
@@ -104,6 +122,9 @@ auto benchmark(contraction_t contraction, std::size_t repetitions)
     timer_t::convert<::boba::tictoc_units::microseconds, ::boba::tictoc_units::milliseconds>(elapsed_microseconds) / static_cast<double>(repetitions)};
 }
 
+/**
+ * @brief Checks small 2 x 2 naive sparse x dense and dense x sparse contractions, positional and labeled, against dense.
+ */
 void test_small_mixed_contractions(bool& check)
 {
   std::cout << "Testing small sparse/dense contractions" << std::endl;
@@ -149,6 +170,11 @@ void test_small_mixed_contractions(bool& check)
   pass_or_fail(check, ::boba::norm_difference_inf(labeled_dense_sparse, dense_dense), 1.0e-14);
 }
 
+/**
+ * @brief Times naive sparse x dense and dense x sparse against dense x dense on 24^4 x 24^3 tensors at several sparsities.
+ *
+ * Enabled with `--sweep`; prints `MIXED_TIMING` lines and performs no checks.
+ */
 void benchmark_large_mixed_contractions()
 {
   std::cout << "Benchmarking large mixed contractions across sparsities" << std::endl;
@@ -399,7 +425,7 @@ void benchmark_random_sparse_sparse_contraction(::boba::Array<::boba::index_t, d
 }
 
 /**
- * @brief Runs one- and two-index random contractions at a given scale.
+ * @brief Runs one- and two-index random sparse x dense and sparse x sparse contractions of n^4 x n^3 tensors.
  */
 void benchmark_random_contractions(::boba::index_t n, double density, std::size_t repetitions, bool& check)
 {
