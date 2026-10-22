@@ -8,6 +8,9 @@
 #include <cusparse.h>
 #endif
 
+#include <cstdint>
+#include <limits>
+
 // NVIDIA Documentation
 // https://docs.nvidia.com/cuda/cusparse/#cusparse-generic-api-reference
 
@@ -106,6 +109,117 @@ public:
   }
 
 private:
+  cusparseSpMatDescr_t m_descriptor = nullptr;
+};
+
+struct csr_index_copy_to_32
+{
+  std::int64_t const* source;
+  std::int32_t* destination;
+
+  __boba_host_device__ void operator()(index_t i) const
+  {
+    destination[i] = static_cast<std::int32_t>(source[i]);
+  }
+};
+
+struct csr_index_copy_to_64
+{
+  std::int32_t const* source;
+  std::int64_t* destination;
+
+  __boba_host_device__ void operator()(index_t i) const
+  {
+    destination[i] = static_cast<std::int64_t>(source[i]);
+  }
+};
+
+/**
+ * @brief Owning cuSPARSE CSR descriptor with converted 32-bit indices.
+ *
+ * BoBa keeps CSR indices as signed 64-bit values, but some cuSPARSE SpGEMM
+ * implementations only support 32-bit index descriptors. The converted
+ * buffers remain alive for the lifetime of the descriptor and are copied back
+ * to the owning CSR matrix after SpGEMM completes.
+ */
+class cusparse_csr_descriptor_32
+{
+public:
+  template <typename A_view_t>
+  explicit cusparse_csr_descriptor_32(A_view_t const& A)
+      : m_column_indices({A.nnz()}),
+        m_row_offsets({A.rows() + 1})
+  {
+    constexpr auto max_index = static_cast<index_t>(std::numeric_limits<std::int32_t>::max());
+    boba_always_assert(A.rows() <= max_index, "cuSPARSE CSR rows exceed 32-bit index support");
+    boba_always_assert(A.cols() <= max_index, "cuSPARSE CSR columns exceed 32-bit index support");
+    boba_always_assert(A.nnz() <= max_index, "cuSPARSE CSR nonzeros exceed 32-bit index support");
+
+    auto column_indices = m_column_indices.view();
+    auto row_offsets = m_row_offsets.view();
+    const auto source_column_indices = A.column_indices_data();
+    const auto source_row_offsets = A.row_offsets_data();
+    ::boba::loop<::boba::execution_space::CUDA, 1>(
+      A.nnz(), csr_index_copy_to_32{source_column_indices, column_indices.data()});
+    ::boba::loop<::boba::execution_space::CUDA, 1>(
+      A.rows() + 1, csr_index_copy_to_32{source_row_offsets, row_offsets.data()});
+
+    using data_t = typename A_view_t::value_t;
+    cusparse_assert(cusparseCreateCsr(
+      &m_descriptor,
+      static_cast<int64_t>(A.rows()),
+      static_cast<int64_t>(A.cols()),
+      static_cast<int64_t>(A.nnz()),
+      m_row_offsets.data(),
+      m_column_indices.data(),
+      const_cast<data_t*>(A.values_data()),
+      CUSPARSE_INDEX_32I,
+      CUSPARSE_INDEX_32I,
+      CUSPARSE_INDEX_BASE_ZERO,
+      cuda_data_t_v<data_t>));
+  }
+
+  cusparse_csr_descriptor_32(cusparse_csr_descriptor_32 const&) = delete;
+  cusparse_csr_descriptor_32& operator=(cusparse_csr_descriptor_32 const&) = delete;
+
+  ~cusparse_csr_descriptor_32()
+  {
+    cusparse_assert(cusparseDestroySpMat(m_descriptor));
+  }
+
+  template <typename C_matrix_t>
+  void set_output_pointers(C_matrix_t& C)
+  {
+    m_column_indices.resize({C.nnz()});
+    cusparse_assert(cusparseCsrSetPointers(
+      m_descriptor,
+      m_row_offsets.data(),
+      m_column_indices.data(),
+      C.m_values.data()));
+  }
+
+  template <typename C_matrix_t>
+  void copy_indices_to(C_matrix_t& C) const
+  {
+    auto row_offsets = C.m_row_offsets.view();
+    auto column_indices = C.m_column_indices.view();
+    auto source_row_offsets = m_row_offsets.const_view();
+    auto source_column_indices = m_column_indices.const_view();
+    ::boba::loop<::boba::execution_space::CUDA, 1>(
+      C.rows() + 1, csr_index_copy_to_64{source_row_offsets.data(), row_offsets.data()});
+    ::boba::loop<::boba::execution_space::CUDA, 1>(
+      C.nnz(), csr_index_copy_to_64{source_column_indices.data(), column_indices.data()});
+  }
+
+  [[nodiscard]]
+  cusparseSpMatDescr_t get() const noexcept
+  {
+    return m_descriptor;
+  }
+
+private:
+  Vector<::boba::execution_space::CUDA, std::int32_t> m_column_indices;
+  Vector<::boba::execution_space::CUDA, std::int32_t> m_row_offsets;
   cusparseSpMatDescr_t m_descriptor = nullptr;
 };
 
@@ -300,10 +414,10 @@ void cusparse_spgemm(
   constexpr auto algorithm = CUSPARSE_SPGEMM_DEFAULT;
   constexpr auto compute_type = cuda_data_t_v<data_t>;
 
-  cusparse_csr_descriptor A_descriptor(A);
-  cusparse_csr_descriptor B_descriptor(B);
+  cusparse_csr_descriptor_32 A_descriptor(A);
+  cusparse_csr_descriptor_32 B_descriptor(B);
   auto C_view = C.view();
-  cusparse_csr_descriptor C_descriptor(C_view);
+  cusparse_csr_descriptor_32 C_descriptor(C_view);
 
   cusparseSpGEMMDescr_t spgemm_descriptor = nullptr;
   cusparse_assert(cusparseSpGEMM_createDescr(&spgemm_descriptor));
@@ -332,14 +446,12 @@ void cusparse_spgemm(
   cusparse_assert(cusparseSpMatGetSize(C_descriptor.get(), &rows, &cols, &nnz));
   C.m_values.resize(static_cast<index_t>(nnz));
   C.m_column_indices.resize(static_cast<index_t>(nnz));
-  auto values_view = C.m_values.view();
-  auto columns_view = C.m_column_indices.view();
-  auto offsets_view = C.m_row_offsets.view();
-  cusparse_assert(cusparseCsrSetPointers(C_descriptor.get(), offsets_view.data(), columns_view.data(), values_view.data()));
+  C_descriptor.set_output_pointers(C);
 
   cusparse_assert(cusparseSpGEMM_copy(
     cusparse_handle, operation, operation, &alpha, A_descriptor.get(), B_descriptor.get(), &beta, C_descriptor.get(),
     compute_type, algorithm, spgemm_descriptor));
+  C_descriptor.copy_indices_to(C);
   cusparse_assert(cusparseSpGEMM_destroyDescr(spgemm_descriptor));
 }
 

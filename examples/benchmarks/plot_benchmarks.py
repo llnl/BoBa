@@ -90,6 +90,11 @@ SPEEDUP_SERIES = (
     ("cpu-tpl", "gpu-tpl", "#377EB8", "TPL"),
     ("cpu", "gpu", "#377EB8", "CPU/GPU"),
 )
+TENSOR_SPEEDUP_SERIES = (
+    ("cpu-naive", "cpu-tpl", "#377EB8", "CPU naive / CPU TPL"),
+    ("cpu-naive", "gpu-naive", "#006D2C", "CPU naive / GPU naive"),
+    ("cpu-naive", "gpu-tpl", "#76B900", "CPU naive / GPU cuTENSOR"),
+)
 
 
 def parse_arguments():
@@ -354,7 +359,14 @@ def runtime_records(data):
     ]
 
 
-def plot_study(title, data, categories, output_path, time_axis_limits=None):
+def plot_study(
+    title,
+    data,
+    categories,
+    output_path,
+    time_axis_limits=None,
+    speedup_series=SPEEDUP_SERIES,
+):
     width = max(12.0, 0.42 * len(categories))
     figure, (time_axis, speedup_axis) = plt.subplots(
         2, 1, figsize=(width, 9), sharex=bool(categories), constrained_layout=True
@@ -396,11 +408,11 @@ def plot_study(title, data, categories, output_path, time_axis_limits=None):
 
         speedup_axis.axhline(1.0, color="black", linewidth=1, linestyle="--")
         plotted_speedups = False
-        for cpu_series, gpu_series, color, label in SPEEDUP_SERIES:
+        for numerator_series, denominator_series, color, label in speedup_series:
             paired = [
-                (index, data[category][cpu_series] / data[category][gpu_series])
+                (index, data[category][numerator_series] / data[category][denominator_series])
                 for index, category in enumerate(categories)
-                if cpu_series in data[category] and gpu_series in data[category]
+                if numerator_series in data[category] and denominator_series in data[category]
             ]
             if not paired:
                 continue
@@ -440,8 +452,8 @@ def plot_study(title, data, categories, output_path, time_axis_limits=None):
     )
     pair_count = sum(
         any(
-            cpu_series in data[category] and gpu_series in data[category]
-            for cpu_series, gpu_series, _, _ in SPEEDUP_SERIES
+            numerator_series in data[category] and denominator_series in data[category]
+            for numerator_series, denominator_series, _, _ in speedup_series
         )
         for category in categories
     )
@@ -513,7 +525,13 @@ def main():
         data, categories = parser(
             directory, arguments.warmups, arguments.samples, warnings
         )
-        plot_study(title, data, categories, output_path)
+        plot_study(
+            title,
+            data,
+            categories,
+            output_path,
+            speedup_series=TENSOR_SPEEDUP_SERIES if name == "tensors" else SPEEDUP_SERIES,
+        )
         runtime_data[name] = runtime_records(data)
 
     hostname = socket.gethostname()

@@ -348,11 +348,21 @@ CUTENSOR_INSTALL_DIR=/opt/software-current/2023.06/x86_64/generic/software/cuTEN
 endif
 
 ifdef BOBA_CUTENSOR
+ifeq ($(IS_VENADITO), vt-rfe) # LANL Venadito GH200
+	ifndef CUTENSOR_INSTALL_DIR
+		CUTENSOR_INSTALL_DIR=${VENADITO_CUDA_HOME}
+	endif
+endif
 INCLUDES := ${INCLUDES} -I${CUTENSOR_INSTALL_DIR}/include
 CXX_DEFINES := ${CXX_DEFINES} -DBOBA_CUTENSOR
 
 ifeq ($(IS_MATRIX), matrix) # matrix
 CUTENSOR_LIBS = -L${CUTENSOR_INSTALL_DIR}/lib -Xlinker -rpath=${CUTENSOR_INSTALL_DIR} -lcutensor
+endif
+ifeq ($(IS_VENADITO), vt-rfe) # LANL Venadito GH200
+CUTENSOR_LIBS = -L${CUTENSOR_INSTALL_DIR}/lib -L${CUTENSOR_INSTALL_DIR}/lib64 \
+	-Xlinker -rpath=${CUTENSOR_INSTALL_DIR}/lib \
+	-Xlinker -rpath=${CUTENSOR_INSTALL_DIR}/lib64 -lcutensor
 endif
 
 CUDA_LIBS := ${CUDA_LIBS} ${CUTENSOR_LIBS}

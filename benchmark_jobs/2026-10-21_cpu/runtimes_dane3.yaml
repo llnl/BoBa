@@ -11,1020 +11,1083 @@ runtimes:
 
       qr'
     series: cpu
-    runtime_ms: 31.050599999999996
+    runtime_ms: 31.900599999999997
   - category: '2000x200
 
       ones
 
       qr'
     series: gpu
-    runtime_ms: 1.9533999999999998
+    runtime_ms: 2.0676
   - category: '2000x200
 
       ones
 
       svd'
     series: cpu
-    runtime_ms: 38.866200000000006
+    runtime_ms: 39.251400000000004
   - category: '2000x200
 
       ones
 
       svd'
     series: gpu
-    runtime_ms: 12.662600000000001
+    runtime_ms: 13.608799999999999
   - category: '2000x200
 
       ones
 
       randomized_svd'
     series: cpu
-    runtime_ms: 62.2186
+    runtime_ms: 62.8586
   - category: '2000x200
 
       ones
 
       randomized_svd'
     series: gpu
-    runtime_ms: 17.910800000000002
+    runtime_ms: 19.253999999999998
   - category: '2000x200
 
       identity
 
       qr'
     series: cpu
-    runtime_ms: 29.587400000000002
+    runtime_ms: 29.912200000000002
   - category: '2000x200
 
       identity
 
       qr'
     series: gpu
-    runtime_ms: 1.4388
+    runtime_ms: 1.4674
   - category: '2000x200
 
       identity
 
       svd'
     series: cpu
-    runtime_ms: 37.2786
+    runtime_ms: 39.8328
   - category: '2000x200
 
       identity
 
       svd'
     series: gpu
-    runtime_ms: 10.595400000000001
+    runtime_ms: 11.410599999999999
   - category: '2000x200
 
       identity
 
       randomized_svd'
     series: cpu
-    runtime_ms: 78.2044
+    runtime_ms: 78.9622
   - category: '2000x200
 
       identity
 
       randomized_svd'
     series: gpu
-    runtime_ms: 13.4318
+    runtime_ms: 14.7152
   - category: '2000x200
 
       hilbert
 
       qr'
     series: cpu
-    runtime_ms: 33.2252
+    runtime_ms: 33.513999999999996
   - category: '2000x200
 
       hilbert
 
       qr'
     series: gpu
-    runtime_ms: 1.5702
+    runtime_ms: 1.61
   - category: '2000x200
 
       hilbert
 
       svd'
     series: cpu
-    runtime_ms: 43.3318
+    runtime_ms: 43.8528
   - category: '2000x200
 
       hilbert
 
       svd'
     series: gpu
-    runtime_ms: 17.541
+    runtime_ms: 18.5954
   - category: '2000x200
 
       hilbert
 
       randomized_svd'
     series: cpu
-    runtime_ms: 68.07180000000001
+    runtime_ms: 69.1526
   - category: '2000x200
 
       hilbert
 
       randomized_svd'
     series: gpu
-    runtime_ms: 17.4942
+    runtime_ms: 18.807
   - category: '2000x200
 
       vandermonde
 
       qr'
     series: cpu
-    runtime_ms: 56.6478
+    runtime_ms: 59.4236
   - category: '2000x200
 
       vandermonde
 
       qr'
     series: gpu
-    runtime_ms: 1.5896000000000001
+    runtime_ms: 1.597
   - category: '2000x200
 
       vandermonde
 
       svd'
     series: cpu
-    runtime_ms: 58.8322
+    runtime_ms: 59.053
   - category: '2000x200
 
       vandermonde
 
       svd'
     series: gpu
-    runtime_ms: 14.9278
+    runtime_ms: 15.945400000000001
   - category: '2000x200
 
       vandermonde
 
       randomized_svd'
     series: cpu
-    runtime_ms: 108.564
+    runtime_ms: 109.6242
   - category: '2000x200
 
       vandermonde
 
       randomized_svd'
     series: gpu
-    runtime_ms: 15.3738
+    runtime_ms: 16.5362
   - category: '2000x200
 
       laplacian
 
       qr'
     series: cpu
-    runtime_ms: 33.306
+    runtime_ms: 33.5292
   - category: '2000x200
 
       laplacian
 
       qr'
     series: gpu
-    runtime_ms: 1.5764
+    runtime_ms: 1.6434000000000002
   - category: '2000x200
 
       laplacian
 
       svd'
     series: cpu
-    runtime_ms: 47.416199999999996
+    runtime_ms: 47.835
   - category: '2000x200
 
       laplacian
 
       svd'
     series: gpu
-    runtime_ms: 17.6596
+    runtime_ms: 18.663800000000002
   - category: '2000x200
 
       laplacian
 
       randomized_svd'
     series: cpu
-    runtime_ms: 84.3584
+    runtime_ms: 84.8322
   - category: '2000x200
 
       laplacian
 
       randomized_svd'
     series: gpu
-    runtime_ms: 18.9074
+    runtime_ms: 20.0278
   - category: '2000x200
 
       derivative
 
       qr'
     series: cpu
-    runtime_ms: 33.2456
+    runtime_ms: 33.5426
   - category: '2000x200
 
       derivative
 
       qr'
     series: gpu
-    runtime_ms: 1.5676
+    runtime_ms: 1.6384
   - category: '2000x200
 
       derivative
 
       svd'
     series: cpu
-    runtime_ms: 48.5754
+    runtime_ms: 51.272800000000004
   - category: '2000x200
 
       derivative
 
       svd'
     series: gpu
-    runtime_ms: 18.9876
+    runtime_ms: 19.836199999999998
   - category: '2000x200
 
       derivative
 
       randomized_svd'
     series: cpu
-    runtime_ms: 84.825
+    runtime_ms: 85.8232
   - category: '2000x200
 
       derivative
 
       randomized_svd'
     series: gpu
-    runtime_ms: 20.326600000000003
+    runtime_ms: 21.563200000000002
   - category: '2000x200
 
       low_rank_vandermonde
 
       qr'
     series: cpu
-    runtime_ms: 33.3494
+    runtime_ms: 33.6202
   - category: '2000x200
 
       low_rank_vandermonde
 
       qr'
     series: gpu
-    runtime_ms: 1.568
+    runtime_ms: 1.6461999999999999
   - category: '2000x200
 
       low_rank_vandermonde
 
       svd'
     series: cpu
-    runtime_ms: 43.189
+    runtime_ms: 43.5032
   - category: '2000x200
 
       low_rank_vandermonde
 
       svd'
     series: gpu
-    runtime_ms: 16.4146
+    runtime_ms: 17.399
   - category: '2000x200
 
       low_rank_vandermonde
 
       randomized_svd'
     series: cpu
-    runtime_ms: 67.41720000000001
+    runtime_ms: 70.7538
   - category: '2000x200
 
       low_rank_vandermonde
 
       randomized_svd'
     series: gpu
-    runtime_ms: 17.1494
+    runtime_ms: 18.0984
   - category: '200x2000
 
       ones
 
       qr'
     series: cpu
-    runtime_ms: 14.4696
+    runtime_ms: 14.6084
   - category: '200x2000
 
       ones
 
       qr'
     series: gpu
-    runtime_ms: 1.7396
+    runtime_ms: 1.8010000000000002
   - category: '200x2000
 
       ones
 
       svd'
     series: cpu
-    runtime_ms: 40.1748
+    runtime_ms: 40.39
   - category: '200x2000
 
       ones
 
       svd'
     series: gpu
-    runtime_ms: 13.0962
+    runtime_ms: 13.645
   - category: '200x2000
 
       ones
 
       randomized_svd'
     series: cpu
-    runtime_ms: 70.337
+    runtime_ms: 71.18879999999999
   - category: '200x2000
 
       ones
 
       randomized_svd'
     series: gpu
-    runtime_ms: 18.3084
+    runtime_ms: 19.418799999999997
   - category: '200x2000
 
       identity
 
       qr'
     series: cpu
-    runtime_ms: 14.3262
+    runtime_ms: 14.4738
   - category: '200x2000
 
       identity
 
       qr'
     series: gpu
-    runtime_ms: 1.4806000000000001
+    runtime_ms: 1.5604
   - category: '200x2000
 
       identity
 
       svd'
     series: cpu
-    runtime_ms: 38.323
+    runtime_ms: 38.4644
   - category: '200x2000
 
       identity
 
       svd'
     series: gpu
-    runtime_ms: 10.996
+    runtime_ms: 11.6648
   - category: '200x2000
 
       identity
 
       randomized_svd'
     series: cpu
-    runtime_ms: 73.9128
+    runtime_ms: 75.27680000000001
   - category: '200x2000
 
       identity
 
       randomized_svd'
     series: gpu
-    runtime_ms: 13.9068
+    runtime_ms: 14.877199999999998
   - category: '200x2000
 
       hilbert
 
       qr'
     series: cpu
-    runtime_ms: 14.6554
+    runtime_ms: 14.942400000000001
   - category: '200x2000
 
       hilbert
 
       qr'
     series: gpu
-    runtime_ms: 1.5528
+    runtime_ms: 1.5752
   - category: '200x2000
 
       hilbert
 
       svd'
     series: cpu
-    runtime_ms: 44.443200000000004
+    runtime_ms: 43.9162
   - category: '200x2000
 
       hilbert
 
       svd'
     series: gpu
-    runtime_ms: 17.9506
+    runtime_ms: 18.678199999999997
   - category: '200x2000
 
       hilbert
 
       randomized_svd'
     series: cpu
-    runtime_ms: 73.1188
+    runtime_ms: 73.7312
   - category: '200x2000
 
       hilbert
 
       randomized_svd'
     series: gpu
-    runtime_ms: 17.8318
+    runtime_ms: 18.718600000000002
   - category: '200x2000
 
       vandermonde
 
       qr'
     series: cpu
-    runtime_ms: 30.5288
+    runtime_ms: 30.808
   - category: '200x2000
 
       vandermonde
 
       qr'
     series: gpu
-    runtime_ms: 1.5277999999999998
+    runtime_ms: 1.6056000000000001
   - category: '200x2000
 
       vandermonde
 
       svd'
     series: cpu
-    runtime_ms: 44.6958
+    runtime_ms: 47.0986
   - category: '200x2000
 
       vandermonde
 
       svd'
     series: gpu
-    runtime_ms: 16.7474
+    runtime_ms: 17.4594
   - category: '200x2000
 
       vandermonde
 
       randomized_svd'
     series: cpu
-    runtime_ms: 76.6354
+    runtime_ms: 77.5444
   - category: '200x2000
 
       vandermonde
 
       randomized_svd'
     series: gpu
-    runtime_ms: 17.115199999999998
+    runtime_ms: 18.0362
   - category: '200x2000
 
       laplacian
 
       qr'
     series: cpu
-    runtime_ms: 14.5808
+    runtime_ms: 14.810599999999999
   - category: '200x2000
 
       laplacian
 
       qr'
     series: gpu
-    runtime_ms: 1.5246
+    runtime_ms: 1.5814
   - category: '200x2000
 
       laplacian
 
       svd'
     series: cpu
-    runtime_ms: 48.7562
+    runtime_ms: 48.9208
   - category: '200x2000
 
       laplacian
 
       svd'
     series: gpu
-    runtime_ms: 18.127200000000002
+    runtime_ms: 18.689
   - category: '200x2000
 
       laplacian
 
       randomized_svd'
     series: cpu
-    runtime_ms: 79.765
+    runtime_ms: 81.44200000000001
   - category: '200x2000
 
       laplacian
 
       randomized_svd'
     series: gpu
-    runtime_ms: 19.3804
+    runtime_ms: 20.2164
   - category: '200x2000
 
       derivative
 
       qr'
     series: cpu
-    runtime_ms: 14.6208
+    runtime_ms: 14.800999999999998
   - category: '200x2000
 
       derivative
 
       qr'
     series: gpu
-    runtime_ms: 1.5222
+    runtime_ms: 1.5644
   - category: '200x2000
 
       derivative
 
       svd'
     series: cpu
-    runtime_ms: 45.119600000000005
+    runtime_ms: 45.217400000000005
   - category: '200x2000
 
       derivative
 
       svd'
     series: gpu
-    runtime_ms: 19.206
+    runtime_ms: 19.8844
   - category: '200x2000
 
       derivative
 
       randomized_svd'
     series: cpu
-    runtime_ms: 79.4556
+    runtime_ms: 82.9992
   - category: '200x2000
 
       derivative
 
       randomized_svd'
     series: gpu
-    runtime_ms: 20.8162
+    runtime_ms: 21.4404
   - category: '200x2000
 
       low_rank_vandermonde
 
       qr'
     series: cpu
-    runtime_ms: 14.8136
+    runtime_ms: 16.2852
   - category: '200x2000
 
       low_rank_vandermonde
 
       qr'
     series: gpu
-    runtime_ms: 1.5292
+    runtime_ms: 1.5754
   - category: '200x2000
 
       low_rank_vandermonde
 
       svd'
     series: cpu
-    runtime_ms: 43.6176
+    runtime_ms: 43.9998
   - category: '200x2000
 
       low_rank_vandermonde
 
       svd'
     series: gpu
-    runtime_ms: 17.302
+    runtime_ms: 18.0354
   - category: '200x2000
 
       low_rank_vandermonde
 
       randomized_svd'
     series: cpu
-    runtime_ms: 73.07820000000001
+    runtime_ms: 74.0716
   - category: '200x2000
 
       low_rank_vandermonde
 
       randomized_svd'
     series: gpu
-    runtime_ms: 17.8254
+    runtime_ms: 18.6476
   - category: '600x600
 
       ones
 
       qr'
     series: cpu
-    runtime_ms: 50.9942
+    runtime_ms: 52.206999999999994
   - category: '600x600
 
       ones
 
       qr'
     series: gpu
-    runtime_ms: 3.5564
+    runtime_ms: 3.5432
   - category: '600x600
 
       ones
 
       svd'
     series: cpu
-    runtime_ms: 151.07080000000002
+    runtime_ms: 155.13979999999998
   - category: '600x600
 
       ones
 
       svd'
     series: gpu
-    runtime_ms: 32.0538
+    runtime_ms: 31.5074
   - category: '600x600
 
       ones
 
       randomized_svd'
     series: cpu
-    runtime_ms: 269.4944
+    runtime_ms: 284.1218
   - category: '600x600
 
       ones
 
       randomized_svd'
     series: gpu
-    runtime_ms: 54.6386
+    runtime_ms: 53.532000000000004
   - category: '600x600
 
       identity
 
       qr'
     series: cpu
-    runtime_ms: 48.885000000000005
+    runtime_ms: 50.011199999999995
   - category: '600x600
 
       identity
 
       qr'
     series: gpu
-    runtime_ms: 2.7272
+    runtime_ms: 2.7052
   - category: '600x600
 
       identity
 
       svd'
     series: cpu
-    runtime_ms: 153.2256
+    runtime_ms: 156.8696
   - category: '600x600
 
       identity
 
       svd'
     series: gpu
-    runtime_ms: 27.727999999999998
-  - category: '600x600
-
-      identity
-
-      lu'
-    series: cpu
-    runtime_ms: 10.2464
+    runtime_ms: 27.302
   - category: '600x600
 
       identity
 
       lu'
+    series: cpu
+    runtime_ms: 10.4134
+  - category: '600x600
+
+      identity
+
+      lu'
     series: gpu
-    runtime_ms: 1.7064
+    runtime_ms: 1.6978000000000002
   - category: '600x600
 
       identity
 
       lu_full'
     series: cpu
-    runtime_ms: 35.181200000000004
+    runtime_ms: 42.7178
   - category: '600x600
 
       identity
 
       cholesky'
     series: cpu
-    runtime_ms: 5.0116
+    runtime_ms: 5.099600000000001
   - category: '600x600
 
       identity
 
       cholesky'
     series: gpu
-    runtime_ms: 0.5056
+    runtime_ms: 0.49420000000000003
   - category: '600x600
 
       identity
 
       randomized_svd'
     series: cpu
-    runtime_ms: 295.9348
+    runtime_ms: 306.4854
   - category: '600x600
 
       identity
 
       randomized_svd'
     series: gpu
-    runtime_ms: 40.2398
+    runtime_ms: 39.632400000000004
   - category: '600x600
 
       hilbert
 
       qr'
     series: cpu
-    runtime_ms: 50.8648
+    runtime_ms: 51.9428
   - category: '600x600
 
       hilbert
 
       qr'
     series: gpu
-    runtime_ms: 2.9294
+    runtime_ms: 2.9036
   - category: '600x600
 
       hilbert
 
       svd'
     series: cpu
-    runtime_ms: 171.9348
+    runtime_ms: 178.0562
   - category: '600x600
 
       hilbert
 
       svd'
     series: gpu
-    runtime_ms: 54.6312
+    runtime_ms: 53.708000000000006
   - category: '600x600
 
       hilbert
 
       randomized_svd'
     series: cpu
-    runtime_ms: 285.9482
+    runtime_ms: 297.48560000000003
   - category: '600x600
 
       hilbert
 
       randomized_svd'
     series: gpu
-    runtime_ms: 64.56960000000001
+    runtime_ms: 63.4436
   - category: '600x600
 
       vandermonde
 
       qr'
     series: cpu
-    runtime_ms: 103.5098
+    runtime_ms: 105.4078
   - category: '600x600
 
       vandermonde
 
       qr'
     series: gpu
-    runtime_ms: 2.9312
+    runtime_ms: 2.908
   - category: '600x600
 
       vandermonde
 
       svd'
     series: cpu
-    runtime_ms: 177.2994
+    runtime_ms: 181.98600000000002
   - category: '600x600
 
       vandermonde
 
       svd'
     series: gpu
-    runtime_ms: 52.181200000000004
+    runtime_ms: 51.28439999999999
   - category: '600x600
 
       vandermonde
 
       randomized_svd'
     series: cpu
-    runtime_ms: 355.4102
+    runtime_ms: 370.844
   - category: '600x600
 
       vandermonde
 
       randomized_svd'
     series: gpu
-    runtime_ms: 50.135000000000005
+    runtime_ms: 49.2358
   - category: '600x600
 
       laplacian
 
       qr'
     series: cpu
-    runtime_ms: 50.8934
+    runtime_ms: 52.93679999999999
   - category: '600x600
 
       laplacian
 
       qr'
     series: gpu
-    runtime_ms: 2.9286000000000003
+    runtime_ms: 2.9046
   - category: '600x600
 
       laplacian
 
       svd'
     series: cpu
-    runtime_ms: 208.5788
+    runtime_ms: 216.1868
   - category: '600x600
 
       laplacian
 
       svd'
     series: gpu
-    runtime_ms: 60.74059999999999
+    runtime_ms: 59.684400000000004
   - category: '600x600
 
       laplacian
 
       lu'
     series: cpu
-    runtime_ms: 10.2498
+    runtime_ms: 10.5756
   - category: '600x600
 
       laplacian
 
       lu'
     series: gpu
-    runtime_ms: 1.7138000000000002
+    runtime_ms: 1.6995999999999998
   - category: '600x600
 
       laplacian
 
       lu_full'
     series: cpu
-    runtime_ms: 35.3096
+    runtime_ms: 43.8666
   - category: '600x600
 
       laplacian
 
       cholesky'
     series: cpu
-    runtime_ms: 5.0161999999999995
+    runtime_ms: 5.1814
   - category: '600x600
 
       laplacian
 
       cholesky'
     series: gpu
-    runtime_ms: 0.5054000000000001
+    runtime_ms: 0.49820000000000003
   - category: '600x600
 
       laplacian
 
       randomized_svd'
     series: cpu
-    runtime_ms: 345.7232
+    runtime_ms: 353.64939999999996
   - category: '600x600
 
       laplacian
 
       randomized_svd'
     series: gpu
-    runtime_ms: 68.3322
+    runtime_ms: 67.1588
   - category: '600x600
 
       derivative
 
       qr'
     series: cpu
-    runtime_ms: 50.886
+    runtime_ms: 51.9982
   - category: '600x600
 
       derivative
 
       qr'
     series: gpu
-    runtime_ms: 2.9262
+    runtime_ms: 2.9062
   - category: '600x600
 
       derivative
 
       svd'
     series: cpu
-    runtime_ms: 217.2428
+    runtime_ms: 227.37780000000004
   - category: '600x600
 
       derivative
 
       svd'
     series: gpu
-    runtime_ms: 68.6328
+    runtime_ms: 67.485
   - category: '600x600
 
       derivative
 
       lu'
     series: cpu
-    runtime_ms: 10.2474
+    runtime_ms: 10.397200000000002
   - category: '600x600
 
       derivative
 
       lu'
     series: gpu
-    runtime_ms: 1.7772
+    runtime_ms: 1.7006000000000001
   - category: '600x600
 
       derivative
 
       lu_full'
     series: cpu
-    runtime_ms: 34.9178
+    runtime_ms: 42.614999999999995
   - category: '600x600
 
       derivative
 
       randomized_svd'
     series: cpu
-    runtime_ms: 357.32820000000004
+    runtime_ms: 368.121
   - category: '600x600
 
       derivative
 
       randomized_svd'
     series: gpu
-    runtime_ms: 76.4654
+    runtime_ms: 74.3964
   - category: '600x600
 
       low_rank_vandermonde
 
       qr'
     series: cpu
-    runtime_ms: 50.8772
+    runtime_ms: 51.583000000000006
   - category: '600x600
 
       low_rank_vandermonde
 
       qr'
     series: gpu
-    runtime_ms: 2.9324
+    runtime_ms: 2.9068
   - category: '600x600
 
       low_rank_vandermonde
 
       svd'
     series: cpu
-    runtime_ms: 171.61939999999998
+    runtime_ms: 177.7858
   - category: '600x600
 
       low_rank_vandermonde
 
       svd'
     series: gpu
-    runtime_ms: 53.7024
+    runtime_ms: 52.8318
   - category: '600x600
 
       low_rank_vandermonde
 
       randomized_svd'
     series: cpu
-    runtime_ms: 284.75239999999997
+    runtime_ms: 294.1968
   - category: '600x600
 
       low_rank_vandermonde
 
       randomized_svd'
     series: gpu
-    runtime_ms: 61.5948
+    runtime_ms: 60.612
   tensors:
   - category: contraction double
     series: cpu-naive
-    runtime_ms: 0.1712
+    runtime_ms: 4.328
   - category: contraction double
     series: cpu-tpl
-    runtime_ms: 0.040600000000000004
+    runtime_ms: 0.6306
   - category: contraction double
     series: gpu-naive
-    runtime_ms: 0.0262
+    runtime_ms: 0.11240000000000001
   - category: contraction double
     series: gpu-tpl
-    runtime_ms: 0.0264
+    runtime_ms: 0.11220000000000001
   - category: contraction single
     series: cpu-naive
-    runtime_ms: 0.33399999999999996
+    runtime_ms: 4.575
   - category: contraction single
     series: cpu-tpl
-    runtime_ms: 0.017
+    runtime_ms: 0.24379999999999996
   - category: contraction single
     series: gpu-naive
-    runtime_ms: 0.013000000000000001
+    runtime_ms: 0.0306
   - category: contraction single
     series: gpu-tpl
-    runtime_ms: 0.0128
+    runtime_ms: 0.0308
   - category: contraction triple
     series: cpu-naive
-    runtime_ms: 5.5286
+    runtime_ms: 351.2152
   - category: contraction triple
     series: cpu-tpl
-    runtime_ms: 1.5139999999999998
+    runtime_ms: 156.2646
   - category: contraction triple
     series: gpu-naive
-    runtime_ms: 0.3184
+    runtime_ms: 9.5958
   - category: contraction triple
     series: gpu-tpl
-    runtime_ms: 0.318
+    runtime_ms: 9.596599999999999
   - category: permutation 4d
     series: cpu-naive
-    runtime_ms: 24.863599999999998
+    runtime_ms: 62.143100000000004
   - category: permutation 4d
     series: cpu-tpl
-    runtime_ms: 12.2342
+    runtime_ms: 40.4113
   - category: permutation 4d
     series: gpu-naive
-    runtime_ms: 0.21509999999999999
+    runtime_ms: 0.33089999999999997
   - category: permutation 4d
     series: gpu-tpl
-    runtime_ms: 0.21539999999999998
-  sparse_dense_contractions: []
+    runtime_ms: 0.28469999999999995
+  sparse_dense_contractions:
+  - category: dense-dense
+    series: cpu
+    runtime_ms: 172.4363452
+  - category: '0.01%
+
+      dense-sparse'
+    series: cpu
+    runtime_ms: 74.4519174
+  - category: '0.01%
+
+      sparse-dense'
+    series: cpu
+    runtime_ms: 75.0675944
+  - category: '0.01%
+
+      sparse-sparse'
+    series: cpu
+    runtime_ms: 0.1175802
+  - category: '0.1%
+
+      dense-sparse'
+    series: cpu
+    runtime_ms: 86.0494294
+  - category: '0.1%
+
+      sparse-dense'
+    series: cpu
+    runtime_ms: 83.6512388
+  - category: '0.1%
+
+      sparse-sparse'
+    series: cpu
+    runtime_ms: 0.1367558
+  - category: '10%
+
+      dense-sparse'
+    series: cpu
+    runtime_ms: 1131.935398
+  - category: '10%
+
+      sparse-dense'
+    series: cpu
+    runtime_ms: 2347.971188
+  - category: '10%
+
+      sparse-sparse'
+    series: cpu
+    runtime_ms: 130.625013
+  - category: '1%
+
+      dense-sparse'
+    series: cpu
+    runtime_ms: 174.1357994
+  - category: '1%
+
+      sparse-dense'
+    series: cpu
+    runtime_ms: 287.0218514
+  - category: '1%
+
+      sparse-sparse'
+    series: cpu
+    runtime_ms: 2.1750612
