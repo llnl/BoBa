@@ -4,7 +4,6 @@
 
 #include <BOBA/boba.hpp>
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <iomanip>
 #include <iostream>
@@ -80,19 +79,20 @@ auto benchmark(contraction_t contraction, std::size_t repetitions)
   output_t output;
   volatile data_t checksum = 0.0;
 
-  const auto begin = std::chrono::steady_clock::now();
+  using timer_t = ::boba::TicToc<::boba::tictoc_units::microseconds>;
+  timer_t timer;
   for (std::size_t repetition = 0; repetition < repetitions; ++repetition)
   {
     output = contraction();
     const auto output_view = output.const_view();
     checksum = checksum + output_view(0) + output_view(output.size() / 2) + output_view(output.size() - 1);
   }
-  const auto end = std::chrono::steady_clock::now();
+  const auto elapsed_microseconds = static_cast<double>(timer.timing());
 
   std::cout << "  checksum: " << checksum << std::endl;
   return benchmark_result<output_t>{
     std::move(output),
-    std::chrono::duration<double, std::milli>(end - begin).count() / static_cast<double>(repetitions)};
+    timer_t::convert<::boba::tictoc_units::microseconds, ::boba::tictoc_units::milliseconds>(elapsed_microseconds) / static_cast<double>(repetitions)};
 }
 
 void test_small_mixed_contractions(bool& check)
