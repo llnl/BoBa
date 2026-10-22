@@ -281,7 +281,7 @@ def parse_key_values(line):
 def parse_sparse_dense(directory, warmups, samples, warnings):
     data = defaultdict(dict)
     order = {}
-    operation_order = {"dense-sparse": 0, "sparse-dense": 1}
+    operation_order = {"dense-sparse": 0, "sparse-dense": 1, "sparse-sparse": 2}
     dense_dense_category = "dense-dense"
 
     for path in sorted(directory.glob("sparse_dense_*.out")):
@@ -311,7 +311,10 @@ def parse_sparse_dense(directory, warmups, samples, warnings):
             for operation, field in (
                 ("dense-sparse", "dense_sparse_ms"),
                 ("sparse-dense", "sparse_dense_ms"),
+                ("sparse-sparse", "sparse_sparse_ms"),
             ):
+                if field not in record:
+                    continue
                 category = f"{sparsity:g}%\n{operation}"
                 data[category][variant] = float(record[field])
                 order[category] = (sparsity, operation_order[operation])

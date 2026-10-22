@@ -210,7 +210,7 @@ void benchmark_large_mixed_contractions(
     };
     const auto sparse_sparse = [&]()
     {
-      return ::boba::tensor_contraction<1, ::boba::host_space, 4, 3, data_t>(
+      return ::boba::tensor_contraction<1, ::boba::host_space, 3, 2, data_t>(
         sparse_A, sparse_B, contraction_dimensions_A, contraction_dimensions_B);
     };
 

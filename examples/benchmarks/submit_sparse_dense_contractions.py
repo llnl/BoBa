@@ -6,7 +6,7 @@ from _submit import make_parser, positive_integer, submit_jobs
 
 def main():
     parser = make_parser(
-        "Submit sparse/dense contraction benchmarks across sparsity levels.",
+        "Submit mixed sparse/dense and sparse/sparse contraction benchmarks across sparsity levels.",
         "benchmark_sparse_dense_contractions",
         "sparse_dense_contractions",
     )

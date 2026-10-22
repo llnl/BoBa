@@ -165,7 +165,7 @@ contraction over the final five repetitions; the preceding repetitions are
 warmups:
 
 ```text
-MIXED_TIMING sparsity=<fraction> sparsity_percent=<percent> mode_size=100 repetitions=10 warmup_repetitions=5 measured_repetitions=5 dense_dense_ms=<time> dense_sparse_ms=<time> sparse_dense_ms=<time> sparse_A_nnz=<count> sparse_B_nnz=<count>
+MIXED_TIMING sparsity=<fraction> sparsity_percent=<percent> mode_size=100 repetitions=10 warmup_repetitions=5 measured_repetitions=5 dense_dense_ms=<time> dense_sparse_ms=<time> sparse_dense_ms=<time> sparse_sparse_ms=<time> sparse_A_nnz=<count> sparse_B_nnz=<count>
 ```
 
 Extract only these records when creating a table:
@@ -175,7 +175,7 @@ rg '^MIXED_TIMING ' benchmark_jobs/2026-10-21_cpu/sparse_dense_contractions
 ```
 
 Use the key/value names from the record as table columns. Plot
-`sparsity_percent` on a logarithmic x-axis and the three `*_ms` fields as
+`sparsity_percent` on a logarithmic x-axis and the four `*_ms` fields as
 separate timing series. Keep the nonzero counts in the processed data so the
 requested sparsity can be checked against the realized tensors.
 
