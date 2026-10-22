@@ -6,14 +6,14 @@ from _submit import make_parser, positive_integer, submit_jobs
 
 def main():
     parser = make_parser(
-        "Submit the large linear-algebra benchmark matrix shapes.",
+        "Submit the linear-algebra benchmark matrix shapes.",
         "benchmark_linear_algebra",
         "linear_algebra",
     )
     parser.add_argument("--repetitions", type=positive_integer, default=10)
     arguments = parser.parse_args()
 
-    shapes = ((1000, 10000), (10000, 1000), (3000, 3000))
+    shapes = ((2000, 200), (200, 2000), (600, 600))
     jobs = []
     for rows, columns in shapes:
         jobs.append(

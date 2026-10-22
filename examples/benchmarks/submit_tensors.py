@@ -6,7 +6,7 @@ from _submit import make_parser, positive_integer, submit_jobs
 
 def main():
     parser = make_parser(
-        "Submit representative tensor permutation, reduction, and contraction benchmarks.",
+        "Submit representative tensor permutation and contraction benchmarks.",
         "benchmark_tensors",
         "tensors",
     )
@@ -16,11 +16,7 @@ def main():
     arguments = parser.parse_args()
 
     kernels = (
-        ("permutation_2d", 1, 5),
         ("permutation_4d", 2, 5),
-        ("reduction_einsum", 3, 5),
-        ("reduction_single", 5, 5),
-        ("reduction_double", 7, 5),
         ("contraction_single", 9, 2),
         ("contraction_double", 11, 4),
         ("contraction_triple", 13, 3),

@@ -55,11 +55,13 @@ def submit_jobs(arguments, jobs):
     if not executable.is_file():
         raise FileNotFoundError(f"Build the benchmark first; executable not found: {executable}")
 
+    machine, _, _ = get_machine()
     output_directory = arguments.output_dir.resolve()
     output_directory.mkdir(parents=True, exist_ok=True)
 
     for job_name, benchmark_arguments in jobs:
-        output_file = output_directory / f"{job_name}.out"
+        result_name = f"{job_name}_gpu" if machine == "matrix" else job_name
+        output_file = output_directory / f"{result_name}.out"
         benchmark_command = [str(executable), *benchmark_arguments]
         submit_command = [
             "sbatch",
@@ -68,7 +70,7 @@ def submit_jobs(arguments, jobs):
             "--cpus-per-task=1",
             f"--time={arguments.time}",
             "--open-mode=truncate",
-            f"--job-name={job_name}",
+            f"--job-name={result_name}",
             f"--output={output_file}",
             f"--chdir={REPOSITORY_ROOT}",
         ]
@@ -76,6 +78,8 @@ def submit_jobs(arguments, jobs):
             submit_command.append(f"--partition={arguments.partition}")
         if arguments.account:
             submit_command.append(f"--account={arguments.account}")
+        if machine == "matrix":
+            submit_command.extend(["--gpus", "1"])
         submit_command.extend(["--wrap", shlex.join(benchmark_command)])
 
         print(shlex.join(submit_command), flush=True)

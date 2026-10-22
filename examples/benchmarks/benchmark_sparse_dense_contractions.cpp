@@ -3,6 +3,7 @@
 #include "../tests/common.hpp"
 
 #include <BOBA/boba.hpp>
+#include <algorithm>
 #include <chrono>
 #include <iomanip>
 #include <iostream>
@@ -75,20 +76,27 @@ auto benchmark(contraction_t contraction, std::size_t repetitions)
   using output_t = std::remove_cvref_t<decltype(contraction())>;
   output_t output;
   volatile data_t checksum = 0.0;
+  const std::size_t measured_repetitions = std::min<std::size_t>(5, repetitions);
+  const std::size_t warmup_repetitions = repetitions - measured_repetitions;
+  double measured_milliseconds = 0.0;
 
-  const auto begin = std::chrono::steady_clock::now();
   for (std::size_t repetition = 0; repetition < repetitions; ++repetition)
   {
+    const auto begin = std::chrono::steady_clock::now();
     output = contraction();
+    const auto end = std::chrono::steady_clock::now();
     const auto output_view = output.const_view();
     checksum = checksum + output_view(0) + output_view(output.size() / 2) + output_view(output.size() - 1);
+    if (repetition >= warmup_repetitions)
+    {
+      measured_milliseconds += std::chrono::duration<double, std::milli>(end - begin).count();
+    }
   }
-  const auto end = std::chrono::steady_clock::now();
 
   std::cout << "  checksum: " << checksum << std::endl;
   return benchmark_result<output_t>{
     std::move(output),
-    std::chrono::duration<double, std::milli>(end - begin).count() / static_cast<double>(repetitions)};
+    measured_milliseconds / static_cast<double>(measured_repetitions)};
 }
 
 void test_small_mixed_contractions(bool& check)
@@ -215,6 +223,8 @@ void benchmark_large_mixed_contractions(
               << " sparsity_percent=" << 100.0 * sparsity
               << " mode_size=" << mode_size
               << " repetitions=" << repetitions
+              << " warmup_repetitions=" << repetitions - std::min<std::size_t>(5, repetitions)
+              << " measured_repetitions=" << std::min<std::size_t>(5, repetitions)
               << " dense_dense_ms=" << dense_dense_result.milliseconds
               << " dense_sparse_ms=" << dense_sparse_result.milliseconds
               << " sparse_dense_ms=" << sparse_dense_result.milliseconds
