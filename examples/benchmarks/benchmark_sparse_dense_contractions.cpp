@@ -164,16 +164,16 @@ void benchmark_large_mixed_contractions(
 {
   std::cout << "Benchmarking large mixed contractions across sparsities" << std::endl;
 
-  const ::boba::Array<::boba::index_t, 3> sizes_A{mode_size, mode_size, mode_size};
-  const ::boba::Array<::boba::index_t, 2> sizes_B{mode_size, mode_size};
-  const ::boba::Array<size_t, 1> contraction_dimensions_A{2};
+  const ::boba::Array<::boba::index_t, 4> sizes_A{mode_size, mode_size, mode_size, mode_size};
+  const ::boba::Array<::boba::index_t, 3> sizes_B{mode_size, mode_size, mode_size};
+  const ::boba::Array<size_t, 1> contraction_dimensions_A{3};
   const ::boba::Array<size_t, 1> contraction_dimensions_B{0};
   const auto dense_A = make_dense_test_tensor(sizes_A, 0);
   const auto dense_B = make_dense_test_tensor(sizes_B, 1);
 
   const auto dense_dense = [&]()
   {
-    return ::boba::tensor_contraction<1, ::boba::host_space, 3, 2, data_t>(
+    return ::boba::tensor_contraction<1, ::boba::host_space, 4, 3, data_t>(
       dense_A, dense_B, contraction_dimensions_A, contraction_dimensions_B);
   };
 
@@ -200,17 +200,17 @@ void benchmark_large_mixed_contractions(
 
     const auto sparse_dense = [&]()
     {
-      return ::boba::tensor_contraction<1, ::boba::host_space, 3, 2, data_t, true>(
+      return ::boba::tensor_contraction<1, ::boba::host_space, 4, 3, data_t, true>(
         sparse_A, dense_B, contraction_dimensions_A, contraction_dimensions_B);
     };
     const auto dense_sparse = [&]()
     {
-      return ::boba::tensor_contraction<1, ::boba::host_space, 3, 2, data_t, true>(
+      return ::boba::tensor_contraction<1, ::boba::host_space, 4, 3, data_t, true>(
         dense_A, sparse_B, contraction_dimensions_A, contraction_dimensions_B);
     };
     const auto sparse_sparse = [&]()
     {
-      return ::boba::tensor_contraction<1, ::boba::host_space, 3, 2, data_t>(
+      return ::boba::tensor_contraction<1, ::boba::host_space, 4, 3, data_t>(
         sparse_A, sparse_B, contraction_dimensions_A, contraction_dimensions_B);
     };
 
