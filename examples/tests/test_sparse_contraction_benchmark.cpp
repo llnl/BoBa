@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <iostream>
 #include <random>
+#include <sstream>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -168,69 +169,6 @@ void test_small_mixed_contractions(bool& check)
     ::boba::Array<std::string, 2>{"i", "k"});
   pass_or_fail(check, ::boba::norm_difference_inf(labeled_sparse_dense, dense_dense), 1.0e-14);
   pass_or_fail(check, ::boba::norm_difference_inf(labeled_dense_sparse, dense_dense), 1.0e-14);
-}
-
-/**
- * @brief Times naive sparse x dense and dense x sparse against dense x dense on 24^4 x 24^3 tensors at several sparsities.
- *
- * Enabled with `--sweep`; prints `MIXED_TIMING` lines and performs no checks.
- */
-void benchmark_large_mixed_contractions()
-{
-  std::cout << "Benchmarking large mixed contractions across sparsities" << std::endl;
-
-  const ::boba::Array<::boba::index_t, 4> sizes_A{24, 24, 24, 24};
-  const ::boba::Array<::boba::index_t, 3> sizes_B{24, 24, 24};
-  const ::boba::Array<size_t, 1> contraction_dimensions_A{3};
-  const ::boba::Array<size_t, 1> contraction_dimensions_B{0};
-  const auto dense_A = make_dense_test_tensor(sizes_A, 0);
-  const auto dense_B = make_dense_test_tensor(sizes_B, 1);
-
-  const auto dense_dense = [&]()
-  {
-    return ::boba::tensor_contraction<1, ::boba::host_space, 4, 3, data_t>(
-      dense_A, dense_B, contraction_dimensions_A, contraction_dimensions_B);
-  };
-
-  constexpr std::size_t repetitions = 5;
-  const auto dense_dense_result = benchmark(dense_dense, repetitions);
-  constexpr ::boba::index_t sparsity_periods[] = {10, 100, 1000, 10000};
-
-  for (const auto sparsity_period : sparsity_periods)
-  {
-    const auto sparse_source_A = make_sparsified_test_tensor(sizes_A, 0, sparsity_period);
-    const auto sparse_source_B = make_sparsified_test_tensor(sizes_B, 1, sparsity_period);
-    const auto sparse_A = ::boba::convert_to_SparseTensor(sparse_source_A, [](data_t value, auto)
-    {
-      return ::boba::abs(value) > 0.0;
-    });
-    const auto sparse_B = ::boba::convert_to_SparseTensor(sparse_source_B, [](data_t value, auto)
-    {
-      return ::boba::abs(value) > 0.0;
-    });
-
-    const auto sparse_dense = [&]()
-    {
-      return ::boba::tensor_contraction<1, ::boba::host_space, 4, 3, data_t, true>(
-        sparse_A, dense_B, contraction_dimensions_A, contraction_dimensions_B);
-    };
-    const auto dense_sparse = [&]()
-    {
-      return ::boba::tensor_contraction<1, ::boba::host_space, 4, 3, data_t, true>(
-        dense_A, sparse_B, contraction_dimensions_A, contraction_dimensions_B);
-    };
-
-    const auto sparse_dense_result = benchmark(sparse_dense, repetitions);
-    const auto dense_sparse_result = benchmark(dense_sparse, repetitions);
-    const double sparsity = 1.0 / static_cast<double>(sparsity_period);
-    std::cout << std::setprecision(10)
-              << "MIXED_TIMING sparsity=" << sparsity
-              << " dense_dense_ms=" << dense_dense_result.milliseconds
-              << " dense_sparse_ms=" << dense_sparse_result.milliseconds
-              << " sparse_dense_ms=" << sparse_dense_result.milliseconds
-              << " sparse_A_nnz=" << sparse_A.number_nonzeros()
-              << " sparse_B_nnz=" << sparse_B.number_nonzeros() << std::endl;
-  }
 }
 
 /**
@@ -435,6 +373,182 @@ void benchmark_random_contractions(::boba::index_t n, double density, std::size_
   benchmark_random_sparse_sparse_contraction<2, 4, 3>({n, n, n, n}, {n, n, n}, {1, 3}, {2, 0}, density, repetitions, check);
 }
 
+/**
+ * @brief Converts a host tensor to a sparse tensor that stores its nonzero entries.
+ */
+template <std::size_t dimension>
+::boba::SparseTensor<dimension, ::boba::host_space, data_t> sparsify(::boba::Tensor<dimension, ::boba::host_space, data_t> const& tensor)
+{
+  return ::boba::convert_to_SparseTensor(tensor, [](data_t value, auto)
+  {
+    return ::boba::abs(value) > 0.0;
+  });
+}
+
+/**
+ * @brief Times one einsum contraction across sparsity periods 10 to 10^4.
+ *
+ * Every sparse path is checked against dense x dense:
+ * - sparse x dense and dense x sparse, unfolded (SpMV/SpMM) vs naive
+ * - sparse x sparse, SpGEMM vs naive
+ *
+ * Naive sparse x sparse costs O(nnz_A * nnz_B) and is skipped above 1e8 pairs.
+ * When the default execution space is not the host, the unfolded sparse x dense
+ * and SpGEMM paths are also timed there. Prints `SWEEP_TIMING` lines.
+ */
+template <std::size_t contractions, std::size_t dimension_A, std::size_t dimension_B>
+void benchmark_labeled_sweep(::boba::Array<std::string, dimension_A> const& labels_A,
+                             ::boba::Array<::boba::index_t, dimension_A> sizes_A,
+                             ::boba::Array<std::string, dimension_B> const& labels_B,
+                             ::boba::Array<::boba::index_t, dimension_B> sizes_B,
+                             ::boba::Array<std::string, dimension_A + dimension_B - 2 * contractions> const& labels_C,
+                             std::size_t repetitions,
+                             bool& check)
+{
+  constexpr std::size_t dimension_C = dimension_A + dimension_B - 2 * contractions;
+  constexpr double max_naive_pairs = 1.0e8;
+  std::cout << "Benchmarking einsum sweep with " << contractions << " contracted mode(s)" << std::endl;
+
+  const auto dense_A = make_dense_test_tensor(sizes_A, 0);
+  const auto dense_B = make_dense_test_tensor(sizes_B, 1);
+  const auto dense_dense_result = benchmark([&]()
+  {
+    return ::boba::tensor_contraction<contractions, ::boba::host_space, dimension_A, dimension_B, data_t>(
+      labels_A, dense_A, labels_B, dense_B, labels_C);
+  }, repetitions);
+
+  constexpr ::boba::index_t sparsity_periods[] = {10, 100, 1000, 10000};
+  for (const auto sparsity_period : sparsity_periods)
+  {
+    const auto sparse_source_A = make_sparsified_test_tensor(sizes_A, 0, sparsity_period);
+    const auto sparse_source_B = make_sparsified_test_tensor(sizes_B, 1, sparsity_period);
+    const auto sparse_A = sparsify(sparse_source_A);
+    const auto sparse_B = sparsify(sparse_source_B);
+
+    // Each reference uses the same zero pattern as the sparse operands it checks.
+    const auto sparse_dense_expected = ::boba::tensor_contraction<contractions, ::boba::host_space, dimension_A, dimension_B, data_t>(
+      labels_A, sparse_source_A, labels_B, dense_B, labels_C);
+    const auto dense_sparse_expected = ::boba::tensor_contraction<contractions, ::boba::host_space, dimension_A, dimension_B, data_t>(
+      labels_A, dense_A, labels_B, sparse_source_B, labels_C);
+    const auto sparse_sparse_expected = ::boba::tensor_contraction<contractions, ::boba::host_space, dimension_A, dimension_B, data_t>(
+      labels_A, sparse_source_A, labels_B, sparse_source_B, labels_C);
+
+    const auto check_dense = [&](auto const& actual, auto const& expected)
+    {
+      const auto scale = std::max(1.0, ::boba::norm_inf(expected));
+      pass_or_fail(check, ::boba::norm_difference_inf(actual, expected) / scale, 1.0e-12);
+    };
+
+    const auto sparse_dense_result = benchmark([&]()
+    {
+      return ::boba::tensor_contraction<contractions, ::boba::host_space, dimension_A, dimension_B, data_t>(
+        labels_A, sparse_A, labels_B, dense_B, labels_C);
+    }, repetitions);
+    const auto sparse_dense_naive_result = benchmark([&]()
+    {
+      return ::boba::tensor_contraction<contractions, ::boba::host_space, dimension_A, dimension_B, data_t, true>(
+        labels_A, sparse_A, labels_B, dense_B, labels_C);
+    }, repetitions);
+    const auto dense_sparse_result = benchmark([&]()
+    {
+      return ::boba::tensor_contraction<contractions, ::boba::host_space, dimension_A, dimension_B, data_t>(
+        labels_A, dense_A, labels_B, sparse_B, labels_C);
+    }, repetitions);
+    const auto dense_sparse_naive_result = benchmark([&]()
+    {
+      return ::boba::tensor_contraction<contractions, ::boba::host_space, dimension_A, dimension_B, data_t, true>(
+        labels_A, dense_A, labels_B, sparse_B, labels_C);
+    }, repetitions);
+    const auto sparse_sparse_result = benchmark([&]()
+    {
+      return ::boba::tensor_contraction<contractions, ::boba::host_space, dimension_A, dimension_B, data_t>(
+        labels_A, sparse_A, labels_B, sparse_B, labels_C);
+    }, repetitions);
+
+    check_dense(sparse_dense_result.output, sparse_dense_expected);
+    check_dense(sparse_dense_naive_result.output, sparse_dense_expected);
+    check_dense(dense_sparse_result.output, dense_sparse_expected);
+    check_dense(dense_sparse_naive_result.output, dense_sparse_expected);
+    const auto sparse_sparse_dense = ::boba::to_dense(sparse_sparse_result.output);
+    check_dense(sparse_sparse_dense, sparse_sparse_expected);
+
+    const double naive_pairs = static_cast<double>(sparse_A.nnz()) * static_cast<double>(sparse_B.nnz());
+    std::string sparse_sparse_naive_ms = "skipped";
+    if (naive_pairs <= max_naive_pairs)
+    {
+      const auto sparse_sparse_naive_result = benchmark([&]()
+      {
+        return ::boba::tensor_contraction<contractions, ::boba::host_space, dimension_A, dimension_B, data_t, true>(
+          labels_A, sparse_A, labels_B, sparse_B, labels_C);
+      }, repetitions);
+      const auto sparse_sparse_naive_dense = ::boba::to_dense(sparse_sparse_naive_result.output);
+      check_dense(sparse_sparse_naive_dense, sparse_sparse_expected);
+      std::ostringstream milliseconds;
+      milliseconds << std::setprecision(10) << sparse_sparse_naive_result.milliseconds;
+      sparse_sparse_naive_ms = milliseconds.str();
+    }
+
+    std::cout << std::setprecision(10)
+              << "SWEEP_TIMING contractions=" << contractions
+              << " sparsity=" << 1.0 / static_cast<double>(sparsity_period)
+              << " nnz_A=" << sparse_A.nnz()
+              << " nnz_B=" << sparse_B.nnz()
+              << " dense_dense_ms=" << dense_dense_result.milliseconds
+              << " sparse_dense_ms=" << sparse_dense_result.milliseconds
+              << " sparse_dense_naive_ms=" << sparse_dense_naive_result.milliseconds
+              << " dense_sparse_ms=" << dense_sparse_result.milliseconds
+              << " dense_sparse_naive_ms=" << dense_sparse_naive_result.milliseconds
+              << " sparse_sparse_ms=" << sparse_sparse_result.milliseconds
+              << " sparse_sparse_naive_ms=" << sparse_sparse_naive_ms << std::endl;
+
+    if constexpr (device_space != ::boba::host_space)
+    {
+      const ::boba::SparseTensor<dimension_A, device_space, data_t> sparse_A_device(sparse_A);
+      const ::boba::SparseTensor<dimension_B, device_space, data_t> sparse_B_device(sparse_B);
+      const ::boba::Tensor<dimension_B, device_space, data_t> dense_B_device(dense_B);
+      const auto device_sparse_dense_result = benchmark([&]()
+      {
+        return ::boba::tensor_contraction<contractions, device_space, dimension_A, dimension_B, data_t>(
+          labels_A, sparse_A_device, labels_B, dense_B_device, labels_C);
+      }, repetitions);
+      const auto device_sparse_sparse_result = benchmark([&]()
+      {
+        return ::boba::tensor_contraction<contractions, device_space, dimension_A, dimension_B, data_t>(
+          labels_A, sparse_A_device, labels_B, sparse_B_device, labels_C);
+      }, repetitions);
+      const ::boba::Tensor<dimension_C, ::boba::host_space, data_t> device_sparse_dense(device_sparse_dense_result.output);
+      const ::boba::SparseTensor<dimension_C, ::boba::host_space, data_t> device_sparse_sparse(device_sparse_sparse_result.output);
+      const auto device_sparse_sparse_dense = ::boba::to_dense(device_sparse_sparse);
+      check_dense(device_sparse_dense, sparse_dense_expected);
+      check_dense(device_sparse_sparse_dense, sparse_sparse_expected);
+
+      std::cout << "DEVICE_SWEEP_TIMING contractions=" << contractions
+                << " sparsity=" << 1.0 / static_cast<double>(sparsity_period)
+                << " space=" << ::boba::detail::execution_space_name(device_space)
+                << " sparse_dense_ms=" << device_sparse_dense_result.milliseconds
+                << " sparse_sparse_ms=" << device_sparse_sparse_result.milliseconds << std::endl;
+    }
+  }
+}
+
+/**
+ * @brief Runs the `--sweep` einsum contractions with large modes of size \p n and small fixed modes.
+ *
+ * - `ijk,kl->ijl`: A {n, 32, n}, B {n, n}; one contracted mode.
+ * - `ijkl,ljm->ikm`: A {n, 16, 8, n}, B {n, 16, 32}; a non-adjacent pair, reversed in B.
+ *
+ * Peak memory is about 100 MB at n = 256.
+ */
+void benchmark_large_mixed_contractions(::boba::index_t n, std::size_t repetitions, bool& check)
+{
+  benchmark_labeled_sweep<1, 3, 2>({"i", "j", "k"}, {n, 32, n},
+                                   {"k", "l"}, {n, n},
+                                   {"i", "j", "l"}, repetitions, check);
+  benchmark_labeled_sweep<2, 4, 3>({"i", "j", "k", "l"}, {n, 16, 8, n},
+                                   {"l", "j", "m"}, {n, 16, 32},
+                                   {"i", "k", "m"}, repetitions, check);
+}
+
 } // namespace
 
 /**
@@ -451,6 +565,7 @@ int main(int argc, char* argv[])
   size_t mode_size = 8;
   size_t repetitions = 1;
   bool sweep = false;
+  size_t sweep_size = 256;
   bool check = true;
 
   ::boba::argparser args(argc, argv);
@@ -475,13 +590,18 @@ int main(int argc, char* argv[])
                              "--sweep",
                              "Also run the large periodic sparsity sweep.");
 
+  args.add_optional_argument(sweep_size,
+                             "-m",
+                             "--sweep_size",
+                             "Extent of the large modes in the sparsity sweep.");
+
   args.parse_check();
 
   test_small_mixed_contractions(check);
   benchmark_random_contractions(static_cast<::boba::index_t>(mode_size), density, repetitions, check);
   if (sweep)
   {
-    benchmark_large_mixed_contractions();
+    benchmark_large_mixed_contractions(static_cast<::boba::index_t>(sweep_size), repetitions, check);
   }
 
   boba::finalize();

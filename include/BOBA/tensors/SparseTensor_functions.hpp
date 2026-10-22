@@ -1100,9 +1100,9 @@ SparseTensor<(dimension_A + dimension_B) - 2 * contractions, space, data_t> tens
 /**
  * \brief Contracts a sparse tensor with a dense tensor using einsum labels.
  *
- * The result is dense and follows the requested \p labels_C ordering. The
- * host implementation traverses only explicitly stored sparse entries;
- * other execution spaces are not yet implemented.
+ * The result is dense and follows the requested \p labels_C ordering.
+ * Common labels are forwarded to the positional overload, so `force_naive`
+ * has the same meaning there.
  *
  * @param labels_A Labels describing the sparse left tensor modes.
  * @param tensor_A Sparse left tensor.
@@ -1121,7 +1121,6 @@ Tensor<(dimension_A + dimension_B) - 2 * contractions, space, data_t> tensor_con
   const Array<DimLabel_t, (dimension_A + dimension_B) - 2 * contractions>& labels_C)
 {
   BOBA_CALI_MARK
-  ::boba::detail::ignore(force_naive);
   auto common_labels = get_common_labels<contractions>(labels_A, labels_B);
   auto contraction_indices_A = get_label_indices(labels_A, common_labels);
   auto contraction_indices_B = get_label_indices(labels_B, common_labels);
@@ -1131,25 +1130,16 @@ Tensor<(dimension_A + dimension_B) - 2 * contractions, space, data_t> tensor_con
     tensor_B,
     contraction_indices_A,
     contraction_indices_B);
-  if constexpr (space == host_space)
-  {
-    permute(uncontracted_labels, output, labels_C);
-    return output;
-  }
-  else
-  {
-    ::boba::detail::ignore(labels_A, tensor_A, labels_B, tensor_B, labels_C);
-    boba_error("not yet implemented");
-    return {};
-  }
+  permute(uncontracted_labels, output, labels_C);
+  return output;
 }
 
 /**
  * \brief Contracts a dense tensor with a sparse tensor using einsum labels.
  *
- * The result is dense and follows the requested \p labels_C ordering. The
- * host implementation traverses only explicitly stored sparse entries;
- * other execution spaces are not yet implemented.
+ * The result is dense and follows the requested \p labels_C ordering.
+ * Common labels are forwarded to the positional overload, so `force_naive`
+ * has the same meaning there.
  *
  * @param labels_A Labels describing the dense left tensor modes.
  * @param tensor_A Dense left tensor.
@@ -1168,7 +1158,6 @@ Tensor<(dimension_A + dimension_B) - 2 * contractions, space, data_t> tensor_con
   const Array<DimLabel_t, (dimension_A + dimension_B) - 2 * contractions>& labels_C)
 {
   BOBA_CALI_MARK
-  ::boba::detail::ignore(force_naive);
   auto common_labels = get_common_labels<contractions>(labels_A, labels_B);
   auto contraction_indices_A = get_label_indices(labels_A, common_labels);
   auto contraction_indices_B = get_label_indices(labels_B, common_labels);
@@ -1178,17 +1167,8 @@ Tensor<(dimension_A + dimension_B) - 2 * contractions, space, data_t> tensor_con
     tensor_B,
     contraction_indices_A,
     contraction_indices_B);
-  if constexpr (space == host_space)
-  {
-    permute(uncontracted_labels, output, labels_C);
-    return output;
-  }
-  else
-  {
-    ::boba::detail::ignore(labels_A, tensor_A, labels_B, tensor_B, labels_C);
-    boba_error("not yet implemented");
-    return {};
-  }
+  permute(uncontracted_labels, output, labels_C);
+  return output;
 }
 
 /**
