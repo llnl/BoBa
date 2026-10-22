@@ -772,9 +772,10 @@ namespace detail
  * `[free modes of A..., free modes of B...]`, so no sort is needed.
  *
  * Entries with `abs(c) <= 1.1 * eps * norm_inf(A) * norm_inf(B)` are dropped,
- * then entries tiny relative to `norm_inf(C)`, matching the naive kernel. This global rule is a heuristic, similar to
- * Eigen's `pruned()`; it can drop genuine entries when stored values span
- * more than about `1 / eps`.
+ * then entries tiny relative to `norm_inf(C)`, matching the naive kernel.
+ * This global rule is a heuristic, similar to Eigen's `pruned()`; it can drop
+ * genuine entries when stored values span more than about `1 / eps`. Vendor
+ * SpGEMM itself drops nothing.
  */
 template <size_t contractions, execution_space space, size_t dimension_A, size_t dimension_B, typename data_t, bool force_naive = false>
 SparseTensor<(dimension_A + dimension_B) - 2 * contractions, space, data_t> sparse_sparse_contraction_unfolded(

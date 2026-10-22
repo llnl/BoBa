@@ -135,13 +135,12 @@ CSRMatrix<space, data_t> transposed_csr_from_sorted_keys(const SparseTensor<2, s
 
   const auto& keys = unfolded.linear_indices();
   const auto keys_view = keys.const_view();
-  index_t const* key_data = keys_view.data();
   auto column_view = csr.m_column_indices.view();
   auto offsets_view = csr.m_row_offsets.view();
 
   ::boba::loop<space, 1>(0_z, nnz, [=] __boba_host_device__(index_t entry)
   {
-    column_view(entry) = static_cast<std::int64_t>(key_data[entry] % csr_cols);
+    column_view(entry) = static_cast<std::int64_t>(keys_view(entry) % csr_cols);
   });
 
   // offsets(i) is the first entry whose key is at least i * csr_cols.
@@ -153,7 +152,7 @@ CSRMatrix<space, data_t> transposed_csr_from_sorted_keys(const SparseTensor<2, s
     while (low < high)
     {
       const index_t middle = low + (high - low) / 2;
-      if (key_data[middle] < target)
+      if (keys_view(middle) < target)
       {
         low = middle + 1;
       }
@@ -190,7 +189,7 @@ index_t exclusive_scan_with_total(Vector<space, index_t> const& counts, Vector<s
   }
   else
   {
-    ::boba::detail::loop<space>(0_z, 1_z, [=] __boba_host_device__(size_t)
+    ::boba::loop<space, 1>(0_z, 1_z, [=] __boba_host_device__(index_t)
     {
       index_t running = 0;
       for (index_t i = 0; i < n; ++i)
@@ -237,7 +236,7 @@ CSRMatrix<space, data_t> esc_csr_spgemm(CSRMatrix<space, data_t> const& A, CSRMa
     for (auto k = A_view.row_begin(i); k < A_view.row_end(i); ++k)
     {
       const auto b_row = A_view.column_index(k);
-      count += B_view.row_end(b_row) - B_view.row_begin(b_row);
+      count += B_view.row_nnz(b_row);
     }
     counts_view(i) = count;
   });
@@ -460,7 +459,8 @@ CSRMatrix<space, data_t> sparse_matrix_sparse_matrix_product(
   boba_always_assert_equal(A.cols(), B.rows(), "CSR SpGEMM inner dimensions must match");
   boba_assert(A.is_sorted(), "CSR SpGEMM requires sorted column indices in each row of A");
   boba_assert(B.is_sorted(), "CSR SpGEMM requires sorted column indices in each row of B");
-  boba_always_assert(A.rows() * B.cols() <= static_cast<index_t>(std::numeric_limits<std::int64_t>::max()),
+  constexpr auto int64_limit = static_cast<index_t>(std::numeric_limits<std::int64_t>::max());
+  boba_always_assert(B.cols() == 0 || A.rows() <= int64_limit / B.cols(),
                      "CSR SpGEMM output is too large for int64 indices");
 
   CSRMatrix<space, data_t> C(A.rows(), B.cols());

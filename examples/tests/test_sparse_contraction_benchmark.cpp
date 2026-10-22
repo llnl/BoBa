@@ -16,6 +16,7 @@ namespace
 {
 
 using data_t = double;
+constexpr ::boba::execution_space device_space = ::boba::default_execution_space;
 
 template <std::size_t dimension>
 ::boba::Tensor<dimension, ::boba::host_space, data_t> make_mixed_test_tensor(
@@ -84,8 +85,16 @@ auto benchmark(contraction_t contraction, std::size_t repetitions)
   for (std::size_t repetition = 0; repetition < repetitions; ++repetition)
   {
     output = contraction();
-    const auto output_view = output.const_view();
-    checksum = checksum + output_view(0) + output_view(output.size() / 2) + output_view(output.size() - 1);
+    if constexpr (output_t::get_space() == ::boba::host_space)
+    {
+      const auto output_view = output.const_view();
+      checksum = checksum + output_view(0) + output_view(output.size() / 2) + output_view(output.size() - 1);
+    }
+    else
+    {
+      // Device entries are not readable here; the size still keeps the result observable.
+      checksum = checksum + static_cast<data_t>(output.size());
+    }
   }
   const auto elapsed_microseconds = static_cast<double>(timer.timing());
 
@@ -249,6 +258,8 @@ void check_sparse_storage(::boba::SparseTensor<dimension, ::boba::host_space, da
  * @brief Times unfolded SpMM, naive, and dense contractions of a random sparse tensor with a dense tensor.
  *
  * The sparse result is checked against the dense result, and the sparse storage is checked.
+ * When the default execution space is not the host, the unfolded path is also
+ * timed there with inputs copied beforehand, and checked against the host result.
  */
 template <std::size_t contractions, std::size_t dimension_A, std::size_t dimension_B>
 void benchmark_random_sparse_dense_contraction(::boba::Array<::boba::index_t, dimension_A> sizes_A,
@@ -292,13 +303,32 @@ void benchmark_random_sparse_dense_contraction(::boba::Array<::boba::index_t, di
             << " dense_dense_ms=" << dense_dense_result.milliseconds
             << " unfolded_ms=" << unfolded_result.milliseconds
             << " naive_ms=" << naive_result.milliseconds << std::endl;
+
+  if constexpr (device_space != ::boba::host_space)
+  {
+    const ::boba::SparseTensor<dimension_A, device_space, data_t> sparse_A_device(sparse_A);
+    const ::boba::Tensor<dimension_B, device_space, data_t> dense_B_device(dense_B);
+    const auto device_result = benchmark([&]()
+    {
+      return ::boba::tensor_contraction<contractions, device_space, dimension_A, dimension_B, data_t>(
+        sparse_A_device, dense_B_device, contraction_dimensions_A, contraction_dimensions_B);
+    }, repetitions);
+    const ::boba::Tensor<dimension_A + dimension_B - 2 * contractions, ::boba::host_space, data_t> device_output(device_result.output);
+    pass_or_fail(check, ::boba::norm_difference_inf(device_output, dense_dense_result.output) / scale, 1.0e-12);
+
+    std::cout << "DEVICE_TIMING contractions=" << contractions
+              << " density=" << density
+              << " space=" << ::boba::detail::execution_space_name(device_space)
+              << " unfolded_ms=" << device_result.milliseconds << std::endl;
+  }
 }
 
 /**
  * @brief Times SpGEMM and naive sparse x sparse against dense x dense contraction of two random sparse tensors.
  *
  * The densified sparse result is checked against the dense result, and the
- * result storage must not exceed the dense output size.
+ * result storage must not exceed the dense output size. When the default
+ * execution space is not the host, SpGEMM is also timed there and checked.
  */
 template <std::size_t contractions, std::size_t dimension_A, std::size_t dimension_B>
 void benchmark_random_sparse_sparse_contraction(::boba::Array<::boba::index_t, dimension_A> sizes_A,
@@ -348,6 +378,24 @@ void benchmark_random_sparse_sparse_contraction(::boba::Array<::boba::index_t, d
             << " dense_dense_ms=" << dense_dense_result.milliseconds
             << " sparse_sparse_ms=" << sparse_sparse_result.milliseconds
             << " naive_ms=" << naive_result.milliseconds << std::endl;
+
+  if constexpr (device_space != ::boba::host_space)
+  {
+    const ::boba::SparseTensor<dimension_A, device_space, data_t> sparse_A_device(sparse_A);
+    const ::boba::SparseTensor<dimension_B, device_space, data_t> sparse_B_device(sparse_B);
+    const auto device_result = benchmark([&]()
+    {
+      return ::boba::tensor_contraction<contractions, device_space, dimension_A, dimension_B, data_t>(
+        sparse_A_device, sparse_B_device, contraction_dimensions_A, contraction_dimensions_B);
+    }, repetitions);
+    const ::boba::SparseTensor<dimension_A + dimension_B - 2 * contractions, ::boba::host_space, data_t> device_output(device_result.output);
+    pass_or_fail(check, ::boba::norm_difference_inf(::boba::to_dense(device_output), dense_dense_result.output) / scale, 1.0e-12);
+
+    std::cout << "DEVICE_SPARSE_TIMING contractions=" << contractions
+              << " density=" << density
+              << " space=" << ::boba::detail::execution_space_name(device_space)
+              << " sparse_sparse_ms=" << device_result.milliseconds << std::endl;
+  }
 }
 
 /**

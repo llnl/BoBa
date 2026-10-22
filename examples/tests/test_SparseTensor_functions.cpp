@@ -388,7 +388,8 @@ void test_csr_conversions(bool& check)
   const ::boba::SparseTensor<2, space, double> empty({3, 4});
   const auto empty_csr = ::boba::convert_to_CSRMatrix(empty);
   pass_or_fail_bool(check, empty_csr.nnz() == 0 && empty_csr.rows() == 3 && empty_csr.cols() == 4);
-  pass_or_fail_bool(check, ::boba::convert_to_SparseTensor(empty_csr).nnz() == 0);
+  const auto empty_round_trip = ::boba::convert_to_SparseTensor(empty_csr);
+  pass_or_fail_bool(check, empty_round_trip.nnz() == 0);
 }
 
 /**
