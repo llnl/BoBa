@@ -295,7 +295,7 @@ void benchmark_random_sparse_dense_contraction(::boba::Array<::boba::index_t, di
 }
 
 /**
- * @brief Times sparse x sparse against dense x dense contraction of two random sparse tensors.
+ * @brief Times SpGEMM and naive sparse x sparse against dense x dense contraction of two random sparse tensors.
  *
  * The densified sparse result is checked against the dense result, and the
  * result storage must not exceed the dense output size.
@@ -327,11 +327,17 @@ void benchmark_random_sparse_sparse_contraction(::boba::Array<::boba::index_t, d
     return ::boba::tensor_contraction<contractions, ::boba::host_space, dimension_A, dimension_B, data_t>(
       sparse_A, sparse_B, contraction_dimensions_A, contraction_dimensions_B);
   }, repetitions);
+  const auto naive_result = benchmark([&]()
+  {
+    return ::boba::tensor_contraction<contractions, ::boba::host_space, dimension_A, dimension_B, data_t, true>(
+      sparse_A, sparse_B, contraction_dimensions_A, contraction_dimensions_B);
+  }, repetitions);
 
   const auto& sparse_output = sparse_sparse_result.output;
   pass_or_fail_bool(check, sparse_output.nnz() <= sparse_output.size());
   const auto scale = std::max(1.0, ::boba::norm_inf(dense_dense_result.output));
   pass_or_fail(check, ::boba::norm_difference_inf(::boba::to_dense(sparse_output), dense_dense_result.output) / scale, 1.0e-12);
+  pass_or_fail(check, ::boba::norm_difference_inf(::boba::to_dense(naive_result.output), dense_dense_result.output) / scale, 1.0e-12);
 
   std::cout << std::setprecision(10)
             << "RANDOM_SPARSE_TIMING contractions=" << contractions
@@ -340,7 +346,8 @@ void benchmark_random_sparse_sparse_contraction(::boba::Array<::boba::index_t, d
             << " nnz_B=" << sparse_B.nnz()
             << " nnz_C=" << sparse_output.nnz()
             << " dense_dense_ms=" << dense_dense_result.milliseconds
-            << " sparse_sparse_ms=" << sparse_sparse_result.milliseconds << std::endl;
+            << " sparse_sparse_ms=" << sparse_sparse_result.milliseconds
+            << " naive_ms=" << naive_result.milliseconds << std::endl;
 }
 
 /**

@@ -337,13 +337,58 @@ void test_sparse_contraction(
     }
   }
 
-  auto contracted = ::boba::tensor_contraction<contractions, space, dimension_A, dimension_B, double, true>(
+  const auto naive = ::boba::tensor_contraction<contractions, ::boba::host_space, dimension_A, dimension_B, double, true>(
+    sparse_A_host,
+    sparse_B_host,
+    contraction_dimensions_A,
+    contraction_dimensions_B);
+  compare_sparse_to_dense(naive, expected, check);
+
+  const auto spgemm = ::boba::tensor_contraction<contractions, space, dimension_A, dimension_B, double>(
     sparse_A,
     sparse_B,
     contraction_dimensions_A,
     contraction_dimensions_B);
-  pass_or_fail_bool(check, contracted.sizes() == expected.sizes());
-  compare_sparse_to_dense(contracted, expected, check);
+  compare_sparse_to_dense(spgemm, expected, check);
+  pass_or_fail_bool(check, spgemm.nnz() == naive.nnz());
+
+  const auto spgemm_naive = ::boba::tensor_contraction<contractions, space, dimension_A, dimension_B, double, true>(
+    sparse_A,
+    sparse_B,
+    contraction_dimensions_A,
+    contraction_dimensions_B);
+  compare_sparse_to_dense(spgemm_naive, expected, check);
+}
+
+/**
+ * @brief Tests SparseTensor<2> to CSR conversion in both directions.
+ *
+ * The CSR is compared against the dense import, then converted back.
+ */
+void test_csr_conversions(bool& check)
+{
+  std::cout << "Testing SparseTensor <-> CSRMatrix conversions" << std::endl;
+  const auto dense = make_sparse_test_tensor(::boba::Array<::boba::index_t, 2>{5, 7}, 1);
+  const ::boba::Matrix<::boba::host_space, double> dense_matrix(dense);
+  const auto sparse_host = ::boba::convert_to_SparseTensor(dense, [](double value, auto)
+  {
+    return ::boba::abs(value) > 0.0;
+  });
+  const ::boba::SparseTensor<2, space, double> sparse(sparse_host);
+
+  const auto csr = ::boba::convert_to_CSRMatrix(sparse);
+  const ::boba::CSRMatrix<::boba::host_space, double> csr_host(csr);
+  pass_or_fail_bool(check, csr_host.is_sorted());
+  pass_or_fail_bool(check, csr_host.nnz() == sparse.nnz());
+  pass_or_fail(check, ::boba::norm_difference_inf(::boba::to_dense(csr_host), dense_matrix), 1.0e-14);
+
+  const auto round_trip = ::boba::convert_to_SparseTensor(csr);
+  compare_sparse_to_dense(round_trip, dense, check);
+
+  const ::boba::SparseTensor<2, space, double> empty({3, 4});
+  const auto empty_csr = ::boba::convert_to_CSRMatrix(empty);
+  pass_or_fail_bool(check, empty_csr.nnz() == 0 && empty_csr.rows() == 3 && empty_csr.cols() == 4);
+  pass_or_fail_bool(check, ::boba::convert_to_SparseTensor(empty_csr).nnz() == 0);
 }
 
 /**
@@ -725,6 +770,8 @@ int main()
   test_sparse_contraction<2, 3, 3>({2, 3, 4}, {4, 5, 3}, {1, 2}, {2, 0}, check);
   test_sparse_contraction<1, 4, 3>({2, 2, 2, 2}, {2, 2, 2}, {1}, {0}, check);
   test_sparse_contraction<3, 6, 4>({2, 2, 2, 2, 2, 2}, {2, 2, 2, 2}, {0, 2, 5}, {1, 2, 3}, check);
+  test_sparse_contraction<2, 3, 2>({2, 3, 4}, {4, 3}, {2, 1}, {0, 1}, check);
+  test_csr_conversions(check);
   test_mixed_contraction<1, 2, 2>({2, 3}, {3, 4}, {1}, {0}, check);
   test_mixed_contraction<1, 3, 2>({3, 4, 5}, {4, 2}, {1}, {0}, check);
   test_mixed_contraction<2, 3, 3>({2, 3, 4}, {4, 5, 3}, {1, 2}, {2, 0}, check);
