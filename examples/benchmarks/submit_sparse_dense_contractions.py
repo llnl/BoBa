@@ -10,7 +10,7 @@ def main():
         "benchmark_sparse_dense_contractions",
         "sparse_dense_contractions",
     )
-    parser.add_argument("--mode-size", type=positive_integer, default=100)
+    parser.add_argument("--mode-size", type=positive_integer, default=30)
     parser.add_argument("--repetitions", type=positive_integer, default=10)
     arguments = parser.parse_args()
 

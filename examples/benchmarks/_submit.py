@@ -39,7 +39,7 @@ def make_parser(description, executable_name, output_directory):
         default=REPOSITORY_ROOT / "benchmark_jobs" / output_directory,
         help="Directory for Slurm output files.",
     )
-    parser.add_argument("--time", default="02:00:00", help="Slurm time limit.")
+    parser.add_argument("--time", help="Slurm time limit.")
     parser.add_argument("--partition", help="Optional Slurm partition.")
     parser.add_argument("--account", help="Optional Slurm account.")
     parser.add_argument(
@@ -63,19 +63,25 @@ def submit_jobs(arguments, jobs):
         result_name = f"{job_name}_gpu" if machine == "matrix" else job_name
         output_file = output_directory / f"{result_name}.out"
         benchmark_command = [str(executable), *benchmark_arguments]
+        partition = arguments.partition
+        if partition is None and machine == "dane":
+            partition = "pdebug"
+        time_limit = arguments.time
+        if time_limit is None:
+            time_limit = "01:00:00" if partition == "pdebug" else "02:00:00"
         submit_command = [
             "sbatch",
             "--nodes=1",
             "--ntasks=1",
             "--cpus-per-task=1",
-            f"--time={arguments.time}",
+            f"--time={time_limit}",
             "--open-mode=truncate",
             f"--job-name={result_name}",
             f"--output={output_file}",
             f"--chdir={REPOSITORY_ROOT}",
         ]
-        if arguments.partition:
-            submit_command.append(f"--partition={arguments.partition}")
+        if partition:
+            submit_command.append(f"--partition={partition}")
         if arguments.account:
             submit_command.append(f"--account={arguments.account}")
         if machine == "matrix":

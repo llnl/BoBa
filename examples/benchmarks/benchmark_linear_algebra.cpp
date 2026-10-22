@@ -626,7 +626,9 @@ void test_cases(std::string const& float_name, std::vector<size_t> rows_list, st
         }
 
         checkpoint();
-        if ((kernel == 0) or (kernel == 2))
+        // QRRR is excluded from the default campaign (kernel == 0), but
+        // remains available when explicitly selected with --which 2.
+        if (kernel == 2)
         {
           std::cout << ::boba::detail::execution_space_name(space) << " "
                     << float_name << " "

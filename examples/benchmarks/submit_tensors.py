@@ -23,7 +23,10 @@ def main():
     )
     jobs = []
     for label, kernel, largest_mode_coefficient in kernels:
-        size_factor = max(1, arguments.mode_size // largest_mode_coefficient)
+        target_mode_size = arguments.mode_size
+        if label.startswith("contraction_"):
+            target_mode_size *= 2
+        size_factor = max(1, target_mode_size // largest_mode_coefficient)
         jobs.append(
             (
                 f"tensor_{label}",

@@ -1,3 +1,20 @@
+```
+python3 examples/benchmarks/submit_sparse_dense_contractions.py \
+  --mode-size 30 \
+  --repetitions 10 \
+  --output-dir benchmark_jobs/2026-10-21_cpu/sparse_dense_contractions
+
+python3 examples/benchmarks/submit_tensors.py \
+  --mode-size 60 \
+  --precision 2 \
+  --repetitions 10 \
+  --output-dir benchmark_jobs/2026-10-21_cpu/tensors
+
+python3 examples/benchmarks/submit_linear_algebra.py \
+  --repetitions 10 \
+  --output-dir benchmark_jobs/2026-10-21_cpu/linear_algebra
+  ```
+
 # Running the BoBa benchmarks
 
 Run these commands from the repository root. The submission scripts create one
@@ -98,8 +115,8 @@ individual samples in the processed data.
 
 ## Tensor study
 
-Submit representative permutations and contractions with their largest modes
-near 50:
+Submit the representative permutation with its largest modes near 50 and the
+contractions with their largest modes near 100:
 
 ```sh
 python3 examples/benchmarks/submit_tensors.py \
@@ -141,11 +158,11 @@ Do not average different tensor shapes or kernel types together.
 
 ## Sparse/dense contraction study
 
-Submit mode-size-100 contractions at 0.01%, 0.1%, 1%, and 10% nonzeros:
+Submit mode-size-30 contractions at 0.01%, 0.1%, 1%, and 10% nonzeros:
 
 ```sh
 python3 examples/benchmarks/submit_sparse_dense_contractions.py \
-  --mode-size 100 \
+  --mode-size 30 \
   --repetitions 10 \
   --output-dir benchmark_jobs/2026-10-21_cpu/sparse_dense_contractions \
   --time 02:00:00
@@ -165,7 +182,7 @@ contraction over the final five repetitions; the preceding repetitions are
 warmups:
 
 ```text
-MIXED_TIMING sparsity=<fraction> sparsity_percent=<percent> mode_size=100 repetitions=10 warmup_repetitions=5 measured_repetitions=5 dense_dense_ms=<time> dense_sparse_ms=<time> sparse_dense_ms=<time> sparse_sparse_ms=<time> sparse_A_nnz=<count> sparse_B_nnz=<count>
+MIXED_TIMING sparsity=<fraction> sparsity_percent=<percent> mode_size=30 repetitions=10 warmup_repetitions=5 measured_repetitions=5 dense_dense_ms=<time> dense_sparse_ms=<time> sparse_dense_ms=<time> sparse_sparse_ms=<time> sparse_A_nnz=<count> sparse_B_nnz=<count>
 ```
 
 Extract only these records when creating a table:
@@ -179,10 +196,10 @@ Use the key/value names from the record as table columns. Plot
 separate timing series. Keep the nonzero counts in the processed data so the
 requested sparsity can be checked against the realized tensors.
 
-The mixed sparse/dense contraction kernels are currently host-only. A run in a
-GPU allocation on Matrix still executes these kernels on the CPU, so it is not
-a valid GPU-speedup measurement. The plotting script ignores sparse/dense
-files ending in `_gpu.out` rather than mislabeling host timings as GPU results.
+The mixed sparse/dense contraction benchmark constructs its sparse inputs on the
+host and copies them to the selected execution space before timing. GPU runs
+therefore measure device contractions, including the selected naive or
+third-party sparse backend.
 
 ## After submission
 
@@ -205,4 +222,6 @@ shape/kernel combination, plus `tensors.png` and
 figure shows every matrix type once. Panel A uses a logarithmic time axis.
 Panel B uses a linear axis for CPU time divided by GPU time. Only repetitions 6
 through 10 are averaged; incomplete jobs and failed validation cases are
-omitted. The script can be rerun safely as jobs finish.
+omitted. The parsed mean runtimes are also written to
+`runtimes_<hostname>.yaml` in the campaign directory. The script can be rerun
+safely as jobs finish.

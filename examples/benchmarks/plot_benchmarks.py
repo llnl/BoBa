@@ -4,10 +4,13 @@
 import argparse
 import os
 import re
+import socket
 import tempfile
 from collections import defaultdict
 from pathlib import Path
 from statistics import fmean
+
+import yaml
 
 
 os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "boba-matplotlib"))
@@ -51,7 +54,7 @@ MATRIX_ORDER = {
 KERNEL_ORDER = {
     name: index
     for index, name in enumerate(
-        ("qr", "qrrr", "svd", "svdx", "lu", "lu_full", "cholesky", "randomized_svd")
+        ("qr", "svd", "svdx", "lu", "lu_full", "cholesky", "randomized_svd")
     )
 }
 TENSOR_ORDER = {
@@ -102,6 +105,11 @@ def parse_arguments():
     )
     parser.add_argument("--warmups", type=int, default=5)
     parser.add_argument("--samples", type=int, default=5)
+    parser.add_argument(
+        "--runtime-yaml",
+        type=Path,
+        help="Path for parsed runtimes; defaults to runtimes_<hostname>.yaml in the campaign directory.",
+    )
     return parser.parse_args()
 
 
@@ -186,6 +194,8 @@ def parse_linear_algebra(directory, warmups, samples, warnings):
                 incomplete += 1
                 continue
             rows, columns, matrix, kernel = key
+            if kernel not in KERNEL_ORDER:
+                continue
             shape = f"{rows}x{columns}"
             category = f"{rows}x{columns}\n{matrix}\n{kernel}"
             data[category][variant] = average
@@ -294,10 +304,6 @@ def parse_sparse_dense(directory, warmups, samples, warnings):
         if not records:
             warnings.append(f"{path}: no benchmark timing record")
             continue
-        if variant == "gpu":
-            warnings.append(f"{path}: ignored because mixed sparse/dense kernels are host-only")
-            continue
-
         for record in records:
             if (
                 int(record.get("warmup_repetitions", -1)) != warmups
@@ -336,7 +342,19 @@ def annotate_empty(axis, message):
     axis.set_yticks([])
 
 
-def plot_study(title, data, categories, output_path):
+def runtime_records(data):
+    return [
+        {
+            "category": category,
+            "series": series_name,
+            "runtime_ms": runtime,
+        }
+        for category, series in data.items()
+        for series_name, runtime in series.items()
+    ]
+
+
+def plot_study(title, data, categories, output_path, time_axis_limits=None):
     width = max(12.0, 0.42 * len(categories))
     figure, (time_axis, speedup_axis) = plt.subplots(
         2, 1, figsize=(width, 9), sharex=bool(categories), constrained_layout=True
@@ -369,6 +387,8 @@ def plot_study(title, data, categories, output_path):
                     label=label,
                 )
         time_axis.set_yscale("log")
+        if time_axis_limits is not None:
+            time_axis.set_ylim(*time_axis_limits)
         time_axis.set_ylabel("Mean time (ms), log scale")
         time_axis.grid(axis="y", which="both", alpha=0.25)
         if time_axis.containers:
@@ -468,16 +488,20 @@ def main():
                 kernel_data,
                 matrix_categories,
                 campaign / f"linear_algebra_{shape}_{kernel}.png",
+                time_axis_limits=(1.0, 300.0),
             )
 
+    runtime_data = {"linear_algebra": runtime_records(linear_data)}
     studies = (
         (
+            "tensors",
             "Tensor kernels",
             parse_tensors,
             campaign / "tensors",
             campaign / "tensors.png",
         ),
         (
+            "sparse_dense_contractions",
             "Sparse/dense contractions",
             parse_sparse_dense,
             campaign / "sparse_dense_contractions",
@@ -485,11 +509,35 @@ def main():
         ),
     )
 
-    for title, parser, directory, output_path in studies:
+    for name, title, parser, directory, output_path in studies:
         data, categories = parser(
             directory, arguments.warmups, arguments.samples, warnings
         )
         plot_study(title, data, categories, output_path)
+        runtime_data[name] = runtime_records(data)
+
+    hostname = socket.gethostname()
+    safe_hostname = re.sub(r"[^A-Za-z0-9_.-]", "_", hostname)
+    runtime_yaml = arguments.runtime_yaml
+    if runtime_yaml is None:
+        runtime_yaml = campaign / f"runtimes_{safe_hostname}.yaml"
+    else:
+        runtime_yaml = runtime_yaml.resolve()
+    runtime_yaml.parent.mkdir(parents=True, exist_ok=True)
+    runtime_yaml.write_text(
+        yaml.safe_dump(
+            {
+                "hostname": hostname,
+                "campaign": str(campaign),
+                "warmups": arguments.warmups,
+                "samples": arguments.samples,
+                "units": "milliseconds",
+                "runtimes": runtime_data,
+            },
+            sort_keys=False,
+        )
+    )
+    print(f"Wrote {runtime_yaml}")
 
     for warning in warnings:
         print(f"WARNING: {warning}")

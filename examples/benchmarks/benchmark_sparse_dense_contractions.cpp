@@ -82,11 +82,20 @@ auto benchmark(contraction_t contraction, std::size_t repetitions)
 
   for (std::size_t repetition = 0; repetition < repetitions; ++repetition)
   {
+    ::boba::detail::synchronize<output_t::get_space()>();
     const auto begin = std::chrono::steady_clock::now();
     output = contraction();
+    ::boba::detail::synchronize<output_t::get_space()>();
     const auto end = std::chrono::steady_clock::now();
-    const auto output_view = output.const_view();
-    checksum = checksum + output_view(0) + output_view(output.size() / 2) + output_view(output.size() - 1);
+    if constexpr (output_t::get_space() == ::boba::host_space)
+    {
+      const auto output_view = output.const_view();
+      checksum = checksum + output_view(0) + output_view(output.size() / 2) + output_view(output.size() - 1);
+    }
+    else
+    {
+      checksum = checksum + static_cast<data_t>(output.size());
+    }
     if (repetition >= warmup_repetitions)
     {
       measured_milliseconds += std::chrono::duration<double, std::milli>(end - begin).count();
@@ -163,17 +172,20 @@ void benchmark_large_mixed_contractions(
   ::boba::index_t requested_sparsity_period)
 {
   std::cout << "Benchmarking large mixed contractions across sparsities" << std::endl;
+  constexpr auto space = ::boba::default_execution_space;
 
   const ::boba::Array<::boba::index_t, 4> sizes_A{mode_size, mode_size, mode_size, mode_size};
   const ::boba::Array<::boba::index_t, 3> sizes_B{mode_size, mode_size, mode_size};
   const ::boba::Array<size_t, 1> contraction_dimensions_A{3};
   const ::boba::Array<size_t, 1> contraction_dimensions_B{0};
-  const auto dense_A = make_dense_test_tensor(sizes_A, 0);
-  const auto dense_B = make_dense_test_tensor(sizes_B, 1);
+  const auto host_dense_A = make_dense_test_tensor(sizes_A, 0);
+  const auto host_dense_B = make_dense_test_tensor(sizes_B, 1);
+  const ::boba::Tensor<4, space, data_t> dense_A(host_dense_A);
+  const ::boba::Tensor<3, space, data_t> dense_B(host_dense_B);
 
   const auto dense_dense = [&]()
   {
-    return ::boba::tensor_contraction<1, ::boba::host_space, 4, 3, data_t>(
+    return ::boba::tensor_contraction<1, space, 4, 3, data_t>(
       dense_A, dense_B, contraction_dimensions_A, contraction_dimensions_B);
   };
 
@@ -187,30 +199,32 @@ void benchmark_large_mixed_contractions(
       continue;
     }
 
-    const auto sparse_source_A = make_sparsified_test_tensor(sizes_A, 0, sparsity_period);
-    const auto sparse_source_B = make_sparsified_test_tensor(sizes_B, 1, sparsity_period);
-    const auto sparse_A = ::boba::convert_to_SparseTensor(sparse_source_A, [](data_t value, auto)
+    const auto host_sparse_source_A = make_sparsified_test_tensor(sizes_A, 0, sparsity_period);
+    const auto host_sparse_source_B = make_sparsified_test_tensor(sizes_B, 1, sparsity_period);
+    const auto host_sparse_A = ::boba::convert_to_SparseTensor(host_sparse_source_A, [](data_t value, auto)
     {
       return ::boba::abs(value) > 0.0;
     });
-    const auto sparse_B = ::boba::convert_to_SparseTensor(sparse_source_B, [](data_t value, auto)
+    const auto host_sparse_B = ::boba::convert_to_SparseTensor(host_sparse_source_B, [](data_t value, auto)
     {
       return ::boba::abs(value) > 0.0;
     });
+    const ::boba::SparseTensor<4, space, data_t> sparse_A(host_sparse_A);
+    const ::boba::SparseTensor<3, space, data_t> sparse_B(host_sparse_B);
 
     const auto sparse_dense = [&]()
     {
-      return ::boba::tensor_contraction<1, ::boba::host_space, 4, 3, data_t, true>(
+      return ::boba::tensor_contraction<1, space, 4, 3, data_t, true>(
         sparse_A, dense_B, contraction_dimensions_A, contraction_dimensions_B);
     };
     const auto dense_sparse = [&]()
     {
-      return ::boba::tensor_contraction<1, ::boba::host_space, 4, 3, data_t, true>(
+      return ::boba::tensor_contraction<1, space, 4, 3, data_t, true>(
         dense_A, sparse_B, contraction_dimensions_A, contraction_dimensions_B);
     };
     const auto sparse_sparse = [&]()
     {
-      return ::boba::tensor_contraction<1, ::boba::host_space, 4, 3, data_t>(
+      return ::boba::tensor_contraction<1, space, 4, 3, data_t>(
         sparse_A, sparse_B, contraction_dimensions_A, contraction_dimensions_B);
     };
 
