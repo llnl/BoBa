@@ -366,7 +366,7 @@ ifeq ($(IS_VENADITO), vt-rfe) # LANL Venadito GH200
 CUTENSOR_LIBS = -L${CUTENSOR_INSTALL_DIR}/lib -L${CUTENSOR_INSTALL_DIR}/lib64 \
 	-Xlinker -rpath=${CUTENSOR_INSTALL_DIR}/lib \
 	-Xlinker -rpath=${CUTENSOR_INSTALL_DIR}/lib64 \
-	-Xlinker -rpath-link=${VENADITO_CUDA_TARGETS}/lib -lcutensor
+	-Xlinker -rpath-link=${VENADITO_CUDA_TARGETS}/lib -lcutensor -lcublasLt
 endif
 
 CUDA_LIBS := ${CUDA_LIBS} ${CUTENSOR_LIBS}
