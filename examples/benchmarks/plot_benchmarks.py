@@ -65,6 +65,7 @@ TENSOR_ORDER = {
         )
     )
 }
+LINEAR_SHAPES = ("2000x200", "200x2000", "600x600")
 SERIES_ORDER = (
     "cpu-naive",
     "cpu-tpl",
@@ -133,7 +134,7 @@ def measured_average(values, repetitions, warmups, samples):
 def parse_linear_algebra(directory, warmups, samples, warnings):
     data = defaultdict(dict)
     order = {}
-    shape_order = {"2000x200": 0, "200x2000": 1, "600x600": 2}
+    shape_order = {shape: index for index, shape in enumerate(LINEAR_SHAPES)}
 
     for path in sorted(directory.glob("linear_algebra_*.out")):
         result_shape = path.stem.removeprefix("linear_algebra_").removesuffix("_gpu")
@@ -440,7 +441,7 @@ def main():
         arguments.samples,
         warnings,
     )
-    for shape in ("2000x200", "200x2000", "600x600"):
+    for shape in LINEAR_SHAPES:
         shape_prefix = f"{shape}\n"
         for kernel in KERNEL_ORDER:
             kernel_suffix = f"\n{kernel}"
