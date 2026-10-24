@@ -41,6 +41,12 @@ def get_machine():
     if 'toss_4_x86_64_ib_cray' == os.environ.get("SYS_TYPE"):
         return ('tuolumne', 'TOSS4_CRAY', 'hip')
     #
+    # LANL Darwin (V100 nodes, e.g. the volta-x86 partition); CUDA backend
+    #
+    if (machine.startswith('cn') or machine.startswith('darwin-fe')) and os.path.exists('/projects/darwin-nv'):
+        return ('darwin', 'LANL', 'cuda')
+
+    #
     # MSU machines
     #
     if 'dev-amd20-v100' in machine:

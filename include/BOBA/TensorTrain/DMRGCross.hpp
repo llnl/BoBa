@@ -12,6 +12,9 @@ namespace boba
  * Given a function `f(i, j, k, ...)`, this class builds a tensor train that
  * approximates `f` with a DMRG cross sweep.
  *
+ * Reference: D. Savostyanov, I. Oseledets, "Fast adaptive interpolation of multi-dimensional arrays in tensor train
+ * format", 2011 International Workshop on Multidimensional (nD) Systems, 1-8. doi:10.1109/nDS.2011.6076873
+ *
  * @tparam data_t Scalar value type.
  * @tparam index_t Index type.
  */
@@ -23,6 +26,8 @@ struct DMRGCross
   bool verbose = false;
   index_t kickrank = 2;
   size_t max_sweeps = 10;
+  /// Stop when every two-site update in a half-sweep (left-to-right or right-to-left) changes its block by less
+  /// than this, relative to the block's Frobenius norm.
   real_data_t convergence_tolerance = 1.0e-7;
 
   /// Relative truncation tolerance for the SVD of each two-site cross block.
@@ -244,6 +249,11 @@ struct DMRGCross
     size_t core_id = 0;
     auto max_relative_error = 0.0;
 
+    // When the sweep turns around, the next two-site step is at the same core with the same left and right index
+    // sets, so its entries are the ones just evaluated: keep them instead of calling the function again.
+    ::boba::Tensor<4, host_space, data_t> previous_score_tensor;
+    bool reuse_previous_score = false;
+
     BOBA_CALI_SWITCH("DMRGCross_core_setup", "DMRGCross_sweep");
     while ((sweep_count < max_sweeps) && not_converged)
     {
@@ -256,7 +266,16 @@ struct DMRGCross
       checkpoint();
       ::boba::Tensor<4, host_space, data_t> score_tensor({tt_ranks[core_id], mode_sizes[core_id], mode_sizes[core_id + 1], tt_ranks[core_id + 2]});
 
-      create_score_tensor_from_index_and_function<dimension>(left_indices, right_indices, score_tensor, std::forward<lambda_t>(function_to_approximate));
+      if (reuse_previous_score and previous_score_tensor.sizes() == score_tensor.sizes())
+      {
+        score_tensor = previous_score_tensor;
+      }
+      else
+      {
+        create_score_tensor_from_index_and_function<dimension>(left_indices, right_indices, score_tensor, std::forward<lambda_t>(function_to_approximate));
+      }
+      previous_score_tensor = score_tensor;
+      reuse_previous_score = false;
 
       checkpoint();
       ::boba::Matrix<host_space, data_t> score({tt_ranks[core_id], mode_sizes[core_id] * mode_sizes[core_id + 1] * tt_ranks[core_id + 2]});
@@ -445,7 +464,8 @@ struct DMRGCross
           {
             index_t value = 0;
 
-            if (core_id == previous_indices_view.sizes(1))
+            // New left index = the selected row's previous left index, followed by its mode index in the last column.
+            if (k == previous_indices_view.sizes(1))
             {
               value = mode_index;
             }
@@ -461,6 +481,15 @@ struct DMRGCross
         if (core_id == dimension - 2)
         {
           sweep_right = not(sweep_right);
+          reuse_previous_score = true;
+          if (max_relative_error < convergence_tolerance)
+          {
+            not_converged = false;
+          }
+          else
+          {
+            max_relative_error = 0.0;
+          }
         }
         else
         {
@@ -555,6 +584,7 @@ struct DMRGCross
         if (core_id == 0)
         {
           sweep_right = not(sweep_right);
+          reuse_previous_score = true;
           sweep_count = sweep_count + 1;
           if (max_relative_error < convergence_tolerance)
           {
