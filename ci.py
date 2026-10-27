@@ -153,14 +153,13 @@ def should_skip(skip_value):
   return bool(skip_tags & active_tags)
 
 def expand_env_value(value, env):
-  previous = os.environ.copy()
-  try:
-    os.environ.clear()
-    os.environ.update(env)
-    return os.path.expandvars(value)
-  finally:
-    os.environ.clear()
-    os.environ.update(previous)
+  def replace_variable(match):
+    name = match.group(1)
+    if name.startswith("{"):
+      name = name[1:-1]
+    return env.get(name, match.group(0))
+
+  return re.sub(r'\$(\w+|\{[^}]*\})', replace_variable, value)
 
 def run_single_test(test_name, subtest_name, subtest, run_list):
 

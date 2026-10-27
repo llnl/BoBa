@@ -198,6 +198,8 @@ void hipsparse_spmv(
   hipsparse_dense_vector_descriptor x_descriptor(x.const_data(), x.size());
   hipsparse_dense_vector_descriptor y_descriptor(y.const_data(), y.size());
   auto const operation = hipsparse_operation(op);
+  // ROCm 7.0's default CSR SpMV algorithm does not support transpose.
+  auto const algorithm = op == sparse_op::transpose ? HIPSPARSE_SPMV_CSR_ALG2 : HIPSPARSE_SPMV_ALG_DEFAULT;
 
   size_t workspace_size = 0;
   hipsparse_assert(hipsparseSpMV_bufferSize(
@@ -209,7 +211,7 @@ void hipsparse_spmv(
     &beta,
     y_descriptor.get(),
     hip_data_t_v<data_t>,
-    HIPSPARSE_SPMV_ALG_DEFAULT,
+    algorithm,
     &workspace_size));
 
   Vector<execution_space::HIP, unsigned char> workspace({workspace_size});
@@ -222,7 +224,7 @@ void hipsparse_spmv(
     &beta,
     y_descriptor.get(),
     hip_data_t_v<data_t>,
-    HIPSPARSE_SPMV_ALG_DEFAULT,
+    algorithm,
     workspace.data()));
 }
 

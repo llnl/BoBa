@@ -183,7 +183,11 @@ void exclusive_scan(T const* in, T* out, index_t n)
   {
     return;
   }
+#if defined(BOBA_HIP_LIBS)
+  const std::size_t count = static_cast<std::size_t>(cub_item_count(n));
+#else
   const int count = cub_item_count(n);
+#endif
   std::size_t bytes = 0;
   boba_cub_assert(gpucub::DeviceScan::ExclusiveSum(nullptr, bytes, in, out, count));
   CubTempStorage<space> storage(bytes);

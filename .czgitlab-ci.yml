@@ -169,7 +169,7 @@ h100_build_and_test:
     - time srun -n 1 make all BOBA_CI=1 BOBA_CUDA=1 BOBA_CUTENSOR=1 BOBA_UMPIRE=1 -j 36
     - time srun -n 1 python3 ci.py --umpire
 
-.hip_build_and_test:
+hip_build_and_test:
   extends:
     - .shell_hip
     - .boba_base
@@ -233,7 +233,7 @@ cmake_boba_kokkos:
     - echo Kokkos CUDA reduction example
     - time srun -n 1 env KOKKOS_DIR="${BOBA_TPL_FARM}/install/kokkos_cuda_h100/lib/cmake/Kokkos" ./install_example_kokkos.bash
 
-.cmake_boba_hip:
+cmake_boba_hip:
   extends:
     - .shell_hip
     - .boba_base
