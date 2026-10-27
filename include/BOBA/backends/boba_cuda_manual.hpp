@@ -69,7 +69,8 @@ __device__ inline data_t block_sum_reduce(data_t value)
   //
   auto thread_id = threadIdx.x;
   auto tsize = blockDim.x;
-  boba::Multiindexer<2> block_mid({warpSize, tsize});
+  boba::Multiindexer<2> block_mid(
+    {static_cast<boba::index_t>(warpSize), static_cast<boba::index_t>(tsize)});
   auto [lane_id, warp_id] = block_mid.multiindex(thread_id);
 
   //
@@ -134,7 +135,8 @@ __launch_bounds__(block_size)
   int bsize = gridDim.x;
   int tsize = blockDim.x;
 
-  boba::Multiindexer<2> grid_mid({tsize, bsize});
+  boba::Multiindexer<2> grid_mid(
+    {static_cast<boba::index_t>(tsize), static_cast<boba::index_t>(bsize)});
 
   auto thread_offset = grid_mid.index({thread_id, block_id});
   auto grid_size = grid_mid.size();

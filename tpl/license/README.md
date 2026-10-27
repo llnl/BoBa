@@ -3,7 +3,6 @@
 BoBa vendors several upstream third-party libraries under `tpl/`.
 
 - BLT (BSD-3-Clause)
-- CCCL (Apache-2.0, Apache-2.0 with LLVM exceptions, BSD-3-Clause, and bundled notices)
 - Caliper (BSD-3-Clause)
 - camp (BSD-3-Clause)
 - Eigen (MPL-2.0 with additional bundled notices)

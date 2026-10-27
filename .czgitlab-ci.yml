@@ -87,7 +87,6 @@ ci_sanity_checks:
     - chgrp boba_dev "${BOBA_TPL_FARM}/tpl" || echo "You are not the owner of this TPL build farm"
     - chgrp -R boba_dev "${BOBA_TPL_FARM}/install" || echo "You are not the owner of this TPL build farm"
     - chgrp -R boba_dev "${BOBA_TPL_FARM}/tpl/blt" || echo "You are not the owner of this TPL build farm"
-    - chgrp -R boba_dev "${BOBA_TPL_FARM}/tpl/cccl" || echo "You are not the owner of this TPL build farm"
     - chgrp boba_dev "${BOBA_TPL_FARM}"/caliper_* || echo "You are not the owner of this TPL build farm"
     - chgrp boba_dev "${BOBA_TPL_FARM}/tpl/license" || echo "You are not the owner of this TPL build farm"
     - chmod g+rwxs /usr/workspace/boba_dev/boba_tpl_build_farms || echo "You are not the owner of this TPL build farm"
@@ -95,7 +94,6 @@ ci_sanity_checks:
     - chmod g+rwxs "${BOBA_TPL_FARM}/tpl" || echo "You are not the owner of this TPL build farm"
     - chmod -R g+rwxs "${BOBA_TPL_FARM}/install" || echo "You are not the owner of this TPL build farm"
     - chmod -R g+rwxs "${BOBA_TPL_FARM}/tpl/blt" || echo "You are not the owner of this TPL build farm"
-    - chmod -R g+rwxs "${BOBA_TPL_FARM}/tpl/cccl" || echo "You are not the owner of this TPL build farm"
     - chmod -R g+rwxs "${BOBA_TPL_FARM}"/caliper_* || echo "You are not the owner of this TPL build farm"
     - chmod -R g+rwxs "${BOBA_TPL_FARM}/tpl/license" || echo "You are not the owner of this TPL build farm"
     - echo Ensuring repo contains no version control markers

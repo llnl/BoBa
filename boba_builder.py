@@ -84,7 +84,6 @@ for (key, value) in options.items():
 tpls = {}
 tpls['hdf5'] = {}
 tpls['blt'] = {}
-tpls['cccl'] = {}
 tpls['fmt'] = {}
 tpls['camp'] = {}
 tpls['RAJA'] = {}
@@ -144,7 +143,6 @@ safe_mkdir(tpl_build_base)
 safe_mkdir(tpl_install_base)
 
 tpls['blt']['enable'] = args.blt
-tpls['cccl']['enable'] = args.cccl
 tpls['fmt']['enable'] = args.fmt
 tpls['camp']['enable'] = args.camp
 tpls['RAJA']['enable'] = args.RAJA
@@ -235,10 +233,6 @@ if dirpath.exists():
 with open(dirpath, 'r') as file:
     cmake_data = json.load(file)
 
-# BLT and CCCL are source-only dependencies.  Keep CCCL in the builder's
-# dependency list without requiring a recipe-specific CMake configuration.
-cmake_data['libraries'].setdefault('cccl', {'cmake': {}})
-
 if 'cmake_path' in cmake_data.keys():
     cmake_path = cmake_data['cmake_path']
 else:
@@ -249,7 +243,6 @@ cmake_data['libraries']['BOBA']['cmake'].update(boba_cmake_options)
 
 export_suffix = {}
 export_suffix["blt"] = ""
-export_suffix["cccl"] = ""
 export_suffix["Caliper"] = "share/cmake/caliper"
 export_suffix["hdf5"] = "cmake"
 export_suffix["fmt"] = "lib/cmake/fmt"
@@ -263,7 +256,6 @@ export_suffix["metal_cpp_compute"] = "lib/cmake/metal_cpp_compute"
 tpl_cmake_dirs = {}
 
 check_external_tpl_cmake_dir('blt', args.BLT_DIR, tpl_cmake_dirs)
-check_external_tpl_cmake_dir('cccl', args.CCCL_DIR, tpl_cmake_dirs)
 check_external_tpl_cmake_dir('fmt', args.FMT_DIR, tpl_cmake_dirs)
 check_external_tpl_cmake_dir('camp', args.CAMP_DIR, tpl_cmake_dirs)
 check_external_tpl_cmake_dir('RAJA', args.RAJA_DIR, tpl_cmake_dirs)
@@ -289,7 +281,7 @@ if 'eigen' in tpl_cmake_dirs:
 def build_tpl(cmake_dict, tpl, architecture):
 
     is_boba = (tpl == 'BOBA')
-    source_only = tpl in ['blt', 'cccl']
+    source_only = tpl == 'blt'
     force = args.force or is_boba
 
     enable = source_only and tpls[tpl]['enable'] == 'On'
@@ -364,13 +356,8 @@ def build_tpl(cmake_dict, tpl, architecture):
             tpl_export_string = tpl_cmake_dirs[other_tpls]['tpl_export_string']
             cmake_dict['BOBA']['cmake'][tpl_dir_string] = tpl_export_string
     else:
-        if tpl == 'cccl':
-            # CCCL is header-only and source-only, so expose its source tree
-            # to the BoBa configure step instead of an empty install prefix.
-            tpl_export_string = tpl_source_dir
-        else:
-            tpl_export = export_suffix[tpl]
-            tpl_export_string = os.path.join(tpl_install_dir, tpl_export)
+        tpl_export = export_suffix[tpl]
+        tpl_export_string = os.path.join(tpl_install_dir, tpl_export)
         tpl_cmake_dirs[tpl] = {}
         tpl_cmake_dirs[tpl]['tpl_dir_string'] = get_tpl_dir_string(tpl)
         tpl_cmake_dirs[tpl]['tpl_export_string'] = tpl_export_string

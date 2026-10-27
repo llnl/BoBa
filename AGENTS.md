@@ -75,6 +75,10 @@ This repo has two active build paths. Do not assume updating one is enough.
 ## Verification Expectations
 
 - Prefer targeted verification over blanket rebuilds.
+- Use the compiler selected by `Makefile` and `Makefile_boba` for make targets.
+  Do not override `CXX`, `CC`, `COMPILE`, or `LINK`.
+  Set up a supported host toolchain through site modules when needed, then run make normally.
+  If no compatible toolchain is available, report the limitation.
 - Good first checks:
   - `make <target>`
   - `make <target> BOBA_DEBUG=1`

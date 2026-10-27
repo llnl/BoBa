@@ -26,7 +26,6 @@ fi
 echo "BoBa builder phase"
 python3 ../../../boba_builder.py \
   --BLT_DIR "${BOBA_TPL_FARM}/tpl/blt" \
-  --CCCL_DIR "${BOBA_TPL_FARM}/tpl/cccl" \
   --KOKKOS_DIR "${KOKKOS_DIR}" \
   --boba \
   --clone Off \

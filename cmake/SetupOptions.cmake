@@ -9,8 +9,40 @@ set(BOBA_ENABLE_HDF5 Off CACHE BOOL "BOBA Use HDF5")
 set(BOBA_ENABLE_KOKKOS Off CACHE BOOL "BOBA Use Kokkos reductions")
 set(BOBA_ENABLE_METAL Off CACHE BOOL "BOBA Use Metal GPU backend")
 set(BOBA_HIP_LIBS Off CACHE BOOL "BOBA Use ROCM/HIP software stack")
-set(BOBA_CUTENSOR "${ENABLE_CUTENSOR}" CACHE BOOL "Legacy compatibility option for cuTENSOR support")
-set(BOBA_HIPTENSOR "${ENABLE_HIPTENSOR}" CACHE BOOL "Legacy compatibility option for hiptensor support")
+if(BOBA_ENABLE_CUDA)
+  find_path(BOBA_CUTENSOR_INCLUDE_DIR cutensor.h
+    HINTS ${CUTENSOR_ROOT} ENV CUTENSOR_ROOT
+    PATH_SUFFIXES include)
+  find_library(BOBA_CUTENSOR_LIBRARY NAMES cutensor
+    HINTS ${CUTENSOR_ROOT} ENV CUTENSOR_ROOT
+    PATH_SUFFIXES lib lib64)
+endif()
+if(BOBA_ENABLE_HIP)
+  find_path(BOBA_HIPTENSOR_INCLUDE_DIR hiptensor/hiptensor.hpp
+    HINTS ${HIPTENSOR_ROOT} ${ROCM_ROOT_DIR} ENV HIPTENSOR_ROOT ENV ROCM_PATH
+    PATH_SUFFIXES include)
+  find_library(BOBA_HIPTENSOR_LIBRARY NAMES hiptensor
+    HINTS ${HIPTENSOR_ROOT} ${ROCM_ROOT_DIR} ENV HIPTENSOR_ROOT ENV ROCM_PATH
+    PATH_SUFFIXES lib lib64)
+endif()
+if(DEFINED ENABLE_CUTENSOR)
+  set(_boba_cutensor_default "${ENABLE_CUTENSOR}")
+elseif(BOBA_ENABLE_CUDA AND BOBA_CUTENSOR_INCLUDE_DIR AND BOBA_CUTENSOR_LIBRARY)
+  set(_boba_cutensor_default On)
+else()
+  set(_boba_cutensor_default Off)
+endif()
+set(BOBA_CUTENSOR "${_boba_cutensor_default}" CACHE BOOL "Enable cuTENSOR support")
+unset(_boba_cutensor_default)
+if(DEFINED ENABLE_HIPTENSOR)
+  set(_boba_hiptensor_default "${ENABLE_HIPTENSOR}")
+elseif(BOBA_ENABLE_HIP AND BOBA_HIPTENSOR_INCLUDE_DIR AND BOBA_HIPTENSOR_LIBRARY)
+  set(_boba_hiptensor_default On)
+else()
+  set(_boba_hiptensor_default Off)
+endif()
+set(BOBA_HIPTENSOR "${_boba_hiptensor_default}" CACHE BOOL "Enable hipTensor support")
+unset(_boba_hiptensor_default)
 set(BOBA_ENABLE_UMPIRE On CACHE BOOL "BOBA Use Umpire")
 set(BOBA_ENABLE_CAMP On CACHE BOOL "BOBA Use Camp")
 if(ENABLE_CUDA OR ENABLE_HIP)

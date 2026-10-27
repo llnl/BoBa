@@ -7,10 +7,6 @@ ifndef BOBA_TPL_INSTALL_DIR
 	BOBA_TPL_INSTALL_DIR = ${BOBA_TOP_DIR}/install
 endif
 
-ifndef CCCL_DIR
-	CCCL_DIR = ${BOBA_TPL_INSTALL_DIR}/../tpl/cccl
-endif
-
 ######################################################
 #  Compiler setup
 ######################################################
@@ -303,7 +299,12 @@ endif
 
 CXX=${CUDA_COMPILER}
 CXX_DEFINES := ${CXX_DEFINES} -DBOBA_CUDA -DBOBA_CUDA_LIBS
-INCLUDES := ${INCLUDES} -I${CCCL_DIR}/thrust -I${CCCL_DIR}/libcudacxx/include -I${CCCL_DIR}/cub
+CUDA_TOOLKIT_ROOT := $(abspath $(dir $(firstword $(CUDA_COMPILER)))/..)
+CCCL_INCLUDE_DIR := $(firstword $(foreach dir,$(CUDA_TOOLKIT_ROOT)/include $(CUDA_TOOLKIT_ROOT)/targets/x86_64-linux/include $(CUDA_TOOLKIT_ROOT)/targets/sbsa-linux/include,$(if $(wildcard $(dir)/cub/cub.cuh),$(dir),$(if $(wildcard $(dir)/cccl/cub/cub.cuh),$(dir)/cccl))))
+ifeq ($(CCCL_INCLUDE_DIR),)
+$(error The CUDA toolkit at $(CUDA_TOOLKIT_ROOT) does not contain CCCL/CUB headers)
+endif
+INCLUDES := ${INCLUDES} -I${CCCL_INCLUDE_DIR}
 LINKFLAGS= -std=c++20 -restrict -arch ${COMP_ARCH} --expt-extended-lambda --expt-relaxed-constexpr
 CXXFLAGS := ${CXXFLAGS} -x cu -std=c++20 -restrict -arch ${COMP_ARCH} --expt-extended-lambda --expt-relaxed-constexpr
 CXXFLAGS := ${CXXFLAGS} -Xcudafe "--diag_suppress=declared_but_not_referenced"
@@ -340,20 +341,23 @@ endif
 ifeq ($(IS_MATRIX), matrix) # matrix
 CUDA_LIBS := ${CUDA_LIBS} -lcuda -lcusolver -lcudart -lmetis_static -lcublas -lcublasLt -lcusparse -lculibos -lcufft -lnvJitLink
 CUTENSOR_INSTALL_DIR=/collab/usr/global/tools/nvidia/nvhpc/toss_4_x86_64_ib/nvhpc-25.1/Linux_x86_64/25.1/math_libs/12.6/targets/x86_64-linux
+# Set the default to 1 only if BOBA_CUTENSOR was not already set.
+BOBA_CUTENSOR ?= 1
 endif
 ifeq ($(HOSTNAME), dev-amd24-h200) # MSU h200s
 CUDA_LIBS := ${CUDA_LIBS} -L/opt/software-current/2023.06/x86_64/generic/software/cuTENSOR/2.0.1.2-CUDA-12.1.1/lib
 CUDA_LIBS := ${CUDA_LIBS} -lcuda -lcusolver -lcudart_static -lmetis_static -lcublas_static -lcublasLt_static -lcusparse_static -lculibos -lcufft -lnvToolsExt
 CUTENSOR_INSTALL_DIR=/opt/software-current/2023.06/x86_64/generic/software/cuTENSOR/2.0.1.2-CUDA-12.1.1
+# Set the default to 1 only if BOBA_CUTENSOR was not already set.
+BOBA_CUTENSOR ?= 1
 endif
 
-ifdef BOBA_CUTENSOR
+# Set BOBA_CUTENSOR=0 to skip the cuTENSOR include, define, and link settings.
+ifeq ($(BOBA_CUTENSOR),1)
 INCLUDES := ${INCLUDES} -I${CUTENSOR_INSTALL_DIR}/include
 CXX_DEFINES := ${CXX_DEFINES} -DBOBA_CUTENSOR
 
-ifeq ($(IS_MATRIX), matrix) # matrix
-CUTENSOR_LIBS = -L${CUTENSOR_INSTALL_DIR}/lib -Xlinker -rpath=${CUTENSOR_INSTALL_DIR} -lcutensor
-endif
+CUTENSOR_LIBS = -L${CUTENSOR_INSTALL_DIR}/lib -Xlinker -rpath=${CUTENSOR_INSTALL_DIR}/lib -lcutensor
 
 CUDA_LIBS := ${CUDA_LIBS} ${CUTENSOR_LIBS}
 endif
@@ -392,8 +396,11 @@ else
 endif
 
 ROCM_LIBS = -lhipsolver -lrocblas -lrocsolver -lhipblas -lhipsparse -lhipfft -lroctracer64 -lroctx64
-ifdef BOBA_HIPTENSOR
 HIP_INSTALL_DIR=/usr/tce/packages/rocmcc/rocmcc-7.0.0-magic
+# Set the default to 1 only if BOBA_HIPTENSOR was not already set.
+BOBA_HIPTENSOR ?= 1
+ifeq ($(BOBA_HIPTENSOR),1)
+# Set BOBA_HIPTENSOR=0 to skip the hipTensor include, define, and link settings.
 CXXFLAGS := ${CXXFLAGS} -isystem ${HIP_INSTALL_DIR}/include -DBOBA_HIPTENSOR
 HIPTENSOR_LIBS = -L${HIP_INSTALL_DIR} -lhiptensor
 ROCM_LIBS := ${ROCM_LIBS} ${HIPTENSOR_LIBS}

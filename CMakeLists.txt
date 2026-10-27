@@ -128,6 +128,15 @@ blt_add_library(
   DEFINES ${boba_defines}
   DEPENDS_ON ${boba_depends} ${TPL_DEPS})
 
+if(BOBA_CUTENSOR)
+  target_include_directories(BOBA PUBLIC ${BOBA_CUTENSOR_INCLUDE_DIR})
+  target_link_libraries(BOBA PUBLIC ${BOBA_CUTENSOR_LIBRARY})
+endif()
+if(BOBA_HIPTENSOR)
+  target_include_directories(BOBA PUBLIC ${BOBA_HIPTENSOR_INCLUDE_DIR})
+  target_link_libraries(BOBA PUBLIC ${BOBA_HIPTENSOR_LIBRARY})
+endif()
+
 if(ENABLE_CUDA)
   set_property(TARGET BOBA PROPERTY CUDA_STANDARD ${CMAKE_CUDA_STANDARD})
 endif()
@@ -140,16 +149,20 @@ target_include_directories(BOBA PUBLIC
     )
 
 if(BOBA_ENABLE_CUDA)
-  set(CCCL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tpl/cccl" CACHE PATH "Path to the CCCL source tree")
-  foreach(cccl_include_dir cub thrust libcudacxx/include)
-    if(NOT EXISTS "${CCCL_DIR}/${cccl_include_dir}")
-      message(FATAL_ERROR "CCCL_DIR does not contain ${cccl_include_dir}: ${CCCL_DIR}")
+  unset(BOBA_CCCL_INCLUDE_DIR)
+  foreach(cuda_include_dir IN LISTS CUDAToolkit_INCLUDE_DIRS)
+    if(EXISTS "${cuda_include_dir}/cub/cub.cuh")
+      set(BOBA_CCCL_INCLUDE_DIR "${cuda_include_dir}")
+      break()
+    elseif(EXISTS "${cuda_include_dir}/cccl/cub/cub.cuh")
+      set(BOBA_CCCL_INCLUDE_DIR "${cuda_include_dir}/cccl")
+      break()
     endif()
   endforeach()
-  target_include_directories(BOBA PUBLIC
-      $<BUILD_INTERFACE:${CCCL_DIR}/thrust>
-      $<BUILD_INTERFACE:${CCCL_DIR}/libcudacxx/include>
-      $<BUILD_INTERFACE:${CCCL_DIR}/cub>)
+  if(NOT BOBA_CCCL_INCLUDE_DIR)
+    message(FATAL_ERROR "The selected CUDA toolkit does not contain CCCL/CUB headers")
+  endif()
+  target_include_directories(BOBA PUBLIC "${BOBA_CCCL_INCLUDE_DIR}")
 endif()
 
 install(TARGETS BOBA ${boba_name}
@@ -171,18 +184,6 @@ include(GNUInstallDirs)
 install(
   DIRECTORY include/BOBA
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-
-if(BOBA_ENABLE_CUDA AND NOT BOBA_EXTERNAL_CCCL)
-  install(
-    DIRECTORY tpl/cccl/cub/cub
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-  install(
-    DIRECTORY tpl/cccl/thrust/thrust
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-  install(
-    DIRECTORY tpl/cccl/libcudacxx/include/
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-endif()
 
 install(
   FILES LICENSE NOTICE
@@ -251,11 +252,6 @@ if(UMPIRE_FOUND AND NOT BOBA_EXTERNAL_UMPIRE)
     tpl/umpire/COPYRIGHT)
 endif()
 
-if(BOBA_ENABLE_CUDA AND NOT BOBA_EXTERNAL_CCCL)
-  list(APPEND boba_license_files
-    tpl/cccl/LICENSE)
-endif()
-
 if(boba_license_files)
   install(
     FILES ${boba_license_files}
@@ -308,11 +304,6 @@ endif()
 if(UMPIRE_FOUND AND NOT BOBA_EXTERNAL_UMPIRE)
   list(APPEND boba_license_index_files
     tpl/license/umpire)
-endif()
-
-if(BOBA_ENABLE_CUDA AND NOT BOBA_EXTERNAL_CCCL)
-  list(APPEND boba_license_index_files
-    tpl/license/cccl)
 endif()
 
 if(boba_license_index_files)
