@@ -215,6 +215,12 @@ if machine in ['macbook', 'linux']:
     # recipe = f'{boba_dir}/recipes/boba_build_macbook_metal.json'
 
 #
+# LANL Darwin V100
+#
+if machine in ['darwin']:
+    recipe = f'{boba_dir}/recipes/boba_build_darwin_v100.json'
+
+#
 # MSU ICER H200
 #
 if machine in ['msu_h200']:

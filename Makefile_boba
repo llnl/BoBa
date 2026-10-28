@@ -285,6 +285,14 @@ endif
 ifeq ($(HOSTNAME), dev-amd24-h200) # MSU h200s
 	COMP_ARCH=sm_90
 endif
+IS_DARWIN := $(and $(filter cn% darwin-fe%,${HOSTNAME}),$(wildcard /projects/darwin-nv))
+ifneq ($(IS_DARWIN),) # LANL Darwin V100s
+	COMP_ARCH=sm_70
+	# CUDA 12.8: the newest Darwin module that still ships NVTX2, which Caliper's CUPTI service needs
+	DARWIN_CUDA_HOME=/projects/darwin-nv/rhel8/x86_64/packages/cuda/12.8.0
+	DARWIN_GCC_HOME=/vast/projects/darwin_contrib/spack-builds/2026-04-14/darwin/rhel8/x86_64/gcc/14.3.0-gcc_13.2.0
+	CUDA_COMPILER=${DARWIN_CUDA_HOME}/bin/nvcc -ccbin ${DARWIN_GCC_HOME}/bin/g++
+endif
 
 ifeq ($(IS_MATRIX), matrix) # CZ H100s, matrix
 	CUDA_COMPILER=/usr/tce/packages/cuda/cuda-12.6.0/bin/nvcc -ccbin /usr/tce/packages/gcc/gcc-13.3.1/bin/g++
@@ -320,6 +328,12 @@ LINKFLAGS := ${LINKFLAGS} -Xlinker -rpath=/usr/tce/packages/cuda/cuda-12.6.0/lib
 CXXFLAGS := ${CXXFLAGS} --diag-suppress=20014   #warnings caused by eigen
 CXXFLAGS := ${CXXFLAGS} --diag-suppress=20011   #warnings caused by eigen
 endif
+ifneq ($(IS_DARWIN),) # LANL Darwin V100s
+LINKFLAGS := ${LINKFLAGS} -Xlinker -rpath=${DARWIN_CUDA_HOME}/lib64
+LINKFLAGS := ${LINKFLAGS} -Xlinker -rpath=${DARWIN_GCC_HOME}/lib64
+CXXFLAGS := ${CXXFLAGS} --diag-suppress=20014   #warnings caused by eigen
+CXXFLAGS := ${CXXFLAGS} --diag-suppress=20011   #warnings caused by eigen
+endif
 ifeq ($(IS_VENADITO), vt-rfe) # LANL Venadito GH200
 LINKFLAGS := ${LINKFLAGS} -Xlinker -rpath=${VENADITO_CUDA_HOME}/lib64
 LINKFLAGS := ${LINKFLAGS} -Xlinker -rpath=${VENADITO_GCC_HOME}/lib64
@@ -334,6 +348,9 @@ LINKFLAGS := ${LINKFLAGS} -O3 -g -lineinfo
 CXXFLAGS := ${CXXFLAGS} -O3 -g -lineinfo
 endif
 
+ifneq ($(IS_DARWIN),) # LANL Darwin V100s (no cuTENSOR installed: leave BOBA_CUTENSOR off)
+CUDA_LIBS := ${CUDA_LIBS} -L${DARWIN_CUDA_HOME}/lib64 -lcuda -lcusolver -lcudart -lcublas -lcublasLt -lcusparse -lcufft -lnvJitLink
+endif
 ifeq ($(IS_VENADITO), vt-rfe) # LANL Venadito GH200
 CUDA_LIBS := ${CUDA_LIBS} -L${VENADITO_CUDA_HOME}/lib64 -lcuda -lcusolver -lcudart -lcublas -lcublasLt -lcusparse -lcufft -lnvJitLink
 endif
