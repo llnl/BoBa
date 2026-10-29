@@ -9,6 +9,12 @@ No copyright assignment is required to contribute to BoBa.
 BoBa was originally developed in 2021 by Lawrence Livermore National
 Security, LLC.
 
+Employees of Triad National Security, LLC. contribute to BoBa.
+The following copyright statement is applied exclusively to these contributions.
+
+© (or copyright) 2020 Triad National Security, LLC. All rights reserved.
+This software was produced under U.S. Government contract 89233218CNA000001 for Los Alamos National Laboratory (LANL), which is operated by Triad National Security, LLC, for the U.S. Department of Energy/National Nuclear Security Administration.
+
 
 SPDX usage
 ------------
