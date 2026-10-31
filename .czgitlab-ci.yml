@@ -62,6 +62,9 @@ default:
     LLNL_SLURM_SCHEDULER_PARAMETERS: "--nodes=1 --ntasks=1 --gres=gpu:1 --time=00:20:00 --cpus-per-task=28 --partition=pci"
 
 .shell_hip:
+  rules:
+# Only run hip in the weekly scheduled tests          
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   tags:
     - tuolumne
     - batch
