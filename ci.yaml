@@ -1041,6 +1041,12 @@
     test_amen_4d_iterative_boba_operator_gmres:
       inputs: "--dimension 4 --which 0 --max_direct_solve_size 0 --solve3d_2ml_method 2 --solve3d_2ml_tolerance_relative 1e-10"
       skip: [cuda, hip]
+    test_amen_4d_iterative_boba_operator_gmres_res8:
+      inputs: "--dimension 4 --resolution 8 --which 0 --max_direct_solve_size 0 --solve3d_2ml_method 2 --solve3d_2ml_tolerance_relative 1e-10"
+      skip: [cuda, hip]
+    test_amen_4d_iterative_boba_operator_gmres_res8_no_preconditioner:
+      inputs: "--dimension 4 --resolution 8 --which 0 --max_direct_solve_size 0 --solve3d_2ml_method 2 --solve3d_2ml_tolerance_relative 1e-10 --no_row_norm_preconditioner"
+      skip: [cuda, hip]
     test_amen_high:
       inputs: "--resolution 64 --dimension 2 --which 0"
       skip: [cuda, hip, debug]
@@ -1108,6 +1114,9 @@
       skip: [cuda, hip]
     test_amen_block_3d:
       inputs: "--dimension 3 --resolution 4 --coupling_strength 0.2 --coupling_rank 2 --exact_solution_rank 3 --max_direct_solve_size 0"
+      skip: [cuda, hip]
+    test_amen_block_3d_strong_coupling:
+      inputs: "--dimension 3 --resolution 5 --coupling_strength 0.5 --coupling_rank 3 --exact_solution_rank 4 --max_direct_solve_size 0 --solve3d_2ml_method 2 --solve3d_2ml_tolerance_relative 1e-10"
       skip: [cuda, hip]
     test_amen_block_4d:
       inputs: "--dimension 4 --resolution 3 --coupling_strength 0.2 --coupling_rank 2 --exact_solution_rank 3 --max_direct_solve_size 0"

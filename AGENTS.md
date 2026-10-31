@@ -79,6 +79,7 @@ This repo has two active build paths. Do not assume updating one is enough.
   Do not override `CXX`, `CC`, `COMPILE`, or `LINK`.
   Set up a supported host toolchain through site modules when needed, then run make normally.
   If no compatible toolchain is available, report the limitation.
+- Run compilation checks through the repository's `make` targets. Do not compile sources with ad hoc `g++` commands or assemble custom compiler and linker flags.
 - Good first checks:
   - `make <target>`
   - `make <target> BOBA_DEBUG=1`
@@ -124,8 +125,9 @@ This repo has two active build paths. Do not assume updating one is enough.
 - Always use full braces for `if` and `for` statements, including one-line bodies.
 - Prefer public `boba::loop` when a loop is compatible with device execution.
 - Never nest BoBa loops; use a single loop or ordinary nested loops where necessary.
+- Start with `examples/tutorials/tutorial_0_objects_loops.cpp` for loops and multiindexers, then see `examples/tutorials/tutorial_1_tensors.cpp` for tensors, matrices, vectors, and views used together. Views already provide `size()` and `multiindex()`; use those when iterating over a view instead of constructing a separate multiindexer.
 - Use a multiindexer when it makes multidimensional indexing clearer than manual modulo or division arithmetic.
-- Create views once and reuse them instead of repeatedly constructing `.view()` or `.const_view()` inside loops and expressions.
+- Create views once and reuse them. Repeated indexing through `tensor.view()[index]` constructs a new view object on every access; use a named view such as `auto tensor_view = tensor.view();` instead. The same applies to `.const_view()`.
 - Avoid inline view expressions such as `.view()({...})`; use a named view instead.
 - Prefer ordinary copy construction, such as `auto copy = object;`, over trivial copy helpers.
 - Treat `index_t` as unsigned and avoid mixed signed/unsigned arithmetic, especially subtraction, comparisons, and assignments involving indices.

@@ -12,6 +12,9 @@
 #include <unsupported/Eigen/IterativeSolvers>
 #endif
 
+#include <tuple>
+#include <utility>
+
 namespace boba
 {
 
@@ -186,17 +189,17 @@ namespace detail
  * @brief Solves a linear system with Eigen's restarted GMRES implementation.
  * @tparam space Execution space of the input matrix and vector.
  * @tparam data_t Scalar type.
- * @tparam index_t Index type.
  * @param matrix System matrix.
  * @param input Right-hand side vector.
  * @param tolerance_relative Relative convergence tolerance.
  * @param maximum_iterations Maximum GMRES iteration count.
  * @param sparsity Sparsification threshold passed to Eigen.
- * @return Host-space solution vector.
+ * @return A tuple containing the host-space solution vector, Eigen's estimated
+ *   error, and the number of iterations taken.
  */
 template <execution_space space, typename data_t>
 [[nodiscard]]
-boba::Vector<host_space, data_t> eigen_gmres(
+std::tuple<boba::Vector<host_space, data_t>, data_t, size_t> eigen_gmres(
   const boba::Matrix<space, data_t>& matrix,
   const boba::Vector<space, data_t>& input,
   data_t tolerance_relative = 1.0e-7,
@@ -205,18 +208,23 @@ boba::Vector<host_space, data_t> eigen_gmres(
 {
   BOBA_CALI_MARK
   boba_always_assert_equal(space, host_space, "eigen_gmres only useable for host data.");
+  BOBA_CALI_BEGIN("init_output");
   boba::Vector<host_space, data_t> output(input.sizes());
   output.fill_with_zeros();
+  BOBA_CALI_SWITCH("init_output", "sparsity");
   auto input_eigen = ::boba::get_eigen_map(input);
   auto output_eigen = ::boba::get_eigen_map(output);
-
   auto matrix_eigen = ::boba::get_eigen_map(matrix).sparseView(sparsity);
-
   ::Eigen::GMRES<Eigen::SparseMatrix<data_t>> esolver(matrix_eigen);
   esolver.setTolerance(tolerance_relative);
   esolver.setMaxIterations(static_cast<long>(maximum_iterations));
+  BOBA_CALI_SWITCH("sparsity", "eigen_gmres_solve");
   output_eigen = esolver.solve(input_eigen);
-  return output;
+  BOBA_CALI_END("eigen_gmres_solve");
+  return std::make_tuple(
+    std::move(output),
+    esolver.error(),
+    static_cast<size_t>(esolver.iterations()));
 }
 
 /**
@@ -257,8 +265,11 @@ void ls_solve_qr_eigen(Matrix<execution_space::CPU, data_t> const& matrix_A,
   auto A_map = ::boba::get_const_eigen_map(matrix_A);
   auto rhs_map = ::boba::get_const_eigen_map(matrix_B);
   auto output_map = ::boba::get_eigen_map(matrix_C);
+  BOBA_CALI_BEGIN("qr_factorization");
   Eigen::ColPivHouseholderQR<EigenMatrix> solver(A_map);
+  BOBA_CALI_SWITCH("qr_factorization", "qr_solve");
   output_map = solver.solve(rhs_map);
+  BOBA_CALI_END("qr_solve");
 }
 
 /**
@@ -278,8 +289,11 @@ void ls_solve_cod_eigen(Matrix<execution_space::CPU, data_t> const& matrix_A,
   auto A_map = ::boba::get_const_eigen_map(matrix_A);
   auto rhs_map = ::boba::get_const_eigen_map(matrix_B);
   auto output_map = ::boba::get_eigen_map(matrix_C);
+  BOBA_CALI_BEGIN("cod_factorization");
   Eigen::CompleteOrthogonalDecomposition<EigenMatrix> solver(A_map);
+  BOBA_CALI_SWITCH("cod_factorization", "cod_solve");
   output_map = solver.solve(rhs_map);
+  BOBA_CALI_END("cod_solve");
 }
 
 /**
@@ -452,8 +466,11 @@ void ls_solve_lu_eigen(Matrix<execution_space::CPU, data_t> const& matrix_A,
   auto A_map = ::boba::get_const_eigen_map(matrix_A);
   auto rhs_map = ::boba::get_const_eigen_map(matrix_B);
   auto output_map = ::boba::get_eigen_map(matrix_C);
+  BOBA_CALI_BEGIN("lu_factorization");
   Eigen::PartialPivLU<EigenMatrix> solver(A_map);
+  BOBA_CALI_SWITCH("lu_factorization", "lu_solve");
   output_map = solver.solve(rhs_map);
+  BOBA_CALI_END("lu_solve");
 }
 
 /**
@@ -649,31 +666,31 @@ void factor_svd_eigen(
  * @brief Reports that Eigen GMRES support is unavailable.
  * @tparam space Execution space of the input matrix and vector.
  * @tparam data_t Scalar type.
- * @tparam index_t Index type.
  * @param matrix System matrix.
  * @param input Right-hand side vector.
  * @param tolerance_relative Relative convergence tolerance.
  * @param maximum_iterations Maximum GMRES iteration count.
  * @param sparsity Sparsification threshold passed to Eigen.
- * @return This function does not return successfully.
+ * @return A tuple containing the host-space solution vector, an estimated
+ *   error, and an iteration count. This function does not return successfully.
  */
 template <execution_space space, typename data_t>
 [[nodiscard]]
-boba::Vector<host_space, data_t> eigen_gmres(
+std::tuple<boba::Vector<host_space, data_t>, data_t, size_t> eigen_gmres(
   const boba::Matrix<space, data_t>& matrix,
   const boba::Vector<space, data_t>& input,
   data_t tolerance_relative = 1.0e-7,
   size_t maximum_iterations = 30,
   data_t sparsity = 1.0e-3)
 {
-  boba::Vector<space, data_t> output;
+  boba::Vector<host_space, data_t> output;
   detail::ignore(matrix);
   detail::ignore(input);
   detail::ignore(tolerance_relative);
   detail::ignore(maximum_iterations);
   detail::ignore(sparsity);
   boba_error("You have called eigen's GMRES routine, but BOBA_ENABLE_EIGEN is set to false.");
-  return output;
+  return std::make_tuple(std::move(output), data_t{}, size_t{});
 }
 
 /**

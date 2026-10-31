@@ -165,6 +165,22 @@ boba::Vector<space, data_t> bfun3(
 }
 
 /**
+ * @brief Applies a tensor-valued diagonal scaling operator.
+ */
+template <::boba::execution_space space, typename data_t>
+struct DiagonalTensorScalingOperator
+{
+  ::boba::Tensor<3, space, data_t> factors;
+
+  [[nodiscard]]
+  ::boba::Tensor<3, space, data_t> operator*(const ::boba::Tensor<3, space, data_t>& input) const
+  {
+    boba_always_assert_equal(factors.sizes(), input.sizes(), "incompatible tensor scaling sizes");
+    return ::boba::elementwise_product(factors, input);
+  }
+};
+
+/**
  * @brief Creates a matrix M such that M*reshape(x) = Phi1*A*Phi2*x
  * @return A matrix that corresponds to the action of Phi1*A*Phi2
  */
@@ -194,6 +210,94 @@ boba::Matrix<space, data_t> bfun3_matrix(
   auto cols = Phi1APhi2.sizes(3) * Phi1APhi2.sizes(4) * Phi1APhi2.sizes(5);
 
   return reshape_to_matrix(Phi1APhi2, {rows, cols});
+}
+
+/**
+ * @brief Squared Euclidean norm of every row of the projected bfun3 matrix.
+ *
+ * Row indices remain free while the column indices are contracted against
+ * conjugate copies.  This reuses the projected row Gram factors instead of
+ * evaluating every projected matrix entry independently.
+ */
+template <::boba::execution_space space, typename data_t>
+boba::Tensor<3, space, data_t> bfun3_matrix_row_norms_squared(
+  const boba::Tensor<3, space, data_t>& Phi1,
+  const boba::Tensor<4, space, data_t>& A,
+  const boba::Tensor<3, space, data_t>& Phi2)
+{
+  BOBA_CALI_MARK
+  auto Phi1_conj = ::boba::get_conj(Phi1);
+  auto A_conj = ::boba::get_conj(A);
+  auto Phi2_conj = ::boba::get_conj(Phi2);
+
+  boba::Tensor<3, space, data_t> left_row_gram(
+    {Phi1.sizes(0), Phi1.sizes(2), Phi1.sizes(2)});
+  auto left_view = left_row_gram.view();
+  auto phi1_view = Phi1.const_view();
+  auto phi1_conj_view = Phi1_conj.const_view();
+  const auto left_cols = Phi1.sizes(1);
+  // Only the diagonal in the paired row indices of the Gram tensor is needed.
+  // Tensor contractions would form every row pair before selecting that
+  // diagonal, so compute each fixed-row entry directly here and below.
+  ::boba::loop<space, 1>(left_view.size(),
+                         [=] __boba_host_device__(index_t idx)
+  {
+    const auto [row_left, ra, rap] = left_view.multiindex(idx);
+    data_t value = 0;
+    for (index_t col_left = 0; col_left < left_cols; col_left++)
+    {
+      value += phi1_view({row_left, col_left, ra}) *
+               phi1_conj_view({row_left, col_left, rap});
+    }
+    left_view({row_left, ra, rap}) = value;
+  });
+
+  boba::Tensor<5, space, data_t> operator_row_gram(
+    {A.sizes(0), A.sizes(1), A.sizes(3), A.sizes(0), A.sizes(3)});
+  auto operator_view = operator_row_gram.view();
+  auto A_view = A.const_view();
+  auto A_conj_view = A_conj.const_view();
+  const auto physical_cols = A.sizes(2);
+  ::boba::loop<space, 1>(operator_view.size(),
+                         [=] __boba_host_device__(index_t idx)
+  {
+    const auto [ra, row, rb, rap, rbp] = operator_view.multiindex(idx);
+    data_t value = 0;
+    for (index_t col = 0; col < physical_cols; col++)
+    {
+      value += A_view({ra, row, col, rb}) *
+               A_conj_view({rap, row, col, rbp});
+    }
+    operator_view({ra, row, rb, rap, rbp}) = value;
+  });
+
+  boba::Tensor<3, space, data_t> right_row_gram(
+    {Phi2.sizes(1), Phi2.sizes(1), Phi2.sizes(2)});
+  auto right_view = right_row_gram.view();
+  auto phi2_view = Phi2.const_view();
+  auto phi2_conj_view = Phi2_conj.const_view();
+  const auto right_cols = Phi2.sizes(0);
+  ::boba::loop<space, 1>(right_view.size(),
+                         [=] __boba_host_device__(index_t idx)
+  {
+    const auto [rb, rbp, row_right] = right_view.multiindex(idx);
+    data_t value = 0;
+    for (index_t col_right = 0; col_right < right_cols; col_right++)
+    {
+      value += phi2_view({col_right, rb, row_right}) *
+               phi2_conj_view({col_right, rbp, row_right});
+    }
+    right_view({rb, rbp, row_right}) = value;
+  });
+
+  auto left_operator_row_gram = ::boba::tensor_contraction<2>(
+    {"row_left", "ra", "rap"}, left_row_gram,
+    {"ra", "row", "rb", "rap", "rbp"}, operator_row_gram,
+    {"row_left", "row", "rb", "rbp"});
+  return ::boba::tensor_contraction<2>(
+    {"row_left", "row", "rb", "rbp"}, left_operator_row_gram,
+    {"rb", "rbp", "row_right"}, right_row_gram,
+    {"row_left", "row", "row_right"});
 }
 
 /*
@@ -228,8 +332,12 @@ struct Solve3D2MLOptions
   size_t eigen_gmres_max_iterations = 30;
   /// Sparsification threshold used only by the Eigen GMRES path (`method == 0`).
   data_t eigen_gmres_sparsity = 1.0e-3;
-  index_t outer_iterations = 40;
-  index_t inner_iterations = 200;
+  /// One restarted cycle of the local BoBa GMRES solve.
+  index_t outer_iterations = 1;
+  /// Maximum local BoBa GMRES steps in the single cycle.
+  index_t inner_iterations = 30;
+  /// Apply row-norm left preconditioning for dense operator GMRES.
+  bool use_row_norm_preconditioner = true;
 };
 
 /**
@@ -290,12 +398,14 @@ boba::Tensor<3, space, data_t> solve3d_2ml(
         auto dy_vector = flatten(dy);
         auto bfun_operator = bfun3_matrix(Phi1, A, Phi2);
 
-        auto dx = detail::eigen_gmres(
+        auto [dx, estimated_error, iterations_taken] = detail::eigen_gmres(
           bfun_operator,
           dy_vector,
           options.tolerance_relative * x0_vector_norm,
           options.eigen_gmres_max_iterations,
           options.eigen_gmres_sparsity);
+        detail::ignore(estimated_error);
+        detail::ignore(iterations_taken);
 
         checkpoint();
         auto dx_tensor = reshape<3>(dx, x.sizes());
@@ -347,7 +457,9 @@ boba::Tensor<3, space, data_t> solve3d_2ml(
     {
       using operator_t = Solve3D2MLGMRESOperator<space, data_t, tensor_4_t>;
       using vector_t = Tensor<3, space, data_t>;
-      Krylov<operator_t, vector_t> solver(
+      using preconditioner_t = DiagonalTensorScalingOperator<space, data_t>;
+      preconditioner_t preconditioner;
+      Krylov<operator_t, vector_t, preconditioner_t> solver(
         options.outer_iterations,
         options.inner_iterations,
         real_tol);
@@ -364,6 +476,25 @@ boba::Tensor<3, space, data_t> solve3d_2ml(
       solver.verbose = false;
       solver.relative_threshold = options.tolerance_relative;
       solver.absolute_threshold = options.tolerance_absolute;
+
+      if constexpr (not IsSparseTensorType<tensor_4_t>)
+      {
+        if (options.use_row_norm_preconditioner)
+        {
+          // Scale each projected equation row by its reciprocal norm. GMRES
+          // applies these factors to the operator and residual, reducing
+          // differences in row magnitude; tiny rows retain a factor of one.
+          auto row_norms_squared = bfun3_matrix_row_norms_squared(Phi1, A, Phi2);
+          preconditioner.factors = ::boba::apply_function(row_norms_squared,
+            [] __boba_host_device__(data_t row_norm_squared)
+          {
+            auto row_norm_squared_filtered = ::boba::max(data_t{0.0}, row_norm_squared);
+            auto row_norm = ::boba::sqrt(row_norm_squared_filtered);
+            return ::boba::is_tiny(row_norm) ? data_t(1) : data_t(1) / row_norm;
+          });
+          solver.set_left_preconditioner(preconditioner);
+        }
+      }
 
       checkpoint();
       vector_t dx_initial(x0.sizes());

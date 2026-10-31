@@ -312,6 +312,34 @@ Vector<space, data_t> general_matrix_vector_product(
 }
 
 /**
+ * @brief Computes Euclidean row norms of a dense matrix.
+ */
+template <execution_space space, typename data_t>
+Vector<space, real_type_t<data_t>> matrix_row_norms(
+  const Matrix<space, data_t>& matrix)
+{
+  BOBA_CALI_MARK
+  using real_data_t = real_type_t<data_t>;
+  const auto [rows, cols] = matrix.sizes();
+  Vector<space, real_data_t> row_norms({rows});
+  auto matrix_view = matrix.const_view();
+  auto row_norms_view = row_norms.view();
+
+  ::boba::loop<space, 1>(rows, [=] __boba_host_device__(index_t row)
+  {
+    real_data_t row_norm_squared = 0.0;
+    for (index_t col = 0; col < cols; col++)
+    {
+      auto absolute_value = ::boba::abs(matrix_view({row, col}));
+      row_norm_squared += absolute_value * absolute_value;
+    }
+    row_norms_view({row}) = ::boba::sqrt(row_norm_squared);
+  });
+
+  return row_norms;
+}
+
+/**
  * @brief Right multiply a vector by a matrix
  *
  * @param[in] vector_A vector

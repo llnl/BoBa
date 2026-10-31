@@ -111,9 +111,7 @@ struct input
   double dx = 1.0;
 };
 
-//
-// Test for Block TT-AMEn with variable-size blocks
-//
+// Test Block TT-AMEn with variable-size blocks.
 
 template <size_t dimension, size_t n_blocks>
 void run_block_test(

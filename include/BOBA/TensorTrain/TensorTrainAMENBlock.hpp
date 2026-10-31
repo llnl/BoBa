@@ -38,9 +38,9 @@ struct TensorTrainAMENBlock
   // per-block scalar bookkeeping does not preserve the off-diagonal projected
   // equations, so coupled solves use unnormalized environments.
   bool normalize_coupled_intermediate_quantities = false;
-  // Scale the assembled dense coupled site equations explicitly before the
-  // local solve. This is an algebraic row scaling of B*x=rhs; residual
-  // diagnostics and enrichment continue to use the original unscaled system.
+  // Scale the coupled site equations explicitly before the local solve. This
+  // is scalar-row equilibration of B*x=rhs; residual diagnostics and
+  // enrichment continue to use the original unscaled system.
   // Unknown/column scaling is intentionally avoided because projected coupled
   // systems may have gauge/nullspace freedom, and reweighting unknowns can
   // change the least-squares representative selected by the local solve.
@@ -556,14 +556,16 @@ struct TensorTrainAMENBlock
           boba::Vector<space, data_t> coupled_sol_prev_full({total_local_size});
           coupled_sol_prev_full.fill_with_zeros();
 
-          std::vector<data_t> coupled_row_norm_squared(Kay, 0.0);
+          using real_data_t = real_type_t<data_t>;
+          std::vector<Vector<space, real_data_t>> coupled_row_norm_squared(Kay);
           for (size_t ki = 0; ki < Kay; ki++)
           {
             // Assemble the dense site matrix block-by-block from the projected
             // TT operator environments and the old local iterate.
             copy_vector_block(coupled_rhs_full, coupled_offsets[ki], coupled_rhs[ki]);
             copy_vector_block(coupled_sol_prev_full, coupled_offsets[ki], flatten(site_x_cores[ki]));
-            coupled_row_norm_squared[ki] += coupled_norm_rhs[ki] * coupled_norm_rhs[ki];
+            coupled_row_norm_squared[ki].resize(coupled_rhs[ki].sizes());
+            coupled_row_norm_squared[ki].fill_with_zeros();
 
             for (size_t kj = 0; kj < Kay; kj++)
             {
@@ -577,8 +579,11 @@ struct TensorTrainAMENBlock
                 crA({ki, kj}).cores[i],
                 phia[ki][kj].cores[i + 1]);
 
-              auto B_block_norm = ::boba::norm_frobenius(B_block);
-              coupled_row_norm_squared[ki] += B_block_norm * B_block_norm;
+              // B_block is already assembled for insertion into the coupled
+              // dense system, so compute its row norms directly instead of
+              // recomputing the same operator matrix-free.
+              auto B_block_row_norms = matrix_row_norms(B_block);
+              coupled_row_norm_squared[ki] += ::boba::power(B_block_row_norms, real_data_t(2));
 
               coupled_B.replace_submatrix(
                 {coupled_offsets[ki], coupled_offsets[ki + 1]},
@@ -630,10 +635,15 @@ struct TensorTrainAMENBlock
               // a different local representative.
               auto coupled_B_scaled = coupled_B;
               auto coupled_rhs_scaled = coupled_rhs_full;
-              std::vector<data_t> row_factors(Kay, 1.0);
+              std::vector<Vector<space, real_data_t>> row_factors(Kay);
               for (size_t ki = 0; ki < Kay; ki++)
               {
-                row_factors[ki] = make_local_scale_factor(coupled_row_norm_squared[ki]);
+                row_factors[ki] = ::boba::apply_function(coupled_row_norm_squared[ki],
+                  [] __boba_host_device__(real_data_t row_norm_squared)
+                {
+                  auto row_norm = ::boba::sqrt(row_norm_squared);
+                  return ::boba::is_tiny(row_norm) ? real_data_t(1) : real_data_t(1) / row_norm;
+                });
                 scale_vector_block(coupled_rhs_scaled, coupled_offsets[ki], coupled_offsets[ki + 1] - coupled_offsets[ki], row_factors[ki]);
               }
 
@@ -1591,72 +1601,48 @@ public:
   }
 
   /**
-   * \brief Convert a squared local block norm into a multiplicative scale.
-   *
-   * A zero or tiny norm means there is no useful scale information for that
-   * block, so the neutral factor is returned.
+   * \brief Scale a contiguous work-vector slice by scalar-row factors.
    */
-  data_t make_local_scale_factor(data_t norm_squared) const
-  {
-    if (norm_squared <= 0.0)
-    {
-      return 1.0;
-    }
-    auto norm = ::boba::sqrt(norm_squared);
-    if (::boba::is_tiny(norm))
-    {
-      return 1.0;
-    }
-    return 1.0 / norm;
-  }
-
-  /**
-   * \brief Scale one contiguous slice of a dense work vector in place.
-   */
-  template <execution_space space_local>
+  template <execution_space space_local, typename factor_t>
   void scale_vector_block(
     ::boba::Vector<space_local, data_t>& vector,
     index_t offset,
     index_t size,
-    data_t factor)
+    const ::boba::Vector<space_local, factor_t>& factors)
   {
-    if (::boba::abs(factor - 1.0) <= ::boba::epsilon<data_t>())
-    {
-      return;
-    }
+    boba_always_assert_equal(size, factors.size(), "incompatible scalar-row scaling sizes");
     auto vector_view = vector.view();
+    auto factors_view = factors.const_view();
     ::boba::loop<space_local, 1>(size,
                                  [=] __boba_host_device__(index_t idx)
     {
-      vector_view({offset + idx}) *= factor;
+      vector_view({offset + idx}) *= factors_view({idx});
     });
   }
 
   /**
-   * \brief Scale one dense matrix subblock in place.
+   * \brief Scale a dense matrix subblock by scalar-row factors.
    */
-  template <execution_space space_local>
+  template <execution_space space_local, typename factor_t>
   void scale_matrix_block(
     ::boba::Matrix<space_local, data_t>& matrix,
     index_t row_begin,
     index_t row_end,
     index_t col_begin,
     index_t col_end,
-    data_t factor)
+    const ::boba::Vector<space_local, factor_t>& factors)
   {
-    if (::boba::abs(factor - 1.0) <= ::boba::epsilon<data_t>())
-    {
-      return;
-    }
     auto rows = row_end - row_begin;
     auto cols = col_end - col_begin;
+    boba_always_assert_equal(rows, factors.size(), "incompatible scalar-row scaling sizes");
     auto matrix_view = matrix.view();
-    ::boba::loop<space_local, 1>(rows * cols,
+    auto factors_view = factors.const_view();
+    const ::boba::Multiindexer<2> block_indexer({cols, rows});
+    ::boba::loop<space_local, 1>(block_indexer.size(),
                                  [=] __boba_host_device__(index_t idx)
     {
-      auto row = idx / cols;
-      auto col = idx - row * cols;
-      matrix_view({row_begin + row, col_begin + col}) *= factor;
+      const auto [col, row] = block_indexer.multiindex(idx);
+      matrix_view({row_begin + row, col_begin + col}) *= factors_view({row});
     });
   }
 
