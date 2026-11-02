@@ -407,6 +407,295 @@ struct StaticTensorTrainView
     return output;
   }
 
+  __boba_host_device__
+  data_t
+  unroll_value_teams_new(const ::boba::Array<::boba::Array<index_t, 1>, dimension>& indices) const
+  {
+    ::boba::Array<index_t, dimension> indices_array{0};
+    for (size_t dim = 0; dim < dimension; dim++)
+    {
+      indices_array[dim] = indices[dim][0];
+    }
+    return unroll_value_teams_new(indices_array);
+  }
+
+  template <size_t block_size = 256>
+  __boba_host_device__
+  data_t
+  unroll_value_teams_new(const ::boba::Array<index_t, dimension>& multiindex) const
+  {
+#ifdef BOBA_CUDA
+    checkpoint();
+    auto id = mider_type::index(mider_type::precompute_strides(tt_sizes()), multiindex);
+    auto tid = detail::thread_id();
+    auto num_threads = detail::threads_actual();
+    constexpr auto warp_size = 32; // TODO this is an assumption
+    auto lane_id = tid % warp_size;
+    constexpr int num_warps = block_size / warp_size;
+    static_assert(num_warps * warp_size == block_size);
+    constexpr size_t max_ranks = max(ranks());
+
+    constexpr int scratch_size = block_size;
+    __boba_shared__ data_t scratch_a[scratch_size];
+    __boba_shared__ data_t scratch_b[scratch_size];
+    if (tid == 0)
+    {
+      scratch_a[0] = 1.0;
+      scratch_b[0] = 1.0;
+    }
+
+    //
+    // Compute needed global array indices
+    //
+
+    __boba_shared__ int did_set_storage[1000];
+    __boba_shared__ int did_set_offset[dimension + 1];
+    __boba_shared__ int did_set_scratch[block_size];
+    // sizes of the output tensor
+    boba::Array<size_t, dimension> sizes;
+
+    // this thread's mid
+    boba::Array<size_t, dimension> thread_mid;
+    
+    if(tid == 0)
+    {
+      did_set_offset[0] = 0;
+    }
+
+    for(int dim{0}; dim < dimension; dim++)
+    {
+      //
+      // add this thread's dimension dim id to set
+      //
+      int this_did = multiindex[dim];
+      did_set_scratch[tid] = this_did;
+      bool is_did_set = true;
+
+      detail::thread_synchronize();
+
+      //
+      // disable redundant ids
+      //
+      // TODO - do this at the warp level first
+      for(int k{0}; k < num_threads; k++)
+      {
+        if((tid > k) and (is_did_set))
+        {
+          bool is_my_did_redundant = this_did == did_set_scratch[k];
+          if(is_my_did_redundant)
+          {
+            this_did = -1;
+            did_set_scratch[tid] = -1;
+            is_did_set = false;
+          }
+        }
+      }
+
+      detail::thread_synchronize();
+
+      // Count unique ids and compactify list
+      if(tid == 0)
+      {
+        int head = 0;
+        int offset = did_set_offset[dim];
+        int probe = 0;
+        while(probe < num_threads)
+        {
+          auto probe_value = did_set_scratch[probe];
+          if(probe_value > -1)
+          {
+            did_set_storage[offset + head] = probe_value;
+            head++;
+          }
+          probe++;
+        }
+        //
+        // head now measure the size of this set of unique ids
+        //
+        did_set_offset[dim + 1] = offset + head; 
+      }
+
+      detail::thread_synchronize();
+
+      //
+      // build each threads mid
+      // 
+      auto begin = did_set_offset[dim];
+      auto end = did_set_offset[dim + 1];
+
+      thread_mid[dim] = 666; // 
+
+      for(int i{begin}; i < end; i++)
+      {
+        auto check = did_set_storage[i];
+        if(check == this_did)
+        {
+          thread_mid[dim] = i - begin;
+        }
+      }
+
+      detail::thread_synchronize();
+    }
+
+    //
+    //  Use mids to compute contractions
+    //
+    int input_did_set_size = 1;
+    for(int dim{0}; dim < dimension; dim++)
+    {
+
+      int set_iterations = (scratch_size + num_threads - 1) / num_threads;
+
+      for(int i{0}; i < set_iterations; i++)
+      {
+        int set_i = tid * set_iterations + i;
+        if(set_i < scratch_size)
+        {
+          if(is_even(dim))
+          {
+            scratch_b[set_i] = data_t{0.0};
+          }
+          else
+          {
+            scratch_a[set_i] = data_t{0.0};
+          }
+        }
+      }
+
+      //
+      // Define the multidimensional space
+      //
+      auto ranks_left = ranks(dim);
+      auto ranks_right = ranks(dim+1);
+      
+      auto left_rank_warps = (ranks_left + warp_size - 1) / warp_size;
+      auto left_ranks_rounded = warp_size * left_rank_warps;
+
+      auto did_offset = did_set_offset[dim];
+      auto this_did_set_size = did_set_offset[dim + 1] - did_offset;
+      auto output_did_set_size = input_did_set_size * this_did_set_size;
+      sizes[dim] = this_did_set_size;
+
+      // auto output_size = output_did_set_size * ranks_right;
+
+      auto fixed_output_slice = left_ranks_rounded * output_did_set_size;
+      auto right_ranks_groups = (block_size + fixed_output_slice - 1) / fixed_output_slice;
+      auto right_ranks_per_group = (block_size + right_ranks_groups - 1) / right_ranks_groups;
+
+      //
+      // Decifer this work index
+      //
+      Multiindexer<4> contraction_mider({left_ranks_rounded, input_did_set_size, this_did_set_size, right_ranks_groups});
+      const auto [left_rank, input_did_set_id, this_set_id, right_rank_group] = contraction_mider.multiindex(tid);
+
+      auto left_rank_warp = left_rank / warp_size;
+      auto left_rank_lane = left_rank % warp_size;
+
+      Multiindexer<2> input_mider({ranks_left, input_did_set_size});
+
+      // Output mider for this thread
+      Multiindexer<3> output_mider({ranks_right, input_did_set_size, this_did_set_size});
+      auto rank_right_offset = output_mider.index({right_rank_group * right_ranks_per_group, input_did_set_id, this_set_id});
+
+      // All members of the warp use the same this_set_id, so this is hopefully a broadcast and not a bank conflict
+      auto did = did_set_storage[did_offset + this_set_id];
+
+      data_t local_result[max_ranks];
+      bool is_dim_even = is_even(dim);
+
+      //
+      // Pull in core data and perform multiplication
+      //
+      if(left_rank < ranks_left)
+      {
+        auto input_id = input_mider.index({left_rank, input_did_set_id});
+  
+        // read from shared memory
+        auto left_rank_value = is_dim_even ? scratch_a[input_id] : scratch_b[input_id];
+
+        for(int r = 0; r < right_ranks_per_group; r++)
+        {
+          auto r_id = rank_right_offset + r;
+          if(r_id < ranks_right)
+          {
+            // read from global memory
+            auto core_value = get_core_value(dim, left_rank_id, did, r_id);
+            local_result[r] = left_rank_value * core_value;
+          }
+          else
+          {
+            local_result[r] = data_t{0.0};
+          }
+        }
+      }
+      else
+      {
+        for(int r = 0; r < right_ranks_per_group; r++)
+        {
+          local_result[r] = data_t{0.0};
+        }
+      }
+
+      detail::thread_synchronize();
+
+      //
+      // Accumulate within warp
+      //
+      auto all_threads_active = 0xfffffffff;
+      for(int r = 0; r < right_ranks_per_group; r++)
+      {
+        for(int offset = warpSize / 2; offset > 0; offset /= 2)
+        {
+          local_result[r] += __shfl_down_sync(all_threads_active, local_result[r], offset);
+        }
+      }
+
+      detail::thread_synchronize();
+
+      //
+      // Write to scratch 
+      //
+      if(lane_id == 0)
+      {
+        for(int r = 0; r < right_ranks_per_group; r++)
+        {
+          auto r_id = rank_right_offset + r;
+          if(r < ranks_right)
+          {
+            if(is_even(dim))
+            {
+              atomicAdd(&scratch_b[r_id], local_result[r]);
+            }
+            else
+            {
+              atomicAdd(&scratch_a[r_id], local_result[r]);
+            }
+          }
+        }
+      }
+
+      //
+      // update the set size
+      //
+      input_did_set_size = output_did_set_size;
+
+      detail::thread_synchronize();
+    }
+
+
+    //
+    // Multiindexer describing the output tensor
+    //
+    Multiindexer<dimension> output_mider(sizes);
+    auto output_id = output_mider.index(thread_mid);
+
+    auto value = is_even(dimension - 1) ? scratch_b[output_id] : scratch_a[output_id];
+#else
+    data_t value = 0.0;
+#endif
+    return value;
+  }
+
   /**
    * \brief
    * Unrolls a single value of the tensor train.

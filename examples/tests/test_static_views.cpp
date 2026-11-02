@@ -140,8 +140,11 @@ void evaluate_samples_dimension(
           {
             sample[d] = samples_const_view({id, d});
           }
-
+#if 0
           output_view(id) = test_view.unroll_value_teams(indices_low_high<1, size_t, dimension>(sample));
+#else
+          output_view(id) = test_view.unroll_value_teams_new(indices_low_high<1, size_t, dimension>(sample));
+#endif
         };
 
         timer.tic();
