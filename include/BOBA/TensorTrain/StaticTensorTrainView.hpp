@@ -435,6 +435,8 @@ struct StaticTensorTrainView
     static_assert(num_warps * warp_size == block_size);
     constexpr size_t max_ranks = max(ranks());
 
+    constexpr int right_rank_group_size = 4;
+
     constexpr int scratch_size = block_size;
     __boba_shared__ data_t scratch_a[scratch_size];
     __boba_shared__ data_t scratch_b[scratch_size];
@@ -484,7 +486,6 @@ struct StaticTensorTrainView
           bool is_my_did_redundant = this_did == did_set_scratch[k];
           if(is_my_did_redundant)
           {
-            this_did = -1;
             did_set_scratch[tid] = -1;
             is_did_set = false;
           }
@@ -578,61 +579,61 @@ struct StaticTensorTrainView
 
       // auto output_size = output_did_set_size * ranks_right;
 
+      // Amount of groups of ranks right fibers
       auto fixed_output_slice = left_ranks_rounded * output_did_set_size;
-      auto right_ranks_groups = (block_size + fixed_output_slice - 1) / fixed_output_slice;
-      auto right_ranks_per_group = (block_size + right_ranks_groups - 1) / right_ranks_groups;
+      auto right_ranks_groups = (ranks_right + right_rank_group_size - 1) / right_rank_group_size;
+      data_t local_result[right_rank_group_size];
+      for(int i{0}; i < right_rank_group_size; i++)
+      {
+        local_result[i] = 0;
+      }
 
       //
-      // Decifer this work index
+      // Define the work extents
       //
       Multiindexer<4> contraction_mider({left_ranks_rounded, input_did_set_size, this_did_set_size, right_ranks_groups});
-      const auto [left_rank, input_did_set_id, this_set_id, right_rank_group] = contraction_mider.multiindex(tid);
-
-      auto left_rank_warp = left_rank / warp_size;
-      auto left_rank_lane = left_rank % warp_size;
-
       Multiindexer<2> input_mider({ranks_left, input_did_set_size});
-
-      // Output mider for this thread
       Multiindexer<3> output_mider({ranks_right, input_did_set_size, this_did_set_size});
-      auto rank_right_offset = output_mider.index({right_rank_group * right_ranks_per_group, input_did_set_id, this_set_id});
-
-      // All members of the warp use the same this_set_id, so this is hopefully a broadcast and not a bank conflict
-      auto did = did_set_storage[did_offset + this_set_id];
-
-      data_t local_result[max_ranks];
-      bool is_dim_even = is_even(dim);
 
       //
-      // Pull in core data and perform multiplication
+      // Loop over contraction grid
       //
-      if(left_rank < ranks_left)
-      {
-        auto input_id = input_mider.index({left_rank, input_did_set_id});
-  
-        // read from shared memory
-        auto left_rank_value = is_dim_even ? scratch_a[input_id] : scratch_b[input_id];
 
-        for(int r = 0; r < right_ranks_per_group; r++)
-        {
-          auto r_id = rank_right_offset + r;
-          if(r_id < ranks_right)
-          {
-            // read from global memory
-            auto core_value = get_core_value(dim, left_rank_id, did, r_id);
-            local_result[r] = left_rank_value * core_value;
-          }
-          else
-          {
-            local_result[r] = data_t{0.0};
-          }
-        }
-      }
-      else
+      for(int tid_offset{0}; tid_offset < contraction_mider.size(); tid_offset += block_size)
       {
-        for(int r = 0; r < right_ranks_per_group; r++)
+        // Decifer indices
+        const auto [left_rank, input_did_set_id, this_set_id, right_ranks_group] = contraction_mider.multiindex(tid_offset + tid);
+        auto left_rank_warp = left_rank / warp_size;
+        auto left_rank_lane = left_rank % warp_size;
+
+        // Output mider for this thread
+        auto rank_right_offset = output_mider.index({right_rank_group * right_rank_group_size, input_did_set_id, this_set_id});
+
+        // All members of the warp use the same this_set_id, so this is hopefully a broadcast and not a bank conflict
+        auto did = did_set_storage[did_offset + this_set_id];
+
+        bool is_dim_even = is_even(dim);
+
+        //
+        // Pull in core data and perform multiplication
+        //
+        if(left_rank < ranks_left)
         {
-          local_result[r] = data_t{0.0};
+          auto input_id = input_mider.index({left_rank, input_did_set_id});
+    
+          // read from shared memory
+          auto left_rank_value = is_dim_even ? scratch_a[input_id] : scratch_b[input_id];
+
+          for(int r = 0; r < right_rank_group_size; r++)
+          {
+            auto r_id = rank_right_offset + r;
+            if(r_id < ranks_right)
+            {
+              // read from global memory
+              auto core_value = get_core_value(dim, left_rank, did, r_id);
+              local_result[r] += left_rank_value * core_value;
+            }
+          }
         }
       }
 
@@ -642,7 +643,7 @@ struct StaticTensorTrainView
       // Accumulate within warp
       //
       auto all_threads_active = 0xfffffffff;
-      for(int r = 0; r < right_ranks_per_group; r++)
+      for(int r = 0; r < right_rank_group_size; r++)
       {
         for(int offset = warpSize / 2; offset > 0; offset /= 2)
         {
@@ -657,7 +658,7 @@ struct StaticTensorTrainView
       //
       if(lane_id == 0)
       {
-        for(int r = 0; r < right_ranks_per_group; r++)
+        for(int r = 0; r < right_rank_group_size; r++)
         {
           auto r_id = rank_right_offset + r;
           if(r < ranks_right)
