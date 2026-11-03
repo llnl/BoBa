@@ -62,6 +62,7 @@ all: \
 	test_ttm_norm \
 	test_tt_solvers \
 	test_boba_tensor_train \
+	test_runtime_tensor_train \
 	test_simplicial_multiindexer \
 	test_tt_pow \
 	test_quantized_tensor_train \
@@ -366,6 +367,16 @@ test_boba_tensor_train${NAME_FLAG}.out: test_boba_tensor_train${NAME_FLAG}.o bob
 
 test_boba_tensor_train${NAME_FLAG}.o: ${TESTS_DIR}/test_boba_tensor_train.cpp ${BOBA_INC} boba${NAME_FLAG}.o
 	${COMPILE} ${OPTS} -c ${TESTS_DIR}/test_boba_tensor_train.cpp -o test_boba_tensor_train${NAME_FLAG}.o
+
+###############################
+test_runtime_tensor_train: test_runtime_tensor_train${NAME_FLAG}.out
+	echo "Done making $@${NAME_FLAG}.out"
+
+test_runtime_tensor_train${NAME_FLAG}.out: test_runtime_tensor_train${NAME_FLAG}.o boba${NAME_FLAG}.o
+	${LINK} -o $@ $^ ${LIBS}
+
+test_runtime_tensor_train${NAME_FLAG}.o: ${TESTS_DIR}/test_runtime_tensor_train.cpp ${BOBA_INC} boba${NAME_FLAG}.o
+	${COMPILE} ${OPTS} -c ${TESTS_DIR}/test_runtime_tensor_train.cpp -o test_runtime_tensor_train${NAME_FLAG}.o
 
 ###############################
 test_simplicial_multiindexer: test_simplicial_multiindexer${NAME_FLAG}.out
