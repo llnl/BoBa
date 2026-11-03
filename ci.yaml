@@ -307,6 +307,18 @@
     test_boba_tensor_train:
       skip: [hip]
 
+  test_runtime_tensor_train:
+    test_runtime_tensor_train:
+      skip: [hip]
+
+  test_runtime_dmrg_cross:
+    test_runtime_dmrg_cross:
+      skip: [hip]
+
+  test_one_site_cross:
+    test_one_site_cross:
+      skip: [hip]
+
   test_simplicial_multiindexer:
     test_simplicial_multiindexer:
       skip: []

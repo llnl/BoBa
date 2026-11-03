@@ -101,6 +101,7 @@
 #include "BOBA/QuantizedTensorTrain/QuantizedTensorTrain.hpp"
 #include "BOBA/TensorTrain/StaticTensorTrainView.hpp"
 #include "BOBA/TensorTrain/DynamicTensorTrainView.hpp"
+#include "BOBA/TensorTrain/RuntimeTensorTrain.hpp"
 #include "BOBA/TensorTrain/TensorTrainMatrix.hpp"
 #include "BOBA/TensorTrain/SparseTensorTrainMatrix.hpp"
 #include "BOBA/TensorTrain/TensorTrainSplitMatrix.hpp"
@@ -139,6 +140,9 @@
 // Solvers
 #include "BOBA/Krylov/Krylov.hpp"
 #include "BOBA/TensorTrain/DMRGCross.hpp"
+#include "BOBA/TensorTrain/RuntimeDMRGCross.hpp"
+#include "BOBA/TensorTrain/OneSiteCross.hpp"
+#include "BOBA/TensorTrain/RuntimeOneSiteCross.hpp"
 #include "BOBA/TensorTrain/TensorTrainSolver_utilities.hpp"
 #include "BOBA/TensorTrain/TensorTrainAMEN.hpp"
 #include "BOBA/TensorTrain/TensorTrainAMENBlock.hpp"
