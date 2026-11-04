@@ -148,7 +148,7 @@ struct TensorTrainAMENBlock
   bool use_boba_gmres_for_coupled_site_solve = false;
   /// Assemble a reference matrix and compare it with the matrix-free action.
   bool validate_coupled_matrix_free_operator = false;
-  /// Direct CPU solver: 0=complete orthogonal decomposition, 1=pivoted QR, 2=partial-pivot LU.
+  /// Direct CPU solver: 0=complete orthogonal decomposition, 1=pivoted QR, 2=partial-pivot LU, 3=sparse LU.
   size_t coupled_site_direct_solver_method = 0;
   /// \brief Enable per-sweep progress output from `solve()`.
   bool verbose = false;
@@ -663,6 +663,15 @@ struct TensorTrainAMENBlock
           }
 
           auto total_local_size = coupled_offsets[Kay];
+          if (std::getenv("BOBA_AMEN_LOG_SITE_SIZES"))
+          {
+            std::cout << "TensorTrainAMENBlock: site " << i << " coupled_local_size " << total_local_size << " blocks";
+            for (size_t ki = 0; ki < Kay; ki++)
+            {
+              std::cout << ' ' << crx(ki).ranks(i) << 'x' << cry(ki).sizes(i) << 'x' << crx(ki).ranks(i + 1);
+            }
+            std::cout << std::endl;
+          }
           const bool use_matrix_free_coupled_solve =
             use_boba_gmres_for_coupled_site_solve;
           const bool assemble_coupled_matrix =
@@ -1784,6 +1793,15 @@ private:
       else if (coupled_site_direct_solver_method == 1)
       {
         ::boba::detail::ls_solve_qr_eigen(matrix, rhs_matrix, output);
+      }
+      else if (coupled_site_direct_solver_method == 3)
+      {
+        const double kept = ::boba::detail::ls_solve_sparse_lu_eigen(matrix, rhs_matrix, output);
+        if (std::getenv("BOBA_AMEN_LOG_SITE_SIZES"))
+        {
+          std::cout << "TensorTrainAMENBlock: sparse LU site " << site << ", size: " << matrix.rows()
+                    << ", fill: " << kept << std::endl;
+        }
       }
       else
       {

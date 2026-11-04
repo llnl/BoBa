@@ -488,6 +488,40 @@ void ls_solve_lu_eigen(Matrix<execution_space::CPU, data_t> const& matrix_A,
 }
 
 /**
+ * \brief Solves A X = B by sparse LU (Eigen::SparseLU, COLAMD ordering) after dropping the entries of the dense A
+ * with |a_ij| <= drop_tolerance * max|A|.  For projected site systems with block-sparse structure (e.g. neighbouring
+ * cells coupled only through interface terms) this avoids the cubic cost of dense LU.
+ * Returns the fraction of entries kept.
+ */
+template <typename data_t>
+double ls_solve_sparse_lu_eigen(Matrix<execution_space::CPU, data_t> const& matrix_A,
+                                Matrix<execution_space::CPU, data_t> const& matrix_B,
+                                Matrix<execution_space::CPU, data_t>& matrix_C,
+                                double drop_tolerance = 1e-15)
+{
+  auto A_map = ::boba::get_const_eigen_map(matrix_A);
+  auto rhs_map = ::boba::get_const_eigen_map(matrix_B);
+  auto output_map = ::boba::get_eigen_map(matrix_C);
+  const auto n = A_map.rows();
+  const double threshold = drop_tolerance * A_map.cwiseAbs().maxCoeff();
+  std::vector<Eigen::Triplet<data_t>> triplets;
+  for (Eigen::Index j = 0; j < A_map.cols(); ++j)
+    for (Eigen::Index i = 0; i < n; ++i)
+      if (std::abs(A_map(i, j)) > threshold) { triplets.emplace_back(i, j, A_map(i, j)); }
+  Eigen::SparseMatrix<data_t> A(n, A_map.cols());
+  A.setFromTriplets(triplets.begin(), triplets.end());
+  A.makeCompressed();
+  BOBA_CALI_BEGIN("sparse_lu_factorization");
+  Eigen::SparseLU<Eigen::SparseMatrix<data_t>, Eigen::COLAMDOrdering<int>> solver;
+  solver.compute(A);
+  boba_always_assert(solver.info() == Eigen::Success, "sparse LU factorization of the site system failed");
+  BOBA_CALI_SWITCH("sparse_lu_factorization", "sparse_lu_solve");
+  output_map = solver.solve(Eigen::Matrix<data_t, Eigen::Dynamic, Eigen::Dynamic>(rhs_map));
+  BOBA_CALI_END("sparse_lu_solve");
+  return double(triplets.size()) / (double(n) * double(A_map.cols()));
+}
+
+/**
  * \brief Forms a partial-pivot LU factorization with Eigen.
  *
  * On return, `P * A = L * U`.
