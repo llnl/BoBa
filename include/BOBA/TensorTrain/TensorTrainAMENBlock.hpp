@@ -152,6 +152,11 @@ struct TensorTrainAMENBlock
   size_t coupled_site_direct_solver_method = 0;
   /// \brief Enable per-sweep progress output from `solve()`.
   bool verbose = false;
+  /// Saddle-point (inf-sup) enrichment: index of the block whose left factors are also kicked with the
+  /// projected image of the other blocks, sum_{j != k} A_{kj} x_j (at most kickrank SVD directions per site).
+  /// For a mixed DPG system [G B; B^T 0] with the Riesz block k = 0, this keeps directions of B u in the
+  /// Riesz basis, so the projected local systems inherit the discrete inf-sup condition.  -1 disables it.
+  int inf_sup_enrichment_block = -1;
 
   Solve3D2MLOptions<data_t> solve3d_2ml_options;
 
@@ -1320,6 +1325,38 @@ struct TensorTrainAMENBlock
               auto lefty_mat = boba::reshape_to_matrix(lefty_new_temp, {lefty_rows, lefty_cols});
 
               auto u_kick = lefty_mat - leftresid_mat;
+              if (inf_sup_enrichment_block == static_cast<int>(ki) && Kay > 1)
+              {
+                // Projected image of the other blocks: sum_{kj != ki} A_{ki,kj} x_kj.
+                boba::Tensor<3, space, data_t> coupling({crx(ki).ranks(i), cry(ki).sizes(i), rz[ki][i + 1]});
+                coupling.fill_with_zeros();
+                for (size_t kj = 0; kj < Kay; kj++)
+                {
+                  if (kj == ki || crA({ki, kj}).get_number_elements() == 0)
+                  {
+                    continue;
+                  }
+                  coupling += bfun3_block(
+                    phia[ki][kj].cores[i],
+                    crA({ki, kj}).cores[i],
+                    phiza[ki][kj].cores[i + 1],
+                    site_x_cores[kj],
+                    ki,
+                    kj,
+                    i,
+                    "lr-infsup");
+                }
+                auto coupling_mat = boba::reshape_to_matrix(coupling, {crx(ki).ranks(i) * cry(ki).sizes(i), rz[ki][i + 1]});
+                if (::boba::norm_frobenius(coupling_mat) > 0)
+                {
+                  ::boba::SVD<space, data_t> csvd;
+                  csvd.tolerance_relative = residual_enrichment_svd_tolerance_relative;
+                  csvd.tolerance_absolute = residual_enrichment_svd_tolerance_absolute;
+                  csvd.max_kept_singular_values = kickrank;
+                  csvd(coupling_mat);
+                  u_kick = boba::concatenate_columns(u_kick, csvd.U);
+                }
+              }
               auto u_kicked = boba::concatenate_columns(u, u_kick);
 
               QR<space, data_t> qr;
