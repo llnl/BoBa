@@ -157,6 +157,10 @@ struct TensorTrainAMENBlock
   /// For a mixed DPG system [G B; B^T 0] with the Riesz block k = 0, this keeps directions of B u in the
   /// Riesz basis, so the projected local systems inherit the discrete inf-sup condition.  -1 disables it.
   int inf_sup_enrichment_block = -1;
+  /// Optional per-block relative SVD tolerances for splitting the updated local solution; an entry <= 0 (or a
+  /// missing entry) falls back to local_solution_svd_tolerance_relative.  For mixed DPG, the Riesz block is the
+  /// representer of the residual, so a looser tolerance there truncates relative to the DPG error.
+  std::vector<real_type_t<data_t>> local_solution_svd_tolerance_relative_per_block;
 
   Solve3D2MLOptions<data_t> solve3d_2ml_options;
 
@@ -1150,6 +1154,11 @@ struct TensorTrainAMENBlock
 
           boba::SVD<space, data_t> svd;
           svd.tolerance_relative = local_solution_svd_tolerance_relative;
+          if (ki < local_solution_svd_tolerance_relative_per_block.size() &&
+              local_solution_svd_tolerance_relative_per_block[ki] > 0)
+          {
+            svd.tolerance_relative = local_solution_svd_tolerance_relative_per_block[ki];
+          }
           svd.tolerance_absolute = local_solution_svd_tolerance_absolute;
 
           boba::Matrix<space, data_t> u, s, v;
