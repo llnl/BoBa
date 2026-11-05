@@ -926,6 +926,42 @@ struct TensorTrainAMENBlock
                 }
               }
 
+              if (const char* dump_dir = std::getenv("BOBA_AMEN_DUMP_DIR"))
+              {
+                // Debug: write the scaled dense site system and the Kronecker factors of block (0,0) for offline
+                // preconditioner studies.  Sites larger than BOBA_AMEN_DUMP_MIN_SIZE, at most BOBA_AMEN_DUMP_MAX files.
+                static int dumps_written = 0;
+                const char* min_env = std::getenv("BOBA_AMEN_DUMP_MIN_SIZE");
+                const char* max_env = std::getenv("BOBA_AMEN_DUMP_MAX");
+                const index_t min_size = min_env ? std::atol(min_env) : 0;
+                const int max_dumps = max_env ? std::atoi(max_env) : 4;
+                if (coupled_B_scaled.rows() >= min_size && dumps_written < max_dumps)
+                {
+                  const std::string base = std::string(dump_dir) + "/site" + std::to_string(i) + "_sweep" +
+                                           std::to_string(swp) + "_n" + std::to_string(coupled_B_scaled.rows());
+                  auto write_raw = [](const std::string& name, const data_t* data, size_t count) {
+                    std::ofstream out(name, std::ios::binary);
+                    out.write(reinterpret_cast<const char*>(data), std::streamsize(count * sizeof(data_t)));
+                  };
+                  write_raw(base + "_A.bin", coupled_B_scaled.data(), coupled_B_scaled.size());
+                  write_raw(base + "_b.bin", coupled_rhs_scaled.data(), coupled_rhs_scaled.size());
+                  const auto& phiL = phia[0][0].cores[i];
+                  const auto& Acore = crA({0, 0}).cores[i];
+                  const auto& phiR = phia[0][0].cores[i + 1];
+                  write_raw(base + "_phiL.bin", phiL.data(), phiL.size());
+                  write_raw(base + "_Acore.bin", Acore.data(), Acore.size());
+                  write_raw(base + "_phiR.bin", phiR.data(), phiR.size());
+                  std::ofstream meta(base + "_meta.txt");
+                  meta << "rows " << coupled_B_scaled.rows() << "\noffsets";
+                  for (size_t kj = 0; kj <= Kay; kj++) { meta << ' ' << coupled_offsets[kj]; }
+                  meta << "\nrow_factors";
+                  for (size_t kj = 0; kj < Kay; kj++) { meta << ' ' << row_factors[kj]; }
+                  meta << "\nphiL " << phiL.sizes(0) << ' ' << phiL.sizes(1) << ' ' << phiL.sizes(2)
+                       << "\nAcore " << Acore.sizes(0) << ' ' << Acore.sizes(1) << ' ' << Acore.sizes(2) << ' ' << Acore.sizes(3)
+                       << "\nphiR " << phiR.sizes(0) << ' ' << phiR.sizes(1) << ' ' << phiR.sizes(2) << '\n';
+                  ++dumps_written;
+                }
+              }
               coupled_sol_full = solve_coupled_site_system(
                                    coupled_B_scaled, coupled_rhs_scaled, coupled_sol_prev_full, i);
             }
