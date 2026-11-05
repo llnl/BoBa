@@ -148,9 +148,12 @@ struct TensorTrainAMENBlock
   bool use_boba_gmres_for_coupled_site_solve = false;
   /// Assemble a reference matrix and compare it with the matrix-free action.
   bool validate_coupled_matrix_free_operator = false;
-  /// Direct CPU solver: 0=complete orthogonal decomposition, 1=pivoted QR, 2=partial-pivot LU, 3=sparse LU (dense LU above 20% fill),
-  /// 4=sparse LU, with dense minimum-norm (COD) solves above 20% fill.
+  /// Direct CPU solver: 0=complete orthogonal decomposition, 1=pivoted QR, 2=partial-pivot LU, 3=sparse LU (dense LU above the fill threshold),
+  /// 4=sparse LU, with dense minimum-norm (COD) solves above the fill threshold.
   size_t coupled_site_direct_solver_method = 0;
+  /// Methods 3 and 4: sites with fill above this use a dense solve (LU for 3, COD for 4); > 1 means always sparse LU
+  /// (with the dense minimum-norm fallback when the sparse factorization fails).
+  double coupled_site_dense_fill_threshold = 1.1;
   /// \brief Enable per-sweep progress output from `solve()`.
   bool verbose = false;
   /// Saddle-point (inf-sup) enrichment: index of the block whose left factors are also kicked with the
@@ -1797,7 +1800,7 @@ private:
       }
       else if (coupled_site_direct_solver_method == 3 || coupled_site_direct_solver_method == 4)
       {
-        const double kept = ::boba::detail::ls_solve_sparse_lu_eigen(matrix, rhs_matrix, output, 1e-15, 0.2,
+        const double kept = ::boba::detail::ls_solve_sparse_lu_eigen(matrix, rhs_matrix, output, 1e-15, coupled_site_dense_fill_threshold,
                                                                      coupled_site_direct_solver_method == 4);
         if (std::getenv("BOBA_AMEN_LOG_SITE_SIZES"))
         {
