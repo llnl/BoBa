@@ -148,7 +148,8 @@ struct TensorTrainAMENBlock
   bool use_boba_gmres_for_coupled_site_solve = false;
   /// Assemble a reference matrix and compare it with the matrix-free action.
   bool validate_coupled_matrix_free_operator = false;
-  /// Direct CPU solver: 0=complete orthogonal decomposition, 1=pivoted QR, 2=partial-pivot LU, 3=sparse LU.
+  /// Direct CPU solver: 0=complete orthogonal decomposition, 1=pivoted QR, 2=partial-pivot LU, 3=sparse LU (dense LU above 20% fill),
+  /// 4=sparse LU, with dense minimum-norm (COD) solves above 20% fill.
   size_t coupled_site_direct_solver_method = 0;
   /// \brief Enable per-sweep progress output from `solve()`.
   bool verbose = false;
@@ -1794,9 +1795,10 @@ private:
       {
         ::boba::detail::ls_solve_qr_eigen(matrix, rhs_matrix, output);
       }
-      else if (coupled_site_direct_solver_method == 3)
+      else if (coupled_site_direct_solver_method == 3 || coupled_site_direct_solver_method == 4)
       {
-        const double kept = ::boba::detail::ls_solve_sparse_lu_eigen(matrix, rhs_matrix, output);
+        const double kept = ::boba::detail::ls_solve_sparse_lu_eigen(matrix, rhs_matrix, output, 1e-15, 0.2,
+                                                                     coupled_site_direct_solver_method == 4);
         if (std::getenv("BOBA_AMEN_LOG_SITE_SIZES"))
         {
           std::cout << "TensorTrainAMENBlock: sparse LU site " << site << ", size: " << matrix.rows()

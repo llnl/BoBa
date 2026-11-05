@@ -491,7 +491,8 @@ void ls_solve_lu_eigen(Matrix<execution_space::CPU, data_t> const& matrix_A,
  * \brief Solves A X = B by sparse LU (Eigen::SparseLU, COLAMD ordering) after dropping the entries of the dense A
  * with |a_ij| <= drop_tolerance * max|A|.  For projected site systems with block-sparse structure (e.g. neighbouring
  * cells coupled only through interface terms) this avoids the cubic cost of dense LU.
- * Systems with fill above dense_fill_threshold use dense partial-pivot LU instead.
+ * Systems with fill above dense_fill_threshold use dense partial-pivot LU instead, or the dense minimum-norm (COD)
+ * solve if dense_minimum_norm.
  * Returns the fraction of entries kept, or -1 if the sparse factorization failed (singular system) and the dense
  * complete-orthogonal-decomposition (minimum-norm) solve was used instead.
  */
@@ -500,7 +501,8 @@ double ls_solve_sparse_lu_eigen(Matrix<execution_space::CPU, data_t> const& matr
                                 Matrix<execution_space::CPU, data_t> const& matrix_B,
                                 Matrix<execution_space::CPU, data_t>& matrix_C,
                                 double drop_tolerance = 1e-15,
-                                double dense_fill_threshold = 0.2)
+                                double dense_fill_threshold = 0.2,
+                                bool dense_minimum_norm = false)
 {
   auto A_map = ::boba::get_const_eigen_map(matrix_A);
   auto rhs_map = ::boba::get_const_eigen_map(matrix_B);
@@ -512,6 +514,12 @@ double ls_solve_sparse_lu_eigen(Matrix<execution_space::CPU, data_t> const& matr
     for (Eigen::Index i = 0; i < n; ++i)
       if (std::abs(A_map(i, j)) > threshold) { triplets.emplace_back(i, j, A_map(i, j)); }
   const double fill = double(triplets.size()) / (double(n) * double(A_map.cols()));
+  if (fill > dense_fill_threshold && dense_minimum_norm)
+  {
+    // Nearly dense, and possibly singular: minimum-norm solve.
+    ls_solve_cod_eigen(matrix_A, matrix_B, matrix_C);
+    return fill;
+  }
   if (fill > dense_fill_threshold)
   {
     // Nearly dense: dense partial-pivot LU is cheaper.  Fall back to the minimum-norm solve if it is singular.
