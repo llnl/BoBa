@@ -491,13 +491,16 @@ void ls_solve_lu_eigen(Matrix<execution_space::CPU, data_t> const& matrix_A,
  * \brief Solves A X = B by sparse LU (Eigen::SparseLU, COLAMD ordering) after dropping the entries of the dense A
  * with |a_ij| <= drop_tolerance * max|A|.  For projected site systems with block-sparse structure (e.g. neighbouring
  * cells coupled only through interface terms) this avoids the cubic cost of dense LU.
- * Returns the fraction of entries kept.
+ * Systems with fill above dense_fill_threshold use dense partial-pivot LU instead.
+ * Returns the fraction of entries kept, or -1 if the sparse factorization failed (singular system) and the dense
+ * complete-orthogonal-decomposition (minimum-norm) solve was used instead.
  */
 template <typename data_t>
 double ls_solve_sparse_lu_eigen(Matrix<execution_space::CPU, data_t> const& matrix_A,
                                 Matrix<execution_space::CPU, data_t> const& matrix_B,
                                 Matrix<execution_space::CPU, data_t>& matrix_C,
-                                double drop_tolerance = 1e-15)
+                                double drop_tolerance = 1e-15,
+                                double dense_fill_threshold = 0.2)
 {
   auto A_map = ::boba::get_const_eigen_map(matrix_A);
   auto rhs_map = ::boba::get_const_eigen_map(matrix_B);
@@ -508,17 +511,33 @@ double ls_solve_sparse_lu_eigen(Matrix<execution_space::CPU, data_t> const& matr
   for (Eigen::Index j = 0; j < A_map.cols(); ++j)
     for (Eigen::Index i = 0; i < n; ++i)
       if (std::abs(A_map(i, j)) > threshold) { triplets.emplace_back(i, j, A_map(i, j)); }
+  const double fill = double(triplets.size()) / (double(n) * double(A_map.cols()));
+  if (fill > dense_fill_threshold)
+  {
+    // Nearly dense: dense partial-pivot LU is cheaper.  Fall back to the minimum-norm solve if it is singular.
+    using EigenMatrix = Eigen::Matrix<data_t, Eigen::Dynamic, Eigen::Dynamic>;
+    Eigen::PartialPivLU<EigenMatrix> dense(A_map);
+    output_map = dense.solve(rhs_map);
+    if (!output_map.allFinite()) { ls_solve_cod_eigen(matrix_A, matrix_B, matrix_C); return -1.0; }
+    return fill;
+  }
   Eigen::SparseMatrix<data_t> A(n, A_map.cols());
   A.setFromTriplets(triplets.begin(), triplets.end());
   A.makeCompressed();
   BOBA_CALI_BEGIN("sparse_lu_factorization");
   Eigen::SparseLU<Eigen::SparseMatrix<data_t>, Eigen::COLAMDOrdering<int>> solver;
   solver.compute(A);
-  boba_always_assert(solver.info() == Eigen::Success, "sparse LU factorization of the site system failed");
+  if (solver.info() != Eigen::Success)
+  {
+    // Singular (or numerically singular) projected system: fall back to the dense minimum-norm solve.
+    BOBA_CALI_END("sparse_lu_factorization");
+    ls_solve_cod_eigen(matrix_A, matrix_B, matrix_C);
+    return -1.0;
+  }
   BOBA_CALI_SWITCH("sparse_lu_factorization", "sparse_lu_solve");
   output_map = solver.solve(Eigen::Matrix<data_t, Eigen::Dynamic, Eigen::Dynamic>(rhs_map));
   BOBA_CALI_END("sparse_lu_solve");
-  return double(triplets.size()) / (double(n) * double(A_map.cols()));
+  return fill;
 }
 
 /**
