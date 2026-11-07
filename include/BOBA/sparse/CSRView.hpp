@@ -111,6 +111,20 @@ struct CSRView
   }
 
   /**
+   * \brief Returns the number of stored entries in row `i`.
+   *
+   * Row offsets are nondecreasing, so the difference cannot wrap.
+   */
+  [[nodiscard]]
+  __boba_host_device__ index_t row_nnz(index_t i) const
+  {
+    const index_t begin = row_begin(i);
+    const index_t end = row_end(i);
+    boba_assert_ge(end, begin, "CSR row offsets must be nondecreasing");
+    return end - begin;
+  }
+
+  /**
    * \brief Returns the column of stored entry `k`.
    */
   [[nodiscard]]

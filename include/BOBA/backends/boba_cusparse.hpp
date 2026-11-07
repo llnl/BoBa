@@ -4,6 +4,9 @@
 
 #include "BOBA/sparse/sparse_op.hpp"
 
+#include <cstdint>
+#include <limits>
+
 #ifdef BOBA_CUDA_LIBS
 #include <cusparse.h>
 #endif
@@ -91,6 +94,29 @@ public:
       cuda_data_t_v<data_t>));
   }
 
+  template <typename data_t>
+  cusparse_csr_descriptor(
+    index_t rows,
+    index_t cols,
+    index_t nnz,
+    std::int32_t* row_offsets,
+    std::int32_t* column_indices,
+    data_t const* values)
+  {
+    cusparse_assert(cusparseCreateCsr(
+      &m_descriptor,
+      static_cast<int64_t>(rows),
+      static_cast<int64_t>(cols),
+      static_cast<int64_t>(nnz),
+      row_offsets,
+      column_indices,
+      const_cast<data_t*>(values),
+      CUSPARSE_INDEX_32I,
+      CUSPARSE_INDEX_32I,
+      CUSPARSE_INDEX_BASE_ZERO,
+      cuda_data_t_v<data_t>));
+  }
+
   cusparse_csr_descriptor(cusparse_csr_descriptor const&) = delete;
   cusparse_csr_descriptor& operator=(cusparse_csr_descriptor const&) = delete;
 
@@ -108,6 +134,63 @@ public:
 private:
   cusparseSpMatDescr_t m_descriptor = nullptr;
 };
+
+/**
+ * @brief Checks that a CSR matrix fits cuSPARSE SpGEMM's 32-bit index range.
+ */
+inline void cusparse_spgemm_check_index_range(index_t rows, index_t cols, index_t nnz)
+{
+  constexpr index_t max_index = static_cast<index_t>(std::numeric_limits<std::int32_t>::max());
+  boba_always_assert(
+    rows <= max_index && cols <= max_index && nnz <= max_index,
+    "cuSPARSE SpGEMM requires dimensions and nonzero counts to fit signed 32-bit indices");
+}
+
+/**
+ * @brief Converts CSR indices from BoBa's 64-bit storage to cuSPARSE SpGEMM's 32-bit format.
+ */
+template <typename csr_view_t>
+void cusparse_spgemm_convert_indices(
+  csr_view_t const& matrix,
+  Vector<execution_space::CUDA, std::int32_t>& columns,
+  Vector<execution_space::CUDA, std::int32_t>& offsets)
+{
+  auto columns_view = columns.view();
+  auto offsets_view = offsets.view();
+  auto const* source_columns = matrix.column_indices_data();
+  auto const* source_offsets = matrix.row_offsets_data();
+
+  ::boba::loop<execution_space::CUDA, 1>(0_z, matrix.nnz(), [=] __boba_host_device__(index_t i)
+  {
+    columns_view(i) = static_cast<std::int32_t>(source_columns[i]);
+  });
+  ::boba::loop<execution_space::CUDA, 1>(0_z, matrix.rows() + 1, [=] __boba_host_device__(index_t i)
+  {
+    offsets_view(i) = static_cast<std::int32_t>(source_offsets[i]);
+  });
+}
+
+/**
+ * @brief Copies 32-bit cuSPARSE SpGEMM indices into BoBa's 64-bit CSR storage.
+ */
+template <typename csr_matrix_t>
+void cusparse_spgemm_copy_indices(
+  std::int32_t const* columns,
+  std::int32_t const* offsets,
+  csr_matrix_t& matrix)
+{
+  auto columns_view = matrix.m_column_indices.view();
+  auto offsets_view = matrix.m_row_offsets.view();
+
+  ::boba::loop<execution_space::CUDA, 1>(0_z, matrix.nnz(), [=] __boba_host_device__(index_t i)
+  {
+    columns_view(i) = static_cast<std::int64_t>(columns[i]);
+  });
+  ::boba::loop<execution_space::CUDA, 1>(0_z, matrix.rows() + 1, [=] __boba_host_device__(index_t i)
+  {
+    offsets_view(i) = static_cast<std::int64_t>(offsets[i]);
+  });
+}
 
 /**
  * @brief Owning cuSPARSE dense-vector descriptor aliasing device storage.
@@ -276,6 +359,96 @@ void cusparse_spmm(
     workspace.data()));
 }
 
+/**
+ * @brief Computes the sparse product `C = A * B` with cusparse SpGEMM.
+ *
+ * Only non-transposed operands are supported by the library. Output rows are
+ * sorted.
+ *
+ * @param A Device CSR view.
+ * @param B Device CSR view.
+ * @param C CSR matrix of shape `(A.rows(), B.cols())` with allocated row
+ *        offsets; its column and value storage is replaced.
+ */
+template <typename A_view_t, typename B_view_t, typename C_matrix_t>
+void cusparse_spgemm(
+  A_view_t const& A,
+  B_view_t const& B,
+  C_matrix_t& C)
+{
+  using data_t = typename C_matrix_t::data_t;
+  const data_t alpha{1};
+  const data_t beta{0};
+  const auto operation = CUSPARSE_OPERATION_NON_TRANSPOSE;
+  constexpr auto algorithm = CUSPARSE_SPGEMM_DEFAULT;
+  constexpr auto compute_type = cuda_data_t_v<data_t>;
+
+  cusparse_spgemm_check_index_range(A.rows(), A.cols(), A.nnz());
+  cusparse_spgemm_check_index_range(B.rows(), B.cols(), B.nnz());
+  cusparse_spgemm_check_index_range(C.rows(), C.cols(), 0);
+
+  Vector<execution_space::CUDA, std::int32_t> A_columns({A.nnz()});
+  Vector<execution_space::CUDA, std::int32_t> A_offsets({A.rows() + 1});
+  Vector<execution_space::CUDA, std::int32_t> B_columns({B.nnz()});
+  Vector<execution_space::CUDA, std::int32_t> B_offsets({B.rows() + 1});
+  Vector<execution_space::CUDA, std::int32_t> C_columns({0});
+  Vector<execution_space::CUDA, std::int32_t> C_offsets({C.rows() + 1});
+  cusparse_spgemm_convert_indices(A, A_columns, A_offsets);
+  cusparse_spgemm_convert_indices(B, B_columns, B_offsets);
+  C_offsets.fill_with_zeros();
+  cuda_assert(cudaDeviceSynchronize());
+
+  cusparse_csr_descriptor A_descriptor(
+    A.rows(), A.cols(), A.nnz(), A_offsets.data(), A_columns.data(), A.values_data());
+  cusparse_csr_descriptor B_descriptor(
+    B.rows(), B.cols(), B.nnz(), B_offsets.data(), B_columns.data(), B.values_data());
+  cusparse_csr_descriptor C_descriptor(
+    C.rows(), C.cols(), 0, C_offsets.data(), C_columns.data(), static_cast<data_t const*>(nullptr));
+
+  cusparseSpGEMMDescr_t spgemm_descriptor = nullptr;
+  cusparse_assert(cusparseSpGEMM_createDescr(&spgemm_descriptor));
+
+  size_t work_size = 0;
+  cusparse_assert(cusparseSpGEMM_workEstimation(
+    cusparse_handle, operation, operation, &alpha, A_descriptor.get(), B_descriptor.get(), &beta, C_descriptor.get(),
+    compute_type, algorithm, spgemm_descriptor, &work_size, nullptr));
+  Vector<execution_space::CUDA, unsigned char> work_buffer({work_size});
+  cusparse_assert(cusparseSpGEMM_workEstimation(
+    cusparse_handle, operation, operation, &alpha, A_descriptor.get(), B_descriptor.get(), &beta, C_descriptor.get(),
+    compute_type, algorithm, spgemm_descriptor, &work_size, work_buffer.data()));
+
+  size_t compute_size = 0;
+  cusparse_assert(cusparseSpGEMM_compute(
+    cusparse_handle, operation, operation, &alpha, A_descriptor.get(), B_descriptor.get(), &beta, C_descriptor.get(),
+    compute_type, algorithm, spgemm_descriptor, &compute_size, nullptr));
+  Vector<execution_space::CUDA, unsigned char> compute_buffer({compute_size});
+  cusparse_assert(cusparseSpGEMM_compute(
+    cusparse_handle, operation, operation, &alpha, A_descriptor.get(), B_descriptor.get(), &beta, C_descriptor.get(),
+    compute_type, algorithm, spgemm_descriptor, &compute_size, compute_buffer.data()));
+
+  int64_t rows = 0;
+  int64_t cols = 0;
+  int64_t nnz = 0;
+  cusparse_assert(cusparseSpMatGetSize(C_descriptor.get(), &rows, &cols, &nnz));
+  boba_always_assert(
+    nnz >= 0 && nnz <= std::numeric_limits<std::int32_t>::max(),
+    "cuSPARSE SpGEMM result exceeds the signed 32-bit index range");
+  C_columns.resize({static_cast<index_t>(nnz)});
+  C.m_values.resize(static_cast<index_t>(nnz));
+  C.m_column_indices.resize(static_cast<index_t>(nnz));
+  auto values_view = C.m_values.view();
+  cusparse_assert(cusparseCsrSetPointers(C_descriptor.get(), C_offsets.data(), C_columns.data(), values_view.data()));
+
+  cusparse_assert(cusparseSpGEMM_copy(
+    cusparse_handle, operation, operation, &alpha, A_descriptor.get(), B_descriptor.get(), &beta, C_descriptor.get(),
+    compute_type, algorithm, spgemm_descriptor));
+  cuda_assert(cudaDeviceSynchronize());
+
+  cusparse_spgemm_copy_indices(C_columns.data(), C_offsets.data(), C);
+  cuda_assert(cudaDeviceSynchronize());
+  cusparse_assert(cusparseSpGEMM_destroyDescr(spgemm_descriptor));
+}
+
 #else
 
 /**
@@ -308,6 +481,20 @@ void cusparse_spmm(
 {
   detail::ignore(A, B, C, alpha, beta, op);
   boba_error("Build error! You are trying to run cusparse_spmm without BOBA_CUDA_LIBS");
+}
+
+
+/**
+ * @brief Reports that cusparse SpGEMM support is unavailable.
+ */
+template <typename A_view_t, typename B_view_t, typename C_matrix_t>
+void cusparse_spgemm(
+  A_view_t const& A,
+  B_view_t const& B,
+  C_matrix_t& C)
+{
+  detail::ignore(A, B, C);
+  boba_error("Build error! You are trying to run cusparse_spgemm without BOBA_CUDA_LIBS");
 }
 
 #endif

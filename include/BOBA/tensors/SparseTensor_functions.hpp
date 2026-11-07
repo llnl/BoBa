@@ -131,8 +131,11 @@ void sparse_dense_contraction_core_naive(
   const TensorView<accesor_out_t, dimension_out>& out_view)
 {
   const auto sparse_values = sparse_view.values_ptr();
+  // A rank-0 multiindexer reports size 0, but a fully contracted dense operand still has one free index.
+  constexpr bool dense_fully_contracted = dimension_dense == std::tuple_size_v<decltype(dense_contracted_dimension)>;
+  const index_t dense_free_size = dense_fully_contracted ? index_t(1) : contracted_dense_mider.size();
   ::boba::loop<host_space, 2>(
-    {contracted_dense_mider.size(), sparse_view.nnz()},
+    {dense_free_size, sparse_view.nnz()},
     [=](Array<index_t, 2> indices)
   {
     const auto [cid_dense, id_sparse] = indices;
@@ -310,7 +313,147 @@ void sparse_accumulate(sparse_tensor_t& sparse,
   }
 }
 
+/**
+ * \brief Returns the modes not listed in \p contracted_dims, in increasing order.
+ */
+template <size_t dimension, size_t contractions>
+std::vector<size_t> free_dims(const Array<size_t, contractions>& contracted_dims)
+{
+  std::vector<size_t> output;
+  for (size_t d = 0; d < dimension; ++d)
+  {
+    if (std::find(contracted_dims.begin(), contracted_dims.end(), d) == contracted_dims.end())
+    {
+      output.push_back(d);
+    }
+  }
+  return output;
+}
+
+/**
+ * \brief Returns the transpose of a CSR matrix as a rank-2 sparse tensor, without sorting.
+ *
+ * Entry (r, c) of \p transposed is entry (c, r) of the result, whose
+ * column-major key `c + rows * r` increases with CSR order when rows of
+ * \p transposed are sorted. The SparseTensor constructor then only checks order.
+ *
+ * \param transposed CSR matrix with sorted rows.
+ * \return Sparse tensor of shape `(transposed.cols(), transposed.rows())`.
+ */
+template <execution_space space, typename data_t>
+SparseTensor<2, space, data_t> sparse_tensor_from_transposed_csr(CSRMatrix<space, data_t> const& transposed)
+{
+  BOBA_CALI_MARK
+  const index_t rows = transposed.cols();
+  const index_t cols = transposed.rows();
+  const auto csr_view = transposed.const_view();
+  Vector<space, index_t> keys({transposed.nnz()});
+  auto keys_view = keys.view();
+  ::boba::loop<space, 1>(0_z, cols, [=] __boba_host_device__(index_t c)
+  {
+    for (auto k = csr_view.row_begin(c); k < csr_view.row_end(c); ++k)
+    {
+      keys_view(k) = csr_view.column_index(k) + rows * c;
+    }
+  });
+  return SparseTensor<2, space, data_t>({rows, cols}, std::move(keys), transposed.m_values);
+}
+
+/**
+ * \brief Contracts a sparse tensor S with a dense tensor D by unfolding both and calling SpMV or SpMM.
+ *
+ * S is unfolded as (contracted x free) so its keys give the CSR of the
+ * (free x contracted) matrix without sorting. D is unfolded as
+ * (contracted x free). The result is a dense tensor over
+ * `[free modes of S..., free modes of D...]`, each group in increasing order.
+ * SpMV is used when D has a single free column.
+ *
+ * \tparam force_naive Forwarded to the CSR kernels to skip vendor libraries.
+ * \note Contracted modes are paired in the caller's order, so the explicit
+ *       `(row_dims, col_dims)` unfold overloads are used.
+ */
+template <size_t contractions, execution_space space, size_t dimension_S, size_t dimension_D, typename data_t, bool force_naive = false>
+Tensor<(dimension_S + dimension_D) - 2 * contractions, space, data_t> sparse_dense_contraction_unfolded(
+  const SparseTensor<dimension_S, space, data_t>& sparse,
+  const Tensor<dimension_D, space, data_t>& dense,
+  const Array<size_t, contractions> contraction_dimensions_S,
+  const Array<size_t, contractions> contraction_dimensions_D)
+{
+  BOBA_CALI_MARK
+  constexpr size_t new_dimension = (dimension_S + dimension_D) - 2 * contractions;
+  const auto sizes_S = sparse.sizes();
+  const auto sizes_D = dense.sizes();
+  for (size_t c = 0; c < contractions; ++c)
+  {
+    boba_always_assert_equal(
+      sizes_S[contraction_dimensions_S[c]],
+      sizes_D[contraction_dimensions_D[c]],
+      "Invalid contraction.");
+  }
+
+  const auto free_S_mider = make_contracted_dimensions<contractions>(sizes_S, contraction_dimensions_S);
+  const auto free_D_mider = make_contracted_dimensions<contractions>(sizes_D, contraction_dimensions_D);
+  Tensor<new_dimension, space, data_t> output(concatenate(free_S_mider.sizes(), free_D_mider.sizes()));
+  if (sparse.nnz() == 0)
+  {
+    output.fill_with_zeros();
+    return output;
+  }
+
+  const auto sparse_matrix = unfold(sparse,
+                                    make_std_vector(contraction_dimensions_S),
+                                    free_dims<dimension_S>(contraction_dimensions_S));
+  const auto csr = transposed_csr_from_sorted_keys(sparse_matrix);
+
+  // TODO: skip the permuted copy when the contracted modes are already leading.
+  const auto dense_matrix = unfold(dense,
+                                   make_std_vector(contraction_dimensions_D),
+                                   free_dims<dimension_D>(contraction_dimensions_D));
+
+  if (dense_matrix.cols() == 1)
+  {
+    Vector<space, data_t> dense_vector({dense_matrix.rows()});
+    dense_vector.reshape(dense_matrix);
+    Vector<space, data_t> product({csr.rows()});
+    sparse_matrix_vector_product<space, data_t, force_naive>(csr, dense_vector, product);
+    output.reshape(product);
+    return output;
+  }
+
+  Matrix<space, data_t> product({csr.rows(), dense_matrix.cols()});
+  sparse_matrix_matrix_product<space, data_t, force_naive>(csr, dense_matrix, product);
+  output.reshape(product);
+  return output;
+}
+
 } // namespace detail
+
+/**
+ * \brief Converts a CSR matrix to a rank-2 sparse tensor.
+ *
+ * Writes each entry's column-major key, then sorts with the SparseTensor
+ * constructor. Stored zeros are kept.
+ *
+ * \param matrix CSR matrix.
+ * \return Sparse tensor with the same shape and entries.
+ */
+template <execution_space space, typename data_t>
+SparseTensor<2, space, data_t> convert_to_SparseTensor(CSRMatrix<space, data_t> const& matrix)
+{
+  BOBA_CALI_MARK
+  const index_t rows = matrix.rows();
+  const auto csr_view = matrix.const_view();
+  Vector<space, index_t> keys({matrix.nnz()});
+  auto keys_view = keys.view();
+  ::boba::loop<space, 1>(0_z, rows, [=] __boba_host_device__(index_t r)
+  {
+    for (auto k = csr_view.row_begin(r); k < csr_view.row_end(r); ++k)
+    {
+      keys_view(k) = r + rows * csr_view.column_index(k);
+    }
+  });
+  return SparseTensor<2, space, data_t>({rows, matrix.cols()}, std::move(keys), matrix.m_values);
+}
 
 /**
  * \brief Largest explicitly stored value magnitude of a sparse tensor.
@@ -615,6 +758,68 @@ SparseTensor<dimension, space, data_t> fold(
   return fold(input, sizes, std::vector<size_t>{mode_k});
 }
 
+namespace detail
+{
+
+/**
+ * \brief Contracts two sparse tensors by unfolding both and calling SpGEMM.
+ *
+ * With `A_m = unfold(A, free_A, contracted_A)` and
+ * `B_m = unfold(B, contracted_B, free_B)`, the sorted keys of each give the
+ * CSR of its transpose without sorting. SpGEMM computes
+ * `Cᵀ = B_mᵀ * A_mᵀ`, whose sorted CSR rows are the column-major key order
+ * of `C = A_m * B_m`. The keys of C are already those of the output tensor
+ * `[free modes of A..., free modes of B...]`, so no sort is needed.
+ *
+ * Entries with `abs(c) <= 1.1 * eps * norm_inf(A) * norm_inf(B)` are dropped,
+ * then entries tiny relative to `norm_inf(C)`, matching the naive kernel.
+ * This global rule is a heuristic, similar to Eigen's `pruned()`; it can drop
+ * genuine entries when stored values span more than about `1 / eps`. Vendor
+ * SpGEMM itself drops nothing.
+ */
+template <size_t contractions, execution_space space, size_t dimension_A, size_t dimension_B, typename data_t, bool force_naive = false>
+SparseTensor<(dimension_A + dimension_B) - 2 * contractions, space, data_t> sparse_sparse_contraction_unfolded(
+  const SparseTensor<dimension_A, space, data_t>& tensor_A,
+  const SparseTensor<dimension_B, space, data_t>& tensor_B,
+  const Array<size_t, contractions> contraction_dimensions_A,
+  const Array<size_t, contractions> contraction_dimensions_B)
+{
+  BOBA_CALI_MARK
+  constexpr size_t new_dimension = (dimension_A + dimension_B) - 2 * contractions;
+  const auto sizes_A = tensor_A.sizes();
+  const auto sizes_B = tensor_B.sizes();
+  for (size_t c = 0; c < contractions; ++c)
+  {
+    boba_always_assert_equal(sizes_A[contraction_dimensions_A[c]], sizes_B[contraction_dimensions_B[c]], "Invalid contraction.");
+  }
+
+  const auto free_A_mider = make_contracted_dimensions<contractions>(sizes_A, contraction_dimensions_A);
+  const auto free_B_mider = make_contracted_dimensions<contractions>(sizes_B, contraction_dimensions_B);
+  const auto output_sizes = concatenate(free_A_mider.sizes(), free_B_mider.sizes());
+  if (tensor_A.nnz() == 0 || tensor_B.nnz() == 0)
+  {
+    return SparseTensor<new_dimension, space, data_t>(output_sizes);
+  }
+
+  const auto matrix_A = unfold(tensor_A,
+                               free_dims<dimension_A>(contraction_dimensions_A),
+                               make_std_vector(contraction_dimensions_A));
+  const auto matrix_B = unfold(tensor_B,
+                               make_std_vector(contraction_dimensions_B),
+                               free_dims<dimension_B>(contraction_dimensions_B));
+  const auto csr_A_transposed = transposed_csr_from_sorted_keys(matrix_A);
+  const auto csr_B_transposed = transposed_csr_from_sorted_keys(matrix_B);
+  const auto csr_C_transposed = sparse_matrix_sparse_matrix_product<space, data_t, force_naive>(csr_B_transposed, csr_A_transposed);
+  const auto matrix_C = sparse_tensor_from_transposed_csr(csr_C_transposed);
+
+  const SparseTensor<new_dimension, space, data_t> tensor_C(output_sizes, matrix_C.linear_indices(), matrix_C.values());
+  // Same two filters as the naive kernel: accumulation scale, then the result's own inf norm.
+  const auto accumulated = filter_small_entries(tensor_C, norm_inf(tensor_A) * norm_inf(tensor_B));
+  return filter_small_entries(accumulated);
+}
+
+} // namespace detail
+
 /**
  * \brief Reduces a sparse tensor over one or more dimensions.
  *
@@ -684,9 +889,10 @@ SparseTensor<dimension_A - reductions, space, data_t> tensor_reduction(
  * \brief Contracts a sparse tensor with a dense tensor.
  *
  * The contraction follows the same dimension ordering as the dense
- * `tensor_contraction` API. The host implementation
- * traverses only explicitly stored sparse entries; other execution spaces
- * are not yet implemented.
+ * `tensor_contraction` API. The sparse operand is unfolded to a CSR matrix
+ * and the product uses the backend SpMV or SpMM kernel. On host,
+ * `force_naive` selects the entry traversal kernel; on other spaces it
+ * selects the naive CSR kernels.
  *
  * \param tensor_A Sparse left tensor.
  * \param tensor_B Dense right tensor.
@@ -703,8 +909,7 @@ Tensor<(dimension_A + dimension_B) - 2 * contractions, space, data_t> tensor_con
   const boba::Array<size_t, contractions> contraction_dimensions_B)
 {
   BOBA_CALI_MARK
-  ::boba::detail::ignore(force_naive);
-  if constexpr (space == host_space)
+  if constexpr (force_naive and space == host_space)
   {
     return ::boba::detail::sparse_dense_contraction_naive(
       tensor_A,
@@ -714,9 +919,11 @@ Tensor<(dimension_A + dimension_B) - 2 * contractions, space, data_t> tensor_con
   }
   else
   {
-    ::boba::detail::ignore(tensor_A, tensor_B, contraction_dimensions_A, contraction_dimensions_B);
-    boba_error("not yet implemented");
-    return {};
+    return ::boba::detail::sparse_dense_contraction_unfolded<contractions, space, dimension_A, dimension_B, data_t, force_naive>(
+      tensor_A,
+      tensor_B,
+      contraction_dimensions_A,
+      contraction_dimensions_B);
   }
 }
 
@@ -724,9 +931,10 @@ Tensor<(dimension_A + dimension_B) - 2 * contractions, space, data_t> tensor_con
  * \brief Contracts a dense tensor with a sparse tensor.
  *
  * The contraction follows the same dimension ordering as the dense
- * `tensor_contraction` API. The host implementation
- * traverses only explicitly stored sparse entries; other execution spaces
- * are not yet implemented.
+ * `tensor_contraction` API. The sparse operand is unfolded to a CSR matrix
+ * and the product uses the backend SpMV or SpMM kernel. On host,
+ * `force_naive` selects the entry traversal kernel; on other spaces it
+ * selects the naive CSR kernels.
  *
  * \param tensor_A Dense left tensor.
  * \param tensor_B Sparse right tensor.
@@ -743,8 +951,7 @@ Tensor<(dimension_A + dimension_B) - 2 * contractions, space, data_t> tensor_con
   const boba::Array<size_t, contractions> contraction_dimensions_B)
 {
   BOBA_CALI_MARK
-  ::boba::detail::ignore(force_naive);
-  if constexpr (space == host_space)
+  if constexpr (force_naive and space == host_space)
   {
     return ::boba::detail::dense_sparse_contraction_naive(
       tensor_A,
@@ -754,9 +961,25 @@ Tensor<(dimension_A + dimension_B) - 2 * contractions, space, data_t> tensor_con
   }
   else
   {
-    ::boba::detail::ignore(tensor_A, tensor_B, contraction_dimensions_A, contraction_dimensions_B);
-    boba_error("not yet implemented");
-    return {};
+    // C^T = B^T * A^T gives [free B..., free A...]; permute back to [free A..., free B...].
+    constexpr size_t free_A = dimension_A - contractions;
+    constexpr size_t free_B = dimension_B - contractions;
+    auto output = ::boba::detail::sparse_dense_contraction_unfolded<contractions, space, dimension_B, dimension_A, data_t, force_naive>(
+      tensor_B,
+      tensor_A,
+      contraction_dimensions_B,
+      contraction_dimensions_A);
+    Array<index_t, free_A + free_B> ordering;
+    for (size_t d = 0; d < free_A; ++d)
+    {
+      ordering[d] = static_cast<index_t>(free_B + d);
+    }
+    for (size_t d = 0; d < free_B; ++d)
+    {
+      ordering[free_A + d] = static_cast<index_t>(d);
+    }
+    permute(output, ordering);
+    return output;
   }
 }
 
@@ -769,8 +992,10 @@ Tensor<(dimension_A + dimension_B) - 2 * contractions, space, data_t> tensor_con
  * dense contraction overload: uncontracted A dimensions followed by
  * uncontracted B dimensions.
  *
- * For non-host execution spaces, this routine copies both inputs to host,
- * constructs the contracted sparse tensor there, and copies the result back.
+ * Both operands are unfolded to CSR matrices and multiplied with the
+ * backend SpGEMM kernel. On host, `force_naive` selects the pairwise entry
+ * traversal; on other spaces it selects the expand-sort-compress SpGEMM
+ * kernel. Entries tiny relative to `norm_inf(A) * norm_inf(B)` are dropped.
  *
  * \param tensor_A Left sparse tensor.
  * \param tensor_B Right sparse tensor.
@@ -787,11 +1012,9 @@ SparseTensor<(dimension_A + dimension_B) - 2 * contractions, space, data_t> tens
   const boba::Array<size_t, contractions> contraction_dimensions_B)
 {
   BOBA_CALI_MARK
-  ::boba::detail::ignore(force_naive);
-  constexpr size_t new_dimension = (dimension_A + dimension_B) - 2 * contractions;
-
-  if constexpr (space == host_space)
+  if constexpr (force_naive and space == host_space)
   {
+    constexpr size_t new_dimension = (dimension_A + dimension_B) - 2 * contractions;
     using real_data_t = real_type_t<data_t>;
     const real_data_t accumulation_tolerance = norm_inf(tensor_A) * norm_inf(tensor_B);
     const auto sizes_A = tensor_A.sizes();
@@ -830,14 +1053,11 @@ SparseTensor<(dimension_A + dimension_B) - 2 * contractions, space, data_t> tens
   }
   else
   {
-    SparseTensor<dimension_A, host_space, data_t> host_tensor_A(tensor_A);
-    SparseTensor<dimension_B, host_space, data_t> host_tensor_B(tensor_B);
-    auto host_tensor_C = tensor_contraction<contractions, host_space, dimension_A, dimension_B, data_t, force_naive>(
-      host_tensor_A,
-      host_tensor_B,
+    return ::boba::detail::sparse_sparse_contraction_unfolded<contractions, space, dimension_A, dimension_B, data_t, force_naive>(
+      tensor_A,
+      tensor_B,
       contraction_dimensions_A,
       contraction_dimensions_B);
-    return SparseTensor<new_dimension, space, data_t>(host_tensor_C);
   }
 }
 
@@ -880,9 +1100,9 @@ SparseTensor<(dimension_A + dimension_B) - 2 * contractions, space, data_t> tens
 /**
  * \brief Contracts a sparse tensor with a dense tensor using einsum labels.
  *
- * The result is dense and follows the requested \p labels_C ordering. The
- * host implementation traverses only explicitly stored sparse entries;
- * other execution spaces are not yet implemented.
+ * The result is dense and follows the requested \p labels_C ordering.
+ * Common labels are forwarded to the positional overload, so `force_naive`
+ * has the same meaning there.
  *
  * @param labels_A Labels describing the sparse left tensor modes.
  * @param tensor_A Sparse left tensor.
@@ -901,7 +1121,6 @@ Tensor<(dimension_A + dimension_B) - 2 * contractions, space, data_t> tensor_con
   const Array<DimLabel_t, (dimension_A + dimension_B) - 2 * contractions>& labels_C)
 {
   BOBA_CALI_MARK
-  ::boba::detail::ignore(force_naive);
   auto common_labels = get_common_labels<contractions>(labels_A, labels_B);
   auto contraction_indices_A = get_label_indices(labels_A, common_labels);
   auto contraction_indices_B = get_label_indices(labels_B, common_labels);
@@ -911,25 +1130,16 @@ Tensor<(dimension_A + dimension_B) - 2 * contractions, space, data_t> tensor_con
     tensor_B,
     contraction_indices_A,
     contraction_indices_B);
-  if constexpr (space == host_space)
-  {
-    permute(uncontracted_labels, output, labels_C);
-    return output;
-  }
-  else
-  {
-    ::boba::detail::ignore(labels_A, tensor_A, labels_B, tensor_B, labels_C);
-    boba_error("not yet implemented");
-    return {};
-  }
+  permute(uncontracted_labels, output, labels_C);
+  return output;
 }
 
 /**
  * \brief Contracts a dense tensor with a sparse tensor using einsum labels.
  *
- * The result is dense and follows the requested \p labels_C ordering. The
- * host implementation traverses only explicitly stored sparse entries;
- * other execution spaces are not yet implemented.
+ * The result is dense and follows the requested \p labels_C ordering.
+ * Common labels are forwarded to the positional overload, so `force_naive`
+ * has the same meaning there.
  *
  * @param labels_A Labels describing the dense left tensor modes.
  * @param tensor_A Dense left tensor.
@@ -948,7 +1158,6 @@ Tensor<(dimension_A + dimension_B) - 2 * contractions, space, data_t> tensor_con
   const Array<DimLabel_t, (dimension_A + dimension_B) - 2 * contractions>& labels_C)
 {
   BOBA_CALI_MARK
-  ::boba::detail::ignore(force_naive);
   auto common_labels = get_common_labels<contractions>(labels_A, labels_B);
   auto contraction_indices_A = get_label_indices(labels_A, common_labels);
   auto contraction_indices_B = get_label_indices(labels_B, common_labels);
@@ -958,17 +1167,8 @@ Tensor<(dimension_A + dimension_B) - 2 * contractions, space, data_t> tensor_con
     tensor_B,
     contraction_indices_A,
     contraction_indices_B);
-  if constexpr (space == host_space)
-  {
-    permute(uncontracted_labels, output, labels_C);
-    return output;
-  }
-  else
-  {
-    ::boba::detail::ignore(labels_A, tensor_A, labels_B, tensor_B, labels_C);
-    boba_error("not yet implemented");
-    return {};
-  }
+  permute(uncontracted_labels, output, labels_C);
+  return output;
 }
 
 /**

@@ -383,8 +383,11 @@
     test_SparseTensorTrainMatrix:
       skip: [cuda, hip]
 
-  test_sparse_dense_contraction_benchmark:
-    test_sparse_dense_contraction_benchmark:
+  test_sparse_contraction_benchmark:
+    test_sparse_contraction_benchmark:
+      skip: []
+    test_sparse_contraction_benchmark_density_5:
+      inputs: "--density 0.05 --mode_size 8"
       skip: []
 
   test_SparseMatrix:

@@ -195,7 +195,7 @@ void fill_csr_test_values(boba::Matrix<boba::host_space, data_t>& matrix, boba::
 }
 
 /**
- * \brief Validates CSR SpMV and SpMM in `default_execution_space` against dense products.
+ * \brief Validates CSR SpMV, SpMM, and SpGEMM in `default_execution_space` against dense products.
  *
  * Covers both `sparse_op` values, accumulation with nonzero beta, overwrite
  * with zero beta, and an empty matrix.
@@ -304,7 +304,35 @@ void check_csr_backend(double tolerance, bool& check)
   empty_csr.matvec(x_empty_device, y_empty_device, alpha, beta);
   pass_or_fail(check, boba::norm_difference_inf(host_vector_t(y_empty_device), beta * y_empty), tolerance);
 
-  std::cout << "CSR backend matvec/matmat: done" << std::endl;
+  // SpGEMM against the dense product, with an empty row and a rectangular right factor.
+  constexpr boba::index_t inner_cols = 6;
+  host_matrix_t dense_right({cols, inner_cols});
+  dense_right.fill_with_zeros();
+  auto dense_right_view = dense_right.view();
+  for (boba::index_t i = 1; i < cols; ++i)
+  {
+    for (boba::index_t j = 0; j < inner_cols; ++j)
+    {
+      if ((2 * i + j) % 3 != 1)
+      {
+        dense_right_view({i, j}) = csr_test_value<data_t>(i * inner_cols + j + 2);
+      }
+    }
+  }
+  const boba::CSRMatrix<space, data_t> csr_right(boba::from_dense_csr<boba::host_space>(dense_right));
+  const auto product_expected = dense * dense_right;
+  const boba::CSRMatrix<boba::host_space, data_t> product(boba::sparse_matrix_sparse_matrix_product(csr, csr_right));
+  pass_or_fail_bool(check, product.is_sorted());
+  pass_or_fail(check, boba::norm_difference_inf(boba::to_dense(product), product_expected), tolerance);
+  const boba::CSRMatrix<boba::host_space, data_t> product_naive(boba::sparse_matrix_sparse_matrix_product<space, data_t, true>(csr, csr_right));
+  pass_or_fail_bool(check, product_naive.is_sorted());
+  pass_or_fail(check, boba::norm_difference_inf(boba::to_dense(product_naive), product_expected), tolerance);
+
+  const boba::CSRMatrix<space, data_t> empty_right(boba::CSRMatrix<boba::host_space, data_t>(cols, inner_cols));
+  const auto empty_product = boba::sparse_matrix_sparse_matrix_product(csr, empty_right);
+  pass_or_fail_bool(check, empty_product.nnz() == 0 && empty_product.rows() == rows && empty_product.cols() == inner_cols);
+
+  std::cout << "CSR backend matvec/matmat/spgemm: done" << std::endl;
 }
 
 /**
