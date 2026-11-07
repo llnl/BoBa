@@ -127,14 +127,10 @@ struct DMRGCross
     for (size_t core_id = dimension - 1; core_id > 0; core_id--)
     {
       checkpoint();
-      const auto mode_extent = approximated_tt.sizes(core_id);
-      checkpoint();
       ::boba::Matrix<host_space, data_t> core_matrix = reshape_to_matrix(approximated_tt.cores[core_id], {tt_ranks[core_id] * mode_sizes[core_id], tt_ranks[core_id + 1]});
 
-      auto core_times_right_interface = core_matrix * right_interface;
-      checkpoint();
-      core_matrix.resize({tt_ranks[core_id], mode_sizes[core_id] * tt_ranks[core_id + 1]});
-      core_matrix.reshape(core_times_right_interface);
+      core_matrix = core_matrix * right_interface;
+      core_matrix.reshape({tt_ranks[core_id], mode_sizes[core_id] * tt_ranks[core_id + 1]});
       checkpoint();
       core_matrix.transpose_in_place();
 
@@ -143,30 +139,29 @@ struct DMRGCross
       qr(core_matrix);
 
       core_matrix = qr.Q;
-      auto triangular_factor = qr.R;
+      auto triangular_factor = std::move(qr.R);
 
       auto selected_indices = select_indices(qr.Q);
 
       checkpoint();
-      ::boba::Matrix<space, index_t> trailing_indices = interpolation_indices[core_id + 1];
+      const auto& trailing_indices = interpolation_indices[core_id + 1];
 
-      auto next_rank = boba::min(mode_extent * tt_ranks[core_id + 1], tt_ranks[core_id]);
+      auto next_rank = boba::min(mode_sizes[core_id] * tt_ranks[core_id + 1], tt_ranks[core_id]);
 
       checkpoint();
       ::boba::Matrix<space, index_t> leading_indices({dimension - core_id, next_rank});
       leading_indices.fill_with_zeros();
 
+      ::boba::Multiindexer<2> unfolded_core_indices({tt_ranks[core_id + 1], mode_sizes[core_id]});
+      auto trailing_indices_view = trailing_indices.const_view();
+      auto leading_indices_view = leading_indices.view();
       checkpoint();
       for (size_t selected_column = 0; selected_column < next_rank; selected_column++)
       {
         index_t flattened_index = selected_indices({selected_column});
-        ::boba::Multiindexer<2> unfolded_core_indices({tt_ranks[core_id + 1], mode_extent});
         auto [right_rank_index, mode_index] = unfolded_core_indices.multiindex(flattened_index);
 
         checkpoint();
-        auto trailing_indices_view = trailing_indices.view();
-        auto leading_indices_view = leading_indices.view();
-
         ::boba::loop<host_space, 1>(leading_indices.rows(),
                                     [=] __boba_host_device__(index_t i)
         {
@@ -187,14 +182,8 @@ struct DMRGCross
 
       right_interface = core_matrix.extract_rows(selected_indices);
 
-      {
-        auto temp = right_backsolve(right_interface, core_matrix);
-        core_matrix = temp;
-      }
-      {
-        auto temp = right_interface * triangular_factor;
-        right_interface = temp;
-      }
+      core_matrix = right_backsolve(right_interface, core_matrix);
+      right_interface = right_interface * triangular_factor;
       right_interface.transpose_in_place();
 
       checkpoint();
@@ -207,10 +196,7 @@ struct DMRGCross
 
       checkpoint();
       core_matrix.reshape({tt_ranks[core_id] * mode_sizes[core_id], tt_ranks[core_id + 1]});
-      {
-        auto temp = core_matrix * transfer_matrices[core_id + 1];
-        core_matrix = temp;
-      }
+      core_matrix = core_matrix * transfer_matrices[core_id + 1];
 
       checkpoint();
       core_matrix.reshape({tt_ranks[core_id], mode_sizes[core_id] * tt_ranks[core_id + 1]});
@@ -219,17 +205,13 @@ struct DMRGCross
       checkpoint();
       ::boba::QR<host_space, data_t> QR2;
       QR2(core_matrix);
-      triangular_factor = QR2.R;
-      transfer_matrices[core_id] = triangular_factor;
+      transfer_matrices[core_id] = std::move(QR2.R);
     }
 
     checkpoint();
 
     ::boba::Matrix<host_space, data_t> first_core_matrix({tt_ranks[0] * mode_sizes[0], tt_ranks[1]});
-    {
-      auto temp = approximated_tt.cores[0];
-      first_core_matrix.reshape(temp);
-    }
+    first_core_matrix.reshape(approximated_tt.cores[0]);
 
     checkpoint();
     {
@@ -248,15 +230,9 @@ struct DMRGCross
     while ((sweep_count < max_sweeps) && not_converged)
     {
       checkpoint();
-      auto left_core = approximated_tt.cores[core_id];
-      auto right_core = approximated_tt.cores[core_id + 1];
-      auto left_indices = interpolation_indices[core_id];
-      auto right_indices = interpolation_indices[core_id + 2];
-
-      checkpoint();
       ::boba::Tensor<4, host_space, data_t> score_tensor({tt_ranks[core_id], mode_sizes[core_id], mode_sizes[core_id + 1], tt_ranks[core_id + 2]});
 
-      create_score_tensor_from_index_and_function<dimension>(left_indices, right_indices, score_tensor, std::forward<lambda_t>(function_to_approximate));
+      create_score_tensor_from_index_and_function<dimension>(interpolation_indices[core_id], interpolation_indices[core_id + 2], score_tensor, std::forward<lambda_t>(function_to_approximate));
 
       checkpoint();
       ::boba::Matrix<host_space, data_t> score({tt_ranks[core_id], mode_sizes[core_id] * mode_sizes[core_id + 1] * tt_ranks[core_id + 2]});
@@ -267,10 +243,7 @@ struct DMRGCross
 
       checkpoint();
       score.reshape({tt_ranks[core_id] * mode_sizes[core_id] * mode_sizes[core_id + 1], tt_ranks[core_id + 2]});
-      {
-        auto temp = score * transfer_matrices[core_id + 2];
-        score = temp;
-      }
+      score = score * transfer_matrices[core_id + 2];
       tt_ranks[core_id + 2] = score.sizes(1);
 
       score.reshape({tt_ranks[core_id] * mode_sizes[core_id], mode_sizes[core_id + 1] * tt_ranks[core_id + 2]});
@@ -279,9 +252,9 @@ struct DMRGCross
       svd.tolerance_relative = two_site_svd_tolerance_relative;
       svd.tolerance_absolute = two_site_svd_tolerance_absolute;
       svd(score);
-      auto u = svd.U;
-      auto s = svd.S;
-      auto v = svd.V;
+      auto u = std::move(svd.U);
+      auto s = std::move(svd.S);
+      auto v = std::move(svd.V);
       auto r = svd.significant_singular_values;
 
       // for compatibility with tt-toolbox
@@ -295,21 +268,16 @@ struct DMRGCross
         // v = (s*v')' = v * s'
         ::boba::apply_as_diagonal_right_in_place(s, v);
 
-        ::boba::Matrix<host_space, data_t> ur({u.rows(), kickrank});
-        ur.fill_with_zeros();
-
         ::boba::Matrix<host_space, data_t> random_enrichment({u.rows(), kickrank});
         random_enrichment.fill_with_random(random_generator);
-        ur.reshape(random_enrichment);
 
-        u = reorthogonalize(u, ur);
+        u = reorthogonalize(u, random_enrichment);
         const auto rank_added = u.cols() - r;
         if (rank_added > 0)
         {
           ::boba::Matrix<host_space, data_t> vr({v.rows(), rank_added});
           vr.fill_with_zeros();
-          auto v_temp = concatenate_columns(v, vr);
-          v = v_temp;
+          v = concatenate_columns(v, vr);
         }
         r = r + rank_added;
       }
@@ -318,33 +286,30 @@ struct DMRGCross
         checkpoint();
         ::boba::apply_as_diagonal_right_in_place(s, u);
 
-        ::boba::Matrix<host_space, data_t> vr({v.rows(), kickrank});
-        vr.fill_with_zeros();
-
         ::boba::Matrix<host_space, data_t> random_enrichment({v.rows(), kickrank});
         random_enrichment.fill_with_random(random_generator);
 
-        vr.reshape(random_enrichment);
-        v = reorthogonalize(v, vr);
+        v = reorthogonalize(v, random_enrichment);
 
         const auto rank_added = v.cols() - r;
         if (rank_added > 0)
         {
           ::boba::Matrix<host_space, data_t> ur({u.rows(), rank_added});
           ur.fill_with_zeros();
-          auto u_temp = concatenate_columns(u, ur);
-          u = u_temp;
+          u = concatenate_columns(u, ur);
         }
         r = r + rank_added;
       }
 
       v.transpose_in_place();
 
-      boba::Matrix<space, data_t> left_core_matrix({left_core.size() / tt_ranks[core_id + 1], tt_ranks[core_id + 1]});
-      left_core_matrix.reshape(left_core);
+      boba::Matrix<space, data_t> left_core_matrix(
+        {approximated_tt.cores[core_id].size() / tt_ranks[core_id + 1], tt_ranks[core_id + 1]});
+      left_core_matrix.reshape(approximated_tt.cores[core_id]);
 
-      boba::Matrix<space, data_t> right_core_matrix({tt_ranks[core_id + 1], right_core.size() / tt_ranks[core_id + 1]});
-      right_core_matrix.reshape(right_core);
+      boba::Matrix<space, data_t> right_core_matrix(
+        {tt_ranks[core_id + 1], approximated_tt.cores[core_id + 1].size() / tt_ranks[core_id + 1]});
+      right_core_matrix.reshape(approximated_tt.cores[core_id + 1]);
 
       auto approximation = left_core_matrix * right_core_matrix;
       approximation.reshape({tt_ranks[core_id], mode_sizes[core_id] * mode_sizes[core_id + 1] * tt_ranks[core_id + 2]});
@@ -352,7 +317,9 @@ struct DMRGCross
       approximation.reshape({tt_ranks[core_id] * mode_sizes[core_id] * mode_sizes[core_id + 1], tt_ranks[core_id + 2]});
       approximation = approximation * transfer_matrices[core_id + 2];
 
-      auto norm_diff = ::boba::norm_difference_frobenius(::boba::flatten(score), ::boba::flatten(approximation));
+      // Match the linearized comparison shape without allocating flattened copies.
+      approximation.reshape(score.sizes());
+      auto norm_diff = ::boba::norm_difference_frobenius(score, approximation);
       auto norm_score = ::boba::norm_frobenius(score);
       auto local_relative_error = norm_diff / norm_score;
       max_relative_error = ::boba::max(max_relative_error, local_relative_error);
@@ -368,19 +335,13 @@ struct DMRGCross
       checkpoint();
       tt_ranks[core_id + 1] = r;
       u.reshape({tt_ranks[core_id], mode_sizes[core_id] * r});
-      {
-        auto temp = backsolve(transfer_matrices[core_id], u);
-        u = temp;
-      }
+      u = backsolve(transfer_matrices[core_id], u);
 
       checkpoint();
       v.reshape({r * mode_sizes[core_id + 1], tt_ranks[core_id + 2]});
       u.reshape({tt_ranks[core_id] * mode_sizes[core_id], tt_ranks[core_id + 1]});
 
-      {
-        auto temp = right_backsolve(transfer_matrices[core_id + 2], v);
-        v = temp;
-      }
+      v = right_backsolve(transfer_matrices[core_id + 2], v);
 
       checkpoint();
       v.reshape({r, mode_sizes[core_id + 1] * tt_ranks[core_id + 2]});
@@ -391,25 +352,19 @@ struct DMRGCross
         ::boba::QR<host_space, data_t> qr;
         qr(u);
         u = qr.Q;
-        auto triangular_factor = qr.R;
+        auto triangular_factor = std::move(qr.R);
         auto selected_indices = select_indices(u);
 
         checkpoint();
         right_interface = u.extract_rows(selected_indices);
 
-        {
-          auto temp = right_backsolve(right_interface, u);
-          u = temp;
-        }
+        u = right_backsolve(right_interface, u);
 
         checkpoint();
         approximated_tt.cores[core_id].resize({tt_ranks[core_id], mode_sizes[core_id], tt_ranks[core_id + 1]});
         approximated_tt.cores[core_id].reshape(u);
 
-        {
-          auto temp = right_interface * triangular_factor;
-          right_interface = temp;
-        }
+        right_interface = right_interface * triangular_factor;
         v = right_interface * v;
 
         checkpoint();
@@ -424,22 +379,20 @@ struct DMRGCross
         updated_left_core_with_transfer.reshape({tt_ranks[core_id] * mode_sizes[core_id], tt_ranks[core_id + 1]});
 
         qr(updated_left_core_with_transfer);
-        triangular_factor = qr.R;
-        transfer_matrices[core_id + 1] = triangular_factor;
+        transfer_matrices[core_id + 1] = std::move(qr.R);
 
-        auto previous_indices = interpolation_indices[core_id];
+        const auto& previous_indices = interpolation_indices[core_id];
         ::boba::Matrix<host_space, index_t> updated_indices({tt_ranks[core_id + 1], core_id + 1});
         updated_indices.fill_with_zeros();
+        ::boba::Multiindexer<2> unfolded_core_indices({tt_ranks[core_id], mode_sizes[core_id]});
+        auto previous_indices_view = previous_indices.const_view();
+        auto updated_indices_view = updated_indices.view();
         for (size_t selected_row = 0; selected_row < tt_ranks[core_id + 1]; selected_row++)
         {
           auto flattened_index = selected_indices({selected_row});
-          ::boba::Multiindexer<2> unfolded_core_indices({tt_ranks[core_id], mode_sizes[core_id]});
           auto [left_rank_index, mode_index] = unfolded_core_indices.multiindex(flattened_index);
 
           checkpoint();
-          auto previous_indices_view = previous_indices.view();
-          auto updated_indices_view = updated_indices.view();
-
           ::boba::loop<host_space, 1>(updated_indices.cols(),
                                       [=] __boba_host_device__(index_t k)
           {
@@ -476,16 +429,13 @@ struct DMRGCross
         ::boba::QR<host_space, data_t> qr;
         qr(v);
         v = qr.Q;
-        auto triangular_factor = qr.R;
+        auto triangular_factor = std::move(qr.R);
         auto selected_indices = select_indices(v);
 
         checkpoint();
         right_interface = v.extract_rows(selected_indices);
 
-        {
-          auto temp = right_backsolve(right_interface, v);
-          v = temp;
-        }
+        v = right_backsolve(right_interface, v);
 
         checkpoint();
         ::boba::Tensor<3, space, data_t> reshaped_right_core({mode_sizes[core_id + 1], tt_ranks[core_id + 2], tt_ranks[core_id + 1]});
@@ -494,46 +444,36 @@ struct DMRGCross
         approximated_tt.cores[core_id + 1] = reshaped_right_core;
         ::boba::permute({"index", "rank_right", "rank_left"}, approximated_tt.cores[core_id + 1], {"rank_left", "index", "rank_right"});
 
-        {
-          auto temp = right_interface * triangular_factor;
-          right_interface = temp;
-          right_interface.transpose_in_place();
-          temp = u * right_interface;
-          u = temp;
-        }
+        right_interface = right_interface * triangular_factor;
+        right_interface.transpose_in_place();
+        u = u * right_interface;
         approximated_tt.cores[core_id].resize({tt_ranks[core_id], mode_sizes[core_id], tt_ranks[core_id + 1]});
         approximated_tt.cores[core_id].reshape(u);
 
         v.transpose_in_place();
         v.reshape({tt_ranks[core_id + 1] * mode_sizes[core_id + 1], tt_ranks[core_id + 2]});
-        {
-          auto temp = v * transfer_matrices[core_id + 2];
-          v = temp;
-        }
+        v = v * transfer_matrices[core_id + 2];
 
         checkpoint();
         v.reshape({tt_ranks[core_id + 1], mode_sizes[core_id + 1] * tt_ranks[core_id + 2]});
         v.transpose_in_place();
 
         qr(v);
-        triangular_factor = qr.R;
-
-        transfer_matrices[core_id + 1] = triangular_factor;
-        auto previous_indices = interpolation_indices[core_id + 2];
+        transfer_matrices[core_id + 1] = std::move(qr.R);
+        const auto& previous_indices = interpolation_indices[core_id + 2];
 
         ::boba::Matrix<host_space, index_t> updated_indices({dimension - core_id - 1, tt_ranks[core_id + 1]});
         updated_indices.fill_with_zeros();
+        ::boba::Multiindexer<2> unfolded_core_indices({mode_sizes[core_id + 1], tt_ranks[core_id + 2]});
+        auto previous_indices_view = previous_indices.const_view();
+        auto updated_indices_view = updated_indices.view();
 
         for (size_t selected_row = 0; selected_row < tt_ranks[core_id + 1]; selected_row++)
         {
           auto flattened_index = selected_indices({selected_row});
-          ::boba::Multiindexer<2> unfolded_core_indices({mode_sizes[core_id + 1], tt_ranks[core_id + 2]});
           auto [mode_index, right_rank_index] = unfolded_core_indices.multiindex(flattened_index);
 
           checkpoint();
-          auto previous_indices_view = previous_indices.view();
-          auto updated_indices_view = updated_indices.view();
-
           ::boba::loop<host_space, 1>(updated_indices.rows(),
                                       [=] __boba_host_device__(index_t i)
           {
