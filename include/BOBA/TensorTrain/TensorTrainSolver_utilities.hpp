@@ -196,22 +196,89 @@ boba::Matrix<space, data_t> bfun3_matrix(
   return reshape_to_matrix(Phi1APhi2, {rows, cols});
 }
 
-/**
- * @brief Squared Euclidean norm of every row of the projected bfun3 matrix.
- *
- * The returned tensor has the projected row shape (left rank, physical row,
- * right rank).  Column indices are contracted against a conjugate copy, while
- * row indices remain free.
+/*
+ * @brief Operator part of the projected row norms of bfun3_matrix:
+ *   O(a, i, b, a', b') = sum_j A(a, i, j, b) conj(A(a', i, j, b')).
+ * It depends only on the operator core, so callers that sweep repeatedly over the same cores can reuse it.  On the
+ * CPU it is one GEMM per physical row i (A_i A_i^H with A_i of size (rank_left rank_right) x columns); elsewhere a
+ * direct loop.
  */
 template <::boba::execution_space space, typename data_t>
-boba::Tensor<3, space, data_t> bfun3_matrix_row_norms_squared(
+boba::Tensor<5, space, data_t> bfun3_operator_row_gram(const boba::Tensor<4, space, data_t>& A)
+{
+  BOBA_CALI_MARK
+  auto A_conj = ::boba::get_conj(A);
+  const auto bond_left = A.sizes(0);
+  const auto physical_rows = A.sizes(1);
+  const auto physical_cols = A.sizes(2);
+  const auto bond_right = A.sizes(3);
+  boba::Tensor<5, space, data_t> operator_row_gram(
+    {bond_left, physical_rows, bond_right, bond_left, bond_right});
+  auto operator_view = operator_row_gram.view();
+  auto A_view = A.const_view();
+  auto A_conj_view = A_conj.const_view();
+  if constexpr (space == ::boba::execution_space::CPU)
+  {
+    const auto pairs = bond_left * bond_right;
+    boba::Matrix<space, data_t> Ai({pairs, physical_cols}), AiH({physical_cols, pairs});
+    auto ai = Ai.view(); auto aih = AiH.view();
+    for (index_t row = 0; row < physical_rows; row++)
+    {
+      for (index_t rb = 0; rb < bond_right; rb++)
+        for (index_t col = 0; col < physical_cols; col++)
+          for (index_t ra = 0; ra < bond_left; ra++)
+          {
+            ai({ra + bond_left * rb, col}) = A_view({ra, row, col, rb});
+            aih({col, ra + bond_left * rb}) = A_conj_view({ra, row, col, rb});
+          }
+      auto Gi = Ai * AiH;
+      auto gi = Gi.const_view();
+      for (index_t rbp = 0; rbp < bond_right; rbp++)
+        for (index_t rap = 0; rap < bond_left; rap++)
+          for (index_t rb = 0; rb < bond_right; rb++)
+            for (index_t ra = 0; ra < bond_left; ra++)
+              operator_view({ra, row, rb, rap, rbp}) = gi({ra + bond_left * rb, rap + bond_left * rbp});
+    }
+  }
+  else
+  {
+    const auto operator_gram_size =
+      bond_left * physical_rows * bond_right * bond_left * bond_right;
+    ::boba::loop<space, 1>(operator_gram_size,
+                           [=] __boba_host_device__(index_t idx)
+    {
+      auto remainder = idx;
+      const auto rbp = remainder % bond_right;
+      remainder /= bond_right;
+      const auto rap = remainder % bond_left;
+      remainder /= bond_left;
+      const auto rb = remainder % bond_right;
+      remainder /= bond_right;
+      const auto row = remainder % physical_rows;
+      const auto ra = remainder / physical_rows;
+      data_t value = 0;
+      for (index_t col = 0; col < physical_cols; col++)
+      {
+        value += A_view({ra, row, col, rb}) * A_conj_view({rap, row, col, rbp});
+      }
+      operator_view({ra, row, rb, rap, rbp}) = value;
+    });
+  }
+  return operator_row_gram;
+}
+
+/*
+ * @brief Squared Euclidean norm of every row of the projected bfun3 matrix, from the operator row Gram
+ * (bfun3_operator_row_gram(A)).
+ */
+template <::boba::execution_space space, typename data_t>
+boba::Tensor<3, space, data_t> bfun3_matrix_row_norms_squared_from_gram(
   const boba::Tensor<3, space, data_t>& Phi1,
-  const boba::Tensor<4, space, data_t>& A,
+  const boba::Tensor<5, space, data_t>& operator_row_gram,
   const boba::Tensor<3, space, data_t>& Phi2)
 {
   BOBA_CALI_MARK
   auto Phi1_conj = ::boba::get_conj(Phi1);
-  auto A_conj = ::boba::get_conj(A);
   auto Phi2_conj = ::boba::get_conj(Phi2);
 
   boba::Tensor<3, space, data_t> left_row_gram(
@@ -236,37 +303,6 @@ boba::Tensor<3, space, data_t> bfun3_matrix_row_norms_squared(
                phi1_conj_view({row_left, col_left, rap});
     }
     left_view({row_left, ra, rap}) = value;
-  });
-
-  boba::Tensor<5, space, data_t> operator_row_gram(
-    {A.sizes(0), A.sizes(1), A.sizes(3), A.sizes(0), A.sizes(3)});
-  auto operator_view = operator_row_gram.view();
-  auto A_view = A.const_view();
-  auto A_conj_view = A_conj.const_view();
-  const auto bond_left = A.sizes(0);
-  const auto physical_rows = A.sizes(1);
-  const auto physical_cols = A.sizes(2);
-  const auto bond_right = A.sizes(3);
-  const auto operator_gram_size =
-    bond_left * physical_rows * bond_right * bond_left * bond_right;
-  ::boba::loop<space, 1>(operator_gram_size,
-                         [=] __boba_host_device__(index_t idx)
-  {
-    auto remainder = idx;
-    const auto rbp = remainder % bond_right;
-    remainder /= bond_right;
-    const auto rap = remainder % bond_left;
-    remainder /= bond_left;
-    const auto rb = remainder % bond_right;
-    remainder /= bond_right;
-    const auto row = remainder % physical_rows;
-    const auto ra = remainder / physical_rows;
-    data_t value = 0;
-    for (index_t col = 0; col < physical_cols; col++)
-    {
-      value += A_view({ra, row, col, rb}) * A_conj_view({rap, row, col, rbp});
-    }
-    operator_view({ra, row, rb, rap, rbp}) = value;
   });
 
   boba::Tensor<3, space, data_t> right_row_gram(
@@ -300,6 +336,22 @@ boba::Tensor<3, space, data_t> bfun3_matrix_row_norms_squared(
     {"row_left", "row", "rb", "rbp"}, left_operator_row_gram,
     {"rb", "rbp", "row_right"}, right_row_gram,
     {"row_left", "row", "row_right"});
+}
+
+/*
+ * @brief Squared Euclidean norm of every row of the projected bfun3 matrix.
+ *
+ * The returned tensor has the projected row shape (left rank, physical row,
+ * right rank).  Column indices are contracted against a conjugate copy, while
+ * row indices remain free.
+ */
+template <::boba::execution_space space, typename data_t>
+boba::Tensor<3, space, data_t> bfun3_matrix_row_norms_squared(
+  const boba::Tensor<3, space, data_t>& Phi1,
+  const boba::Tensor<4, space, data_t>& A,
+  const boba::Tensor<3, space, data_t>& Phi2)
+{
+  return bfun3_matrix_row_norms_squared_from_gram(Phi1, bfun3_operator_row_gram(A), Phi2);
 }
 
 /*

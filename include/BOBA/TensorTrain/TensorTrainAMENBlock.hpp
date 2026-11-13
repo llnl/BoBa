@@ -2,6 +2,9 @@
 
 #pragma once
 
+#include <map>
+#include <tuple>
+
 namespace boba
 {
 
@@ -148,6 +151,9 @@ struct TensorTrainAMENBlock
   bool use_boba_gmres_for_coupled_site_solve = false;
   /// Assemble a reference matrix and compare it with the matrix-free action.
   bool validate_coupled_matrix_free_operator = false;
+  /// Memory budget (bytes) for reusing the operator row Grams of the matrix-free site scaling across sweeps
+  /// (bfun3_operator_row_gram, (rank_left rank_right)^2 x rows per block pair and site); 0 disables the reuse.
+  size_t row_norm_gram_cache_bytes = size_t(4) << 30;
   /// Direct CPU solver: 0=complete orthogonal decomposition, 1=pivoted QR, 2=partial-pivot LU, 3=sparse LU (dense LU above the fill threshold),
   /// 4=sparse LU, with dense minimum-norm (COD) solves above the fill threshold.
   size_t coupled_site_direct_solver_method = 0;
@@ -339,6 +345,7 @@ struct TensorTrainAMENBlock
 
     checkpoint();
     // Main AMEn sweeps: first move right-to-left to update environments and enrichment data.
+    row_norm_gram_cache_.clear(); row_norm_gram_cache_used_ = 0;
     bool last_sweep = false;
     bool converged = false;
     for (size_t swp = 0; swp < max_sweeps; swp++)
@@ -720,13 +727,20 @@ struct TensorTrainAMENBlock
               }
 
               data_t matrix_free_block_norm_squared = 0.0;
-              if (use_matrix_free_coupled_solve)
+              // the row norms only feed the site row scaling: skip them when it is off
+              if (use_matrix_free_coupled_solve && scale_coupled_site_system)
               {
-                auto scalar_block_norm_squared = flatten(
-                  ::boba::bfun3_matrix_row_norms_squared(
-                    phia[ki][kj].cores[i],
-                    crA({ki, kj}).cores[i],
-                    phia[ki][kj].cores[i + 1]));
+                // The operator part of the row norms depends only on the operator core, which does not change between
+                // sweeps: reuse it across sweeps, within row_norm_gram_cache_bytes.
+                auto row_norms = [&]() {
+                  if constexpr (space == ::boba::execution_space::CPU)
+                  {
+                    if (const auto* gram = cached_operator_row_gram(crA({ki, kj}).cores[i], ki, kj, i))
+                      return ::boba::bfun3_matrix_row_norms_squared_from_gram(phia[ki][kj].cores[i], *gram, phia[ki][kj].cores[i + 1]);
+                  }
+                  return ::boba::bfun3_matrix_row_norms_squared(phia[ki][kj].cores[i], crA({ki, kj}).cores[i], phia[ki][kj].cores[i + 1]);
+                };
+                auto scalar_block_norm_squared = flatten(row_norms());
                 matrix_free_block_norm_squared = scalar_block_norm_squared.sum_reduce();
                 coupled_row_norm_squared[ki] += matrix_free_block_norm_squared;
                 auto row_norm_squared_view = coupled_scalar_row_norm_squared[ki].view();
@@ -1747,6 +1761,22 @@ struct TensorTrainAMENBlock
   }
 
 private:
+  // operator row Grams reused across sweeps (key: block row, block column, site); filled first come, first served
+  // (host only: the cache is keyed on host tensors)
+  std::map<std::tuple<size_t, size_t, size_t>, boba::Tensor<5, ::boba::execution_space::CPU, data_t>> row_norm_gram_cache_;
+  size_t row_norm_gram_cache_used_ = 0;
+  const boba::Tensor<5, ::boba::execution_space::CPU, data_t>* cached_operator_row_gram(
+    const boba::Tensor<4, ::boba::execution_space::CPU, data_t>& A, size_t ki, size_t kj, size_t site)
+  {
+    const auto key = std::make_tuple(ki, kj, site);
+    auto it = row_norm_gram_cache_.find(key);
+    if (it != row_norm_gram_cache_.end()) return &it->second;
+    const size_t bytes = size_t(A.sizes(0)) * A.sizes(0) * A.sizes(3) * A.sizes(3) * A.sizes(1) * sizeof(data_t);
+    if (row_norm_gram_cache_used_ + bytes > row_norm_gram_cache_bytes) return nullptr;
+    row_norm_gram_cache_used_ += bytes;
+    return &row_norm_gram_cache_.emplace(key, ::boba::bfun3_operator_row_gram(A)).first->second;
+  }
+
   template <execution_space space_local>
   ::boba::Vector<space_local, data_t> solve_coupled_site_system(
     const CoupledSolve3DGMRESOperator<space_local, data_t>& linear_operator,
