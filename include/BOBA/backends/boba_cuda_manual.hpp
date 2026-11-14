@@ -530,7 +530,9 @@ inline real_type<data_t> matrix_l1_norm(const data_t* matrix, index_t rows, inde
     // 
     int rows_parallelism_ratio = (block_parallelism + rows - 1) / rows;
     int num_cols_portions = (cols + rows_parallelism_ratio - 1) / rows_parallelism_ratio;
-    int cols_portions = (cols + cols_portions - 1) / cols_portions;
+    num_cols_portions = boba::min(num_cols_portions, reduction_block_size);
+    num_cols_portions = boba::min(num_cols_portions, cols);
+    int cols_portions = (cols + num_cols_portions - 1) / num_cols_portions;
     
     int workspace_size = rows * num_cols_portions;
 
