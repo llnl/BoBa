@@ -4,6 +4,9 @@
 #include <chrono>
 #include <cmath>
 #include <array>
+#include <atomic>
+#include <exception>
+#include <thread>
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 #pragma once
@@ -121,6 +124,9 @@ struct CoupledSolve3DGMRESOperator
   std::vector<::boba::Vector<space, data_t>> scalar_row_factors;
   /// Diagonal mode: when set and no blocks are given, the operator is diag(diagonal) (a Jacobi preconditioner).
   ::boba::Vector<space, data_t> diagonal;
+  /// CPU: number of std::threads over the nonzero (row, column) blocks of the apply.  The contributions of a row are
+  /// summed in column order as in the serial apply, so the result does not depend on the thread count.
+  int threads = 1;
 
   [[nodiscard]]
   ::boba::Vector<space, data_t> operator*(
@@ -162,6 +168,45 @@ struct CoupledSolve3DGMRESOperator
 
     ::boba::Vector<space, data_t> output({offsets.back()});
     output.fill_with_zeros();
+    auto block_apply = [&](size_t row, size_t col) {
+      const CoreSliceSparsity<data_t>* sparse =
+        sparse_cores.empty() ? nullptr : sparse_cores[row][col];
+      if constexpr (space == ::boba::execution_space::CPU)
+      {
+        if (sparse != nullptr && !sparse->pairs.empty())
+          return bfun3_sparse(*phi_left[row][col], *sparse, *phi_right[row][col], input_blocks[col]);
+      }
+      return bfun3(*phi_left[row][col], *operator_cores[row][col], *phi_right[row][col], input_blocks[col]);
+    };
+    // CPU, threads > 1: all block contributions first (dynamic distribution over threads), summed below in order
+    std::vector<tensor3_t> precomputed;
+    if constexpr (space == ::boba::execution_space::CPU)
+    {
+      if (threads > 1)
+      {
+        std::vector<std::pair<size_t, size_t>> tasks;
+        for (size_t row = 0; row < block_count; row++)
+          for (size_t col = 0; col < block_count; col++)
+            if (operator_cores[row][col] != nullptr) tasks.push_back({row, col});
+        precomputed.resize(block_count * block_count);
+        std::atomic<size_t> next{0};
+        const int nthreads = static_cast<int>(std::min<size_t>(static_cast<size_t>(threads), tasks.size()));
+        std::vector<std::exception_ptr> errors(static_cast<size_t>(std::max(nthreads, 1)));
+        auto work = [&](int t) {
+          try
+          {
+            for (size_t q; (q = next.fetch_add(1)) < tasks.size();)
+              precomputed[tasks[q].first * block_count + tasks[q].second] = block_apply(tasks[q].first, tasks[q].second);
+          }
+          catch (...) { errors[static_cast<size_t>(t)] = std::current_exception(); next = tasks.size(); }
+        };
+        std::vector<std::thread> pool;
+        for (int t = 1; t < nthreads; ++t) pool.emplace_back(work, t);
+        work(0);
+        for (auto& th : pool) th.join();
+        for (auto& e : errors) if (e) std::rethrow_exception(e);
+      }
+    }
     for (size_t row = 0; row < block_count; row++)
     {
       tensor3_t output_block;
@@ -172,20 +217,8 @@ struct CoupledSolve3DGMRESOperator
         {
           continue;
         }
-        const CoreSliceSparsity<data_t>* sparse =
-          sparse_cores.empty() ? nullptr : sparse_cores[row][col];
-        tensor3_t contribution;
-        if constexpr (space == ::boba::execution_space::CPU)
-        {
-          if (sparse != nullptr && !sparse->pairs.empty())
-            contribution = bfun3_sparse(*phi_left[row][col], *sparse, *phi_right[row][col], input_blocks[col]);
-          else
-            contribution = bfun3(*phi_left[row][col], *operator_cores[row][col], *phi_right[row][col], input_blocks[col]);
-        }
-        else
-        {
-          contribution = bfun3(*phi_left[row][col], *operator_cores[row][col], *phi_right[row][col], input_blocks[col]);
-        }
+        tensor3_t contribution = precomputed.empty() ? block_apply(row, col)
+                                                     : std::move(precomputed[row * block_count + col]);
         if (initialized)
         {
           output_block += contribution;
@@ -273,6 +306,8 @@ struct TensorTrainAMENBlock
   /// Matrix-free site solve: use the nonzero-slice (n, m) pattern of an operator core when at most this fraction of its
   /// slices are nonzero (exact; host only); 0 disables.
   double sparse_site_operator_max_fraction = 0.5;
+  /// Host threads for the matrix-free coupled site apply (over its nonzero blocks); 0: BOBA_AMEN_THREADS, else 1.
+  int site_apply_threads = 0;
   /// Evaluate the global residual certificate after every sweep (from minimum_sweeps on), not only once the largest
   /// local residual max_res is below convergence_tolerance.  max_res can stall above the tolerance while the global
   /// residual is already below it.  Meant for a cheap caller-supplied global_residual (see solve()).
@@ -962,6 +997,8 @@ struct TensorTrainAMENBlock
             coupled_operator.phi_right.resize(Kay, std::vector<const boba::Tensor<3, space, data_t>*>(Kay, nullptr));
             coupled_operator.input_sizes.resize(Kay);
             coupled_operator.offsets = coupled_offsets;
+            if (site_apply_threads > 0) coupled_operator.threads = site_apply_threads;
+            else if (const char* env = std::getenv("BOBA_AMEN_THREADS")) coupled_operator.threads = std::max(1, std::atoi(env));
             coupled_operator.row_factors.assign(Kay, data_t{1});
             for (size_t kj = 0; kj < Kay; kj++)
             {
