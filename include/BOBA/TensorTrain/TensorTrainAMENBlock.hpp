@@ -1,3 +1,8 @@
+#include <Eigen/Dense>
+#include <iostream>
+#include <cstdlib>
+#include <chrono>
+#include <array>
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 #pragma once
@@ -8,11 +13,96 @@
 namespace boba
 {
 
+/// Nonzero (row, column) slices of a TT-matrix core A(ra1, n, m, ra2), packed: for each nonzero slice the ra1 x ra2
+/// matrix A(:, n, m, :).  Operator cores that are (nearly) block diagonal in a cell index -- e.g. element-local
+/// operators in a (cell x basis) mode -- have few nonzero slices, and the site operator can skip the zero ones exactly.
+template <typename data_t>
+struct CoreSliceSparsity
+{
+  index_t ra1 = 0, n = 0, m = 0, ra2 = 0;
+  std::vector<std::pair<index_t, index_t>> pairs;   // (n, m) of the nonzero slices
+  std::vector<data_t> blocks;                        // ra1 x ra2 per pair, column-major, in the order of pairs
+};
+
+/// AxPhi2(ra1, n, rx1, ry2) = sum_{m, ra2} A(ra1, n, m, ra2) xPhi2(rx1, m, ra2, ry2) over the nonzero slices of A only
+/// (host tensors; first index fastest).  Same result as the dense contraction in bfun3.
+template <execution_space space, typename data_t>
+boba::Tensor<3, space, data_t> bfun3_sparse(
+  const boba::Tensor<3, space, data_t>& Phi1,
+  const CoreSliceSparsity<data_t>& A,
+  const boba::Tensor<3, space, data_t>& Phi2,
+  const boba::Tensor<3, space, data_t>& x)
+{
+  using MatX = Eigen::Matrix<data_t, Eigen::Dynamic, Eigen::Dynamic>;
+  auto xPhi2 = boba::tensor_contraction<1>(
+    {"rx1", "m", "rx2"}, x, {"rx2", "ra2", "ry2"}, Phi2, {"rx1", "m", "ra2", "ry2"});
+  const index_t X1 = xPhi2.sizes(0), M = xPhi2.sizes(1), R2 = xPhi2.sizes(2), Y2 = xPhi2.sizes(3);
+  boba_always_assert(M == A.m && R2 == A.ra2, "bfun3_sparse: size mismatch");
+  // Y_m(ra2, rx1 + X1 ry2) = xPhi2(rx1, m, ra2, ry2), packed contiguously per m
+  std::vector<MatX> Y(static_cast<size_t>(M));
+  {
+    const data_t* xp = xPhi2.data();
+    for (index_t m = 0; m < M; ++m)
+    {
+      MatX Ym(R2, X1 * Y2);
+      for (index_t ry2 = 0; ry2 < Y2; ++ry2)
+        for (index_t ra2 = 0; ra2 < R2; ++ra2)
+          for (index_t rx1 = 0; rx1 < X1; ++rx1)
+            Ym(ra2, rx1 + X1 * ry2) = xp[rx1 + X1 * (m + M * (ra2 + R2 * ry2))];
+      Y[static_cast<size_t>(m)] = std::move(Ym);
+    }
+  }
+  boba::Tensor<4, space, data_t> AxPhi2({A.ra1, A.n, X1, Y2});
+  AxPhi2.fill_with_zeros();
+  data_t* out = AxPhi2.data();
+  const index_t R1 = A.ra1, N = A.n;
+  for (size_t q = 0; q < A.pairs.size(); ++q)
+  {
+    const index_t n = A.pairs[q].first, m = A.pairs[q].second;
+    Eigen::Map<const MatX> Anm(A.blocks.data() + q * static_cast<size_t>(R1 * R2), R1, R2);
+    Eigen::Map<MatX, 0, Eigen::OuterStride<>> On(out + R1 * n, R1, X1 * Y2, Eigen::OuterStride<>(R1 * N));
+    On.noalias() += Anm * Y[static_cast<size_t>(m)];
+  }
+  return boba::tensor_contraction<2>(
+    {"ry1", "rx1", "ra1"}, Phi1, {"ra1", "n", "rx1", "ry2"}, AxPhi2, {"ry1", "n", "ry2"});
+}
+
+/// The nonzero-slice pattern of a host core, or an empty pattern if more than maxFraction of the slices are nonzero.
+template <typename data_t>
+CoreSliceSparsity<data_t> core_slice_sparsity(const boba::Tensor<4, ::boba::execution_space::CPU, data_t>& A,
+                                              double maxFraction)
+{
+  CoreSliceSparsity<data_t> S;
+  S.ra1 = A.sizes(0); S.n = A.sizes(1); S.m = A.sizes(2); S.ra2 = A.sizes(3);
+  const data_t* a = A.data();
+  const index_t R1 = S.ra1, N = S.n, M = S.m, R2 = S.ra2;
+  for (index_t m = 0; m < M; ++m)
+    for (index_t n = 0; n < N; ++n)
+    {
+      bool nonzero = false;
+      for (index_t ra2 = 0; ra2 < R2 && !nonzero; ++ra2)
+        for (index_t ra1 = 0; ra1 < R1; ++ra1)
+          if (a[ra1 + R1 * (n + N * (m + M * ra2))] != data_t{0}) { nonzero = true; break; }
+      if (nonzero) S.pairs.push_back({n, m});
+    }
+  if (double(S.pairs.size()) > maxFraction * double(N * M)) { S.pairs.clear(); return S; }
+  S.blocks.resize(S.pairs.size() * static_cast<size_t>(R1 * R2));
+  for (size_t q = 0; q < S.pairs.size(); ++q)
+  {
+    const index_t n = S.pairs[q].first, m = S.pairs[q].second;
+    for (index_t ra2 = 0; ra2 < R2; ++ra2)
+      for (index_t ra1 = 0; ra1 < R1; ++ra1)
+        S.blocks[q * static_cast<size_t>(R1 * R2) + ra1 + R1 * ra2] = a[ra1 + R1 * (n + N * (m + M * ra2))];
+  }
+  return S;
+}
+
 /**
  * Matrix-free action of a coupled block-AMEn site operator.
  *
  * The input and output are concatenated dense vectors, but each nonzero block
- * is applied through bfun3 rather than materializing its projected matrix.
+ * is applied through bfun3 (or, for cores with few nonzero slices, bfun3_sparse) rather than materializing its
+ * projected matrix.
  */
 template <execution_space space, typename data_t>
 struct CoupledSolve3DGMRESOperator
@@ -22,6 +112,7 @@ struct CoupledSolve3DGMRESOperator
 
   std::vector<std::vector<const tensor3_t*>> phi_left;
   std::vector<std::vector<const tensor4_t*>> operator_cores;
+  std::vector<std::vector<const CoreSliceSparsity<data_t>*>> sparse_cores;   // optional; nullptr or empty: dense
   std::vector<std::vector<const tensor3_t*>> phi_right;
   std::vector<::boba::Array<index_t, 3>> input_sizes;
   std::vector<index_t> offsets;
@@ -66,10 +157,20 @@ struct CoupledSolve3DGMRESOperator
         {
           continue;
         }
-        auto contribution = bfun3(*phi_left[row][col],
-                                  *operator_cores[row][col],
-                                  *phi_right[row][col],
-                                  input_blocks[col]);
+        const CoreSliceSparsity<data_t>* sparse =
+          sparse_cores.empty() ? nullptr : sparse_cores[row][col];
+        tensor3_t contribution;
+        if constexpr (space == ::boba::execution_space::CPU)
+        {
+          if (sparse != nullptr && !sparse->pairs.empty())
+            contribution = bfun3_sparse(*phi_left[row][col], *sparse, *phi_right[row][col], input_blocks[col]);
+          else
+            contribution = bfun3(*phi_left[row][col], *operator_cores[row][col], *phi_right[row][col], input_blocks[col]);
+        }
+        else
+        {
+          contribution = bfun3(*phi_left[row][col], *operator_cores[row][col], *phi_right[row][col], input_blocks[col]);
+        }
         if (initialized)
         {
           output_block += contribution;
@@ -154,6 +255,9 @@ struct TensorTrainAMENBlock
   /// Memory budget (bytes) for reusing the operator row Grams of the matrix-free site scaling across sweeps
   /// (bfun3_operator_row_gram, (rank_left rank_right)^2 x rows per block pair and site); 0 disables the reuse.
   size_t row_norm_gram_cache_bytes = size_t(4) << 30;
+  /// Matrix-free site solve: use the nonzero-slice (n, m) pattern of an operator core when at most this fraction of its
+  /// slices are nonzero (exact; host only); 0 disables.
+  double sparse_site_operator_max_fraction = 0.5;
   /// Direct CPU solver: 0=complete orthogonal decomposition, 1=pivoted QR, 2=partial-pivot LU, 3=sparse LU (dense LU above the fill threshold),
   /// 4=sparse LU, with dense minimum-norm (COD) solves above the fill threshold.
   size_t coupled_site_direct_solver_method = 0;
@@ -222,6 +326,29 @@ struct TensorTrainAMENBlock
     const ::boba::BlockVector<::boba::TensorTrain<dimension, space, data_t>>& cry,
     const ::boba::BlockVector<::boba::TensorTrain<dimension, space, data_t>>& tt_initial_guess,
     random_generator_t& random_generator)
+  {
+    return solve(crA, cry, tt_initial_guess, random_generator,
+                 [](const ::boba::BlockVector<::boba::TensorTrain<dimension, space, data_t>>&) { return data_t(-1); });
+  }
+
+  /**
+   * \brief Block AMEn with a caller-supplied global residual.
+   *
+   * The convergence certificate (and the verbose per-sweep report) needs
+   * |A x - y| / |y|.  By default this is formed as the TT product A x, whose
+   * ranks are rank(A) * rank(x) before any rounding; for a dense-rank operator
+   * this exact product dominates the solve (a few hundred ranks per block
+   * pair).  A caller with a cheaper exact apply (for example matrix-free on full
+   * vectors) passes global_residual(x) returning |A x - y| / |y|; a negative
+   * return value selects the built-in TT product.
+   */
+  template <size_t dimension, execution_space space, typename random_generator_t, typename residual_fn_t>
+  ::boba::BlockVector<::boba::TensorTrain<dimension, host_space, data_t>> solve(
+    const ::boba::BlockOperator<::boba::TensorTrainMatrix<dimension, space, data_t>>& crA,
+    const ::boba::BlockVector<::boba::TensorTrain<dimension, space, data_t>>& cry,
+    const ::boba::BlockVector<::boba::TensorTrain<dimension, space, data_t>>& tt_initial_guess,
+    random_generator_t& random_generator,
+    residual_fn_t&& global_residual)
   {
     BOBA_CALI_MARK
     checkpoint();
@@ -346,10 +473,12 @@ struct TensorTrainAMENBlock
     checkpoint();
     // Main AMEn sweeps: first move right-to-left to update environments and enrichment data.
     row_norm_gram_cache_.clear(); row_norm_gram_cache_used_ = 0;
+    core_sparsity_cache_.clear();   // keyed by (block row, block column, site) of this operator
     bool last_sweep = false;
     bool converged = false;
     for (size_t swp = 0; swp < max_sweeps; swp++)
     {
+      timing_.start_sweep();
       for (size_t ip1 = dimension; ip1 > 1; ip1--)
       {
         size_t i = ip1 - 1;
@@ -624,6 +753,7 @@ struct TensorTrainAMENBlock
       data_t max_res = 0.0;
       data_t max_dx = 0.0;
 
+      timing_.end_right_to_left();
       // Sweep left-to-right, solve the local problems, and adapt the TT ranks.
       for (size_t i = 0; i < dimension; i++)
       {
@@ -648,6 +778,7 @@ struct TensorTrainAMENBlock
         data_t coupled_prev_res_for_convergence = 0.0;
         data_t coupled_new_res_for_convergence = 0.0;
 
+        timing_.mark(0);
         // For coupled systems, assemble one local block system spanning all blocks at this site.
         if (use_coupled_site_solve)
         {
@@ -820,10 +951,20 @@ struct TensorTrainAMENBlock
                 coupled_operator.phi_left[ki][kj] = &phia[ki][kj].cores[i];
                 coupled_operator.operator_cores[ki][kj] = &crA({ki, kj}).cores[i];
                 coupled_operator.phi_right[ki][kj] = &phia[ki][kj].cores[i + 1];
+                if constexpr (space == ::boba::execution_space::CPU)
+                {
+                  if (sparse_site_operator_max_fraction > 0)
+                  {
+                    if (coupled_operator.sparse_cores.empty())
+                      coupled_operator.sparse_cores.resize(Kay, std::vector<const CoreSliceSparsity<data_t>*>(Kay, nullptr));
+                    coupled_operator.sparse_cores[ki][kj] = cached_core_sparsity(crA({ki, kj}).cores[i], ki, kj, i);
+                  }
+                }
               }
             }
           }
 
+          timing_.mark(1);
           // Solve the coupled site problem once, then slice the solution and
           // residual diagnostics back into the per-block containers.
           if (use_matrix_free_coupled_solve && validate_coupled_matrix_free_operator)
@@ -993,6 +1134,7 @@ struct TensorTrainAMENBlock
           auto coupled_new_res_norm = ::boba::norm_frobenius(coupled_new_residual) / coupled_rhs_norm;
           coupled_new_res_for_convergence = coupled_new_res_norm;
 
+          timing_.mark(2);
           // Keep per-block residuals as diagnostics only. Individual projected
           // RHS blocks can nearly cancel, making norm(residual_i)/norm(rhs_i)
           // dominated by roundoff even when the stacked coupled local system is
@@ -1206,6 +1348,7 @@ struct TensorTrainAMENBlock
             boba_warn("the residual damp was smaller than in the truncation");
           }
 
+          timing_.mark(3);
           // Record the site update size and residual before truncation so the
           // outer sweep can decide when to stop.
           auto sol_diff = sol - boba::flatten(sol_prev);
@@ -1304,6 +1447,7 @@ struct TensorTrainAMENBlock
 
           if ((kickrank > 0) && (!last_sweep))
           {
+            timing_.mark(4);
             // Recompute the enrichment basis from the post-solve residual so the
             // next site can be expanded in directions missing from the current TT.
             auto uvT = boba::reshape_from_matrix<3>(u * v.transpose(), {crx(ki).ranks(i), cry(ki).sizes(i), crx(ki).ranks(i + 1)});
@@ -1461,6 +1605,7 @@ struct TensorTrainAMENBlock
               v = boba::reshape_to_matrix(v_temp, v_temp.sizes());
             }
 
+            timing_.mark(5);
             // Propagate the updated right factor into the next TT core so the
             // current site becomes left-orthogonal after this update.
             r = u.cols();
@@ -1528,6 +1673,7 @@ struct TensorTrainAMENBlock
 
         if (i < dimension - 1)
         {
+          timing_.mark(6);
           // Refresh the left-to-right environments so the next site sees the
           // updated solution and enrichment bases.
           for (size_t row = 0; row < Kay; row++)
@@ -1626,10 +1772,16 @@ struct TensorTrainAMENBlock
         }
       }
 
+      timing_.end_left_to_right();
       data_t raw_global_res = 0.0;
       data_t global_res = 0.0;
       bool have_global_res = false;
-      if (verbose)
+      if (verbose && !normalize_intermediate_quantities && (global_res = global_residual(crx)) >= 0)
+      {
+        raw_global_res = global_res;
+        have_global_res = true;
+      }
+      else if (verbose)
       {
         auto raw_global_residual = apply_nonempty_blocks(crA, crx);
         raw_global_residual -= cry;
@@ -1646,9 +1798,9 @@ struct TensorTrainAMENBlock
               crx_rescaled(ki).cores[d] = crx_rescaled(ki).cores[d] * scaled_nrmsx;
             }
           }
-          auto global_residual = apply_nonempty_blocks(crA, crx_rescaled);
-          global_residual -= cry;
-          global_res = ::boba::norm_frobenius(global_residual) / norm_cry;
+          auto rescaled_residual = apply_nonempty_blocks(crA, crx_rescaled);
+          rescaled_residual -= cry;
+          global_res = ::boba::norm_frobenius(rescaled_residual) / norm_cry;
         }
         else
         {
@@ -1659,6 +1811,7 @@ struct TensorTrainAMENBlock
         have_global_res = true;
       }
 
+      timing_.report(swp);
       if (verbose)
       {
         std::cout << "TensorTrainAMENBlock: sweep " << swp
@@ -1689,9 +1842,20 @@ struct TensorTrainAMENBlock
             }
           }
 
-          auto global_residual = apply_nonempty_blocks(crA, crx_rescaled);
-          global_residual -= cry;
-          global_res = ::boba::norm_frobenius(global_residual) / norm_cry;
+          const auto t_certify = std::chrono::steady_clock::now();
+          global_res = global_residual(crx_rescaled);
+          const bool built_in = global_res < 0;
+          if (built_in)
+          {
+            auto tt_global_residual = apply_nonempty_blocks(crA, crx_rescaled);
+            tt_global_residual -= cry;
+            global_res = ::boba::norm_frobenius(tt_global_residual) / norm_cry;
+          }
+          if (timing_.enabled)
+          {
+            std::cout << "TensorTrainAMENBlock timing: certification residual (" << (built_in ? "TT product" : "caller")
+                      << ") " << AmenTiming::since(t_certify) << " s, global_res " << global_res << std::endl;
+          }
         }
 
         if (verbose)
@@ -1761,6 +1925,61 @@ struct TensorTrainAMENBlock
   }
 
 private:
+  /// Optional per-sweep timing breakdown, enabled by the environment variable BOBA_AMEN_TIMING (any value).
+  struct AmenTiming
+  {
+    bool enabled = std::getenv("BOBA_AMEN_TIMING") != nullptr;
+    using clock = std::chrono::steady_clock;
+    clock::time_point sweep_t{}, phase_t{}, seg_t{};
+    double right_to_left = 0, left_to_right = 0, solve = 0;
+    std::array<double, 7> seg{};
+    size_t solves = 0, max_size = 0, total_its = 0, max_its = 0;
+    static double since(clock::time_point t) { return std::chrono::duration<double>(clock::now() - t).count(); }
+    void start_sweep()
+    {
+      if (!enabled) return;
+      sweep_t = phase_t = seg_t = clock::now();
+      right_to_left = left_to_right = solve = 0; seg.fill(0.0); solves = max_size = total_its = max_its = 0;
+    }
+    void end_right_to_left() { if (enabled) { right_to_left = since(phase_t); phase_t = seg_t = clock::now(); } }
+    void end_left_to_right() { if (enabled) { left_to_right = since(phase_t); phase_t = clock::now(); } }
+    void mark(int k)   // attribute the time since the previous mark to segment k - 1 (k = 0 starts a site)
+    {
+      if (!enabled) return;
+      const auto now = clock::now();
+      if (k > 0) seg[size_t(k - 1)] += std::chrono::duration<double>(now - seg_t).count();
+      seg_t = now;
+    }
+    void add_solve(size_t site, size_t size, size_t its, double seconds)
+    {
+      if (!enabled) return;
+      solve += seconds; ++solves; max_size = std::max(max_size, size); total_its += its; max_its = std::max(max_its, its);
+      std::cout << "TensorTrainAMENBlock timing: site " << site << " size " << size << " GMRES its " << its << " "
+                << seconds << " s" << std::endl;
+    }
+    void report(size_t swp) const
+    {
+      if (!enabled) return;
+      std::cout << "TensorTrainAMENBlock timing: sweep " << swp << " total " << since(sweep_t) << " s: right-to-left "
+                << right_to_left << ", left-to-right " << left_to_right << " (assemble/project " << seg[0] << ", solve "
+                << seg[1] << ", residual diagnostics " << seg[2] << ", SVD truncation " << seg[3] << ", enrichment " << seg[4]
+                << ", propagate " << seg[5] << "; environment refresh = rest), global residual " << since(phase_t)
+                << "; GMRES solves " << solves << " (" << solve << " s), max site size " << max_size << ", its total "
+                << total_its << " max " << max_its << std::endl;
+    }
+  };
+  AmenTiming timing_;
+  // nonzero-slice patterns of the operator cores, per (block row, block column, site); the cores do not change
+  std::map<std::tuple<size_t, size_t, size_t>, CoreSliceSparsity<data_t>> core_sparsity_cache_;
+  const CoreSliceSparsity<data_t>* cached_core_sparsity(const boba::Tensor<4, ::boba::execution_space::CPU, data_t>& A,
+                                                         size_t ki, size_t kj, size_t site)
+  {
+    const auto key = std::make_tuple(ki, kj, site);
+    auto it = core_sparsity_cache_.find(key);
+    if (it == core_sparsity_cache_.end())
+      it = core_sparsity_cache_.emplace(key, core_slice_sparsity(A, sparse_site_operator_max_fraction)).first;
+    return &it->second;
+  }
   // operator row Grams reused across sweeps (key: block row, block column, site); filled first come, first served
   // (host only: the cache is keyed on host tensors)
   std::map<std::tuple<size_t, size_t, size_t>, boba::Tensor<5, ::boba::execution_space::CPU, data_t>> row_norm_gram_cache_;
@@ -1800,7 +2019,10 @@ private:
     solver.absolute_threshold = solve3d_2ml_options.tolerance_absolute;
 
     vector_t result(rhs.sizes());
+    const auto t_solve = std::chrono::steady_clock::now();
     solver.solve(rhs, initial_guess, result);
+    timing_.add_solve(site, rhs.size(), solver.used_inner_iterations,
+                      std::chrono::duration<double>(std::chrono::steady_clock::now() - t_solve).count());
     if (verbose)
     {
       auto residual = rhs - linear_operator * result;
