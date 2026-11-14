@@ -443,14 +443,16 @@ inline data_t reduction_driver(const data_t* data, index_t length)
   return reduction_driver<reduction>(data, length, []__boba_host_device__(data_t x){ return x; });
 }
 
-template<typename data_t>
-data_t reduce_row_portion(const data_t* input, indext_t rows, index_t cols, data_t* output, index_t size_cols_portion)
+template<typename data_t, typename indext_t>
+__global__ 
+void reduce_row_portion(const data_t* input, indext_t rows, index_t cols, data_t* output, index_t size_cols_portion)
 {
+#ifdef BOBA_CUDA
   auto tid = threadIdx.x;
   auto bid = blockIdx.x;
 
   int bsize = gridDim.x;
-  int tsize = blockDim.x;
+  int grid_cols = blockDim.y;
 
   const auto row = threadIdx.y;
   const auto column_block = blockIdx.y;
@@ -482,21 +484,24 @@ data_t reduce_row_portion(const data_t* input, indext_t rows, index_t cols, data
   if(warp_id == 0)
   {
     auto lane_value = blockwise_reduction[lane_id];
-    final_sum = warp_sum_reduce(lane_value);
+    auto final_sum = warp_sum_reduce(lane_value);
     if(lane_id == 0)
     {
       output[row + column_block*rows] = final_sum;
     }
   }
+#endif  
 }
 
-template <size_t block_size, typename data_t, typename index_t>
+constexpr size_t reduction_block_rows = 1024;
+
+template <typename data_t, typename index_t>
 inline void row_wise_reduction(const data_t* input, index_t rows, index_t cols, data_t* d_output, index_t cols_portions)
 {
 #ifdef BOBA_CUDA
   size_t shared_memory_bytes = 0;
   cudaStream_t stream = 0;
-  static constexpr size_t block_size0 = block_size;
+  static constexpr size_t block_size0 = reduction_block_rows;
   static constexpr size_t block_size1 = 1;
   size_t grid_size0 = (cols + block_size0 - 1) / block_size0;
   size_t grid_size1 = (rows + block_size1 - 1) / block_size1;
@@ -517,20 +522,20 @@ inline void row_wise_reduction(const data_t* input, index_t rows, index_t cols, 
 }
 
 template <typename data_t, typename index_t>
-inline real_type<data_t> matrix_l1_norm(const data_t* matrix, index_t rows, index_t cols)
+inline real_t<data_t> matrix_l1_norm(const data_t* matrix, index_t rows, index_t cols)
 {
   data_t result;
 
   if(cols > 1)
   {
-    int block_parallelism = num_multiprocessors?;
+    int block_parallelism = 132;
 
     //
     // Determine how to rebalance workers for short wide limit 
     // 
     int rows_parallelism_ratio = (block_parallelism + rows - 1) / rows;
     int num_cols_portions = (cols + rows_parallelism_ratio - 1) / rows_parallelism_ratio;
-    num_cols_portions = boba::min(num_cols_portions, reduction_block_size);
+    num_cols_portions = boba::min(num_cols_portions, int(reduction_block_rows));
     num_cols_portions = boba::min(num_cols_portions, cols);
     int cols_portions = (cols + num_cols_portions - 1) / num_cols_portions;
     
@@ -542,7 +547,7 @@ inline real_type<data_t> matrix_l1_norm(const data_t* matrix, index_t rows, inde
     //
     // Phase 1 - reduce to smaller grid
     // 
-    row_wise_reduction<block_size>(matrix, rows, cols, d_workspace, cols_portions);
+    row_wise_reduction(matrix, rows, cols, d_workspace, cols_portions);
 
     //
     // Phase 2 - Recurse with the reduced matrix
