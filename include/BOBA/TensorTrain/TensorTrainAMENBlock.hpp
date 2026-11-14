@@ -2,6 +2,7 @@
 #include <iostream>
 #include <cstdlib>
 #include <chrono>
+#include <cmath>
 #include <array>
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
@@ -118,12 +119,26 @@ struct CoupledSolve3DGMRESOperator
   std::vector<index_t> offsets;
   std::vector<data_t> row_factors;
   std::vector<::boba::Vector<space, data_t>> scalar_row_factors;
+  /// Diagonal mode: when set and no blocks are given, the operator is diag(diagonal) (a Jacobi preconditioner).
+  ::boba::Vector<space, data_t> diagonal;
 
   [[nodiscard]]
   ::boba::Vector<space, data_t> operator*(
     const ::boba::Vector<space, data_t>& input) const
   {
     BOBA_CALI_MARK
+    if (operator_cores.empty() && diagonal.size() > 0)
+    {
+      ::boba::Vector<space, data_t> output({static_cast<index_t>(input.size())});
+      auto out_view = output.view();
+      auto in_view = input.const_view();
+      auto d_view = diagonal.const_view();
+      ::boba::loop<space, 1>(static_cast<index_t>(input.size()), [=] __boba_host_device__(index_t idx)
+      {
+        out_view({idx}) = d_view({idx}) * in_view({idx});
+      });
+      return output;
+    }
     boba_always_assert_equal(offsets.size(), input_sizes.size() + 1,
                              "Coupled operator offsets are inconsistent.");
     boba_always_assert_equal(input.size(), static_cast<size_t>(offsets.back()),
@@ -258,6 +273,16 @@ struct TensorTrainAMENBlock
   /// Matrix-free site solve: use the nonzero-slice (n, m) pattern of an operator core when at most this fraction of its
   /// slices are nonzero (exact; host only); 0 disables.
   double sparse_site_operator_max_fraction = 0.5;
+  /// Evaluate the global residual certificate after every sweep (from minimum_sweeps on), not only once the largest
+  /// local residual max_res is below convergence_tolerance.  max_res can stall above the tolerance while the global
+  /// residual is already below it.  Meant for a cheap caller-supplied global_residual (see solve()).
+  bool certify_every_sweep = false;
+  /// With certify_every_sweep: stop (without certifying) once the global residual has fallen by less than this fraction
+  /// over the last two certified sweeps.  The floor of |A x - y| / |y| is set by the TT rounding of the iterate and,
+  /// for an approximated operator, by that approximation; a fixed target below the floor is never reached.  0: off.
+  data_t stagnation_reduction = 0;
+  /// Matrix-free site GMRES: right-precondition by the inverse diagonal of the site operator (host only).
+  bool site_jacobi_preconditioner = false;
   /// Direct CPU solver: 0=complete orthogonal decomposition, 1=pivoted QR, 2=partial-pivot LU, 3=sparse LU (dense LU above the fill threshold),
   /// 4=sparse LU, with dense minimum-norm (COD) solves above the fill threshold.
   size_t coupled_site_direct_solver_method = 0;
@@ -476,6 +501,8 @@ struct TensorTrainAMENBlock
     core_sparsity_cache_.clear();   // keyed by (block row, block column, site) of this operator
     bool last_sweep = false;
     bool converged = false;
+    bool stagnated = false;
+    std::vector<data_t> certified_history;
     for (size_t swp = 0; swp < max_sweeps; swp++)
     {
       timing_.start_sweep();
@@ -1828,7 +1855,7 @@ struct TensorTrainAMENBlock
         std::cout << ", global_res: " << global_res << std::endl;
       }
 
-      if ((swp + 1 >= minimum_sweeps) && (max_res < convergence_tolerance))
+      if ((swp + 1 >= minimum_sweeps) && (max_res < convergence_tolerance || certify_every_sweep))
       {
         if (!have_global_res)
         {
@@ -1868,10 +1895,21 @@ struct TensorTrainAMENBlock
           converged = true;
           break;
         }
+        // stagnation: the residual of the last two certified sweeps fell by less than stagnation_reduction
+        certified_history.push_back(global_res);
+        const size_t h = certified_history.size();
+        if (stagnation_reduction > 0 && h >= 3 && certified_history[h - 1] > (1 - stagnation_reduction) * certified_history[h - 3])
+        {
+          stagnated = true;
+          std::cout << "TensorTrainAMENBlock: stopping at sweep " << swp << ", global residual stagnated at " << global_res
+                    << " (" << certified_history[h - 3] << " two certified sweeps earlier; tolerance " << convergence_tolerance
+                    << ")" << std::endl;
+          break;
+        }
       }
     }
 
-    if (!converged)
+    if (!converged && !stagnated)
     {
       boba_warn("TensorTrainAMENBlock did not certify convergence before max_sweeps; returning the last iterate.");
     }
@@ -1996,6 +2034,45 @@ private:
     return &row_norm_gram_cache_.emplace(key, ::boba::bfun3_operator_row_gram(A)).first->second;
   }
 
+  /// Inverse diagonal of a host coupled site operator: for diagonal block b, entry (i, n, j) is
+  /// sum_{ra1, ra2} Phi1(i, i, ra1) A(ra1, n, n, ra2) Phi2(j, ra2, j), times the row factor.  Zero or missing
+  /// diagonals give 1.
+  static ::boba::Vector<::boba::execution_space::CPU, data_t> site_operator_inverse_diagonal(
+    const CoupledSolve3DGMRESOperator<::boba::execution_space::CPU, data_t>& op)
+  {
+    using MatX = Eigen::Matrix<data_t, Eigen::Dynamic, Eigen::Dynamic>;
+    ::boba::Vector<::boba::execution_space::CPU, data_t> dinv({op.offsets.back()});
+    data_t* d = dinv.data();
+    for (index_t k = 0; k < op.offsets.back(); ++k) d[k] = 0;
+    for (size_t b = 0; b + 1 < op.offsets.size(); ++b)
+    {
+      if (op.operator_cores[b][b] == nullptr) continue;
+      const auto& P1 = *op.phi_left[b][b];
+      const auto& A = *op.operator_cores[b][b];
+      const auto& P2 = *op.phi_right[b][b];
+      const index_t Y1 = P1.sizes(0), X1 = P1.sizes(1), R1 = P1.sizes(2);
+      const index_t N = A.sizes(1), M = A.sizes(2), R2 = A.sizes(3);
+      const index_t X2 = P2.sizes(0), Y2 = P2.sizes(2);
+      if (Y1 != X1 || N != M || X2 != Y2) continue;
+      MatX p1(Y1, R1), p2(R2, Y2), an(R1, R2);
+      for (index_t r = 0; r < R1; ++r) for (index_t i = 0; i < Y1; ++i) p1(i, r) = P1.data()[i + Y1 * (i + X1 * r)];
+      for (index_t j = 0; j < Y2; ++j) for (index_t r = 0; r < R2; ++r) p2(r, j) = P2.data()[j + X2 * (r + R2 * j)];
+      data_t* db = d + op.offsets[b];
+      for (index_t n = 0; n < N; ++n)
+      {
+        for (index_t r2 = 0; r2 < R2; ++r2) for (index_t r1 = 0; r1 < R1; ++r1) an(r1, r2) = A.data()[r1 + R1 * (n + N * (n + M * r2))];
+        const MatX dn = p1 * an * p2;   // (Y1, Y2)
+        for (index_t j = 0; j < Y2; ++j) for (index_t i = 0; i < Y1; ++i) db[i + Y1 * (n + N * j)] = dn(i, j);
+      }
+      const data_t block_factor = op.row_factors.empty() ? data_t{1} : op.row_factors[b];
+      const index_t size = op.offsets[b + 1] - op.offsets[b];
+      for (index_t k = 0; k < size; ++k)
+        db[k] *= op.scalar_row_factors.empty() ? block_factor : op.scalar_row_factors[b].data()[k];
+    }
+    for (index_t k = 0; k < op.offsets.back(); ++k) d[k] = (d[k] != 0 && std::isfinite(d[k])) ? 1 / d[k] : data_t{1};
+    return dinv;
+  }
+
   template <execution_space space_local>
   ::boba::Vector<space_local, data_t> solve_coupled_site_system(
     const CoupledSolve3DGMRESOperator<space_local, data_t>& linear_operator,
@@ -2017,6 +2094,15 @@ private:
     solver.verbose = false;
     solver.relative_threshold = solve3d_2ml_options.tolerance_relative;
     solver.absolute_threshold = solve3d_2ml_options.tolerance_absolute;
+    if constexpr (space_local == ::boba::execution_space::CPU)
+    {
+      if (site_jacobi_preconditioner)
+      {
+        operator_t jacobi;
+        jacobi.diagonal = site_operator_inverse_diagonal(linear_operator);
+        solver.set_right_preconditioner(jacobi);
+      }
+    }
 
     vector_t result(rhs.sizes());
     const auto t_solve = std::chrono::steady_clock::now();
