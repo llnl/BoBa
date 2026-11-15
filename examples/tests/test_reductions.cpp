@@ -113,23 +113,17 @@ int main(int argc, char* argv[])
   }
 
   {
-    std::cout << " sum_{i=0}^{N} i using manual device reductions" << std::endl;
+    std::cout << " sum_{i=0}^{N} i using unary_sum_reduce implementations" << std::endl;
     boba::Vector<boba::host_space, double> reduction_vector({N});
     reduction_vector.fill_with_random();
     boba::Vector<boba::default_execution_space, double> device_reduction_vector(reduction_vector);
-    auto vector_view = device_reduction_vector.const_view();
+    auto cub_result = boba::unary_sum_reduce<0>(device_reduction_vector);
 
-    auto device_result = boba::unary_sum_reduce<false>(device_reduction_vector);
+    auto device_result = boba::unary_sum_reduce<1>(device_reduction_vector);
 
-    auto cub_result = boba::unary_sum_reduce<true>(device_reduction_vector);
+    auto raja_result = boba::unary_sum_reduce<2>(device_reduction_vector);
 
     auto host_result = boba::unary_sum_reduce(reduction_vector);
-
-    double raja_result = 0.0;
-    ::boba::sum_reduce<space>(raja_result, 0_z, vector_view.size(), [=] __boba_host_device__(size_t i, boba::sum_reducer_operator<double>& _summation)
-    {
-      _summation += vector_view(i);
-    });
 
     double tolerance = 0.1;
     pass_or_fail(check, device_result - host_result, tolerance);

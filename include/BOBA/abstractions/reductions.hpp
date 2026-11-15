@@ -464,26 +464,39 @@ inline void sum_reduce(
 }
 
 /**
- * @brief Sum-reductions using manual backends for verification purposes
- * @return Summation of all values of tensorlike
+ * @brief Sums all elements of a tensor-like object.
+ * @tparam implementation CUDA implementation: 0 for CCCL/CUB, 1 for the manual kernel,
+ *         or 2 for the RAJA reduction. Host inputs use a sequential loop.
+ * @return Sum of all input values.
  */
 
-template <bool cub = false, typename tensorlike_t>
-auto unary_sum_reduce(const tensorlike_t& tensorlike)
+template <int implementation = 0, typename tensorlike_t>
+auto unary_sum_reduce(const tensorlike_t& tensorlike) -> typename tensorlike_t::data_t
 {
   constexpr execution_space space = tensorlike_t::get_space();
+  using data_t = typename tensorlike_t::data_t;
+  constexpr bool use_cuda = boba_cuda_enabled() and (space == execution_space::CUDA);
 
-  if constexpr(boba_cuda_enabled() and space == execution_space::CUDA and cub)
+  if constexpr(use_cuda and (implementation == 0))
   {
     return detail::cuda_cccl_sum_reduce(tensorlike.data(), tensorlike.size());
   }
-  else if constexpr(boba_cuda_enabled() and space == execution_space::CUDA)
+  else if constexpr(use_cuda and (implementation == 1))
   {
     return detail::sum_reduction_driver(tensorlike.data(), tensorlike.size());
   }
+  else if constexpr((space == default_execution_space) and (implementation == 2))
+  {
+    data_t sum_result = 0;
+    const data_t* data = tensorlike.data();
+    ::boba::sum_reduce<space>(sum_result, 0_z, tensorlike.size(), [=] __boba_host_device__(size_t i, boba::sum_reducer_operator<data_t>& _summation)
+    {
+      _summation += data[i];
+    });
+    return sum_result;
+  }
   else
   {
-    using data_t = typename tensorlike_t::data_t;
     data_t sum = 0;
     const auto* tensorlike_data = tensorlike.data();
     for(index_t i = 0; i < tensorlike.size(); i++)

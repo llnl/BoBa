@@ -138,7 +138,8 @@ __launch_bounds__(block_size)
   boba::Multiindexer<2> grid_mid(
     {static_cast<boba::index_t>(tsize), static_cast<boba::index_t>(bsize)});
 
-  auto thread_offset = grid_mid.index({thread_id, block_id});
+  auto thread_offset = grid_mid.index(
+    {static_cast<boba::index_t>(thread_id), static_cast<boba::index_t>(block_id)});
   auto grid_size = grid_mid.size();
 
   // Multiindex the block and iterate over the whole array with stride = size of grid
