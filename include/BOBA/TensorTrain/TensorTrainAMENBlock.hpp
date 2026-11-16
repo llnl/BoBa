@@ -470,6 +470,14 @@ struct TensorTrainAMENBlock
   /// Matrix-free site solve: use the nonzero-slice (n, m) pattern of an operator core when at most this fraction of its
   /// slices are nonzero (exact; host only); 0 disables.
   double sparse_site_operator_max_fraction = 0.5;
+  /// Optional packed operator, packed_operator[row][col][site] (an empty vector for a zero block): the nonzero
+  /// (row, column) slices of each core, column-major, as CoreSliceSparsity.  For a block given here, the dense cores
+  /// of the operator passed to solve() are placeholders -- only their mode sizes are read (rank-one zero cores
+  /// suffice) -- and every kernel uses the slices: environments (compute_next_Phi_packed), local applies
+  /// (bfun3_sparse), the site Jacobi diagonal.  Paths that need dense operator cores (assembled local matrices,
+  /// operator row Grams) are refused; use the matrix-free GMRES site solve (use_boba_gmres_for_coupled_site_solve)
+  /// without site scaling.  Host only.
+  const std::vector<std::vector<std::vector<CoreSliceSparsity<data_t>>>>* packed_operator = nullptr;
   /// Host threads for the matrix-free coupled site apply (over its nonzero blocks); 0: BOBA_AMEN_THREADS, else 1.
   int site_apply_threads = 0;
   /// Evaluate the global residual certificate after every sweep (from minimum_sweeps on), not only once the largest
@@ -583,6 +591,28 @@ struct TensorTrainAMENBlock
 
     size_t Kay = crA.block_rows;
     bool has_offdiag_blocks = false;
+    packed_by_core_.clear();
+    if (packed_operator != nullptr)
+    {
+      boba_always_assert(packed_operator->size() == Kay, "packed_operator: block rows must match the operator");
+      for (size_t ki = 0; ki < Kay; ki++)
+      {
+        boba_always_assert((*packed_operator)[ki].size() == Kay, "packed_operator: block columns must match the operator");
+        for (size_t kj = 0; kj < Kay; kj++)
+        {
+          const auto& cores = (*packed_operator)[ki][kj];
+          if (cores.empty()) continue;
+          boba_always_assert(cores.size() == dimension, "packed_operator: one packed core per TT site");
+          for (size_t d = 0; d < dimension; d++)
+          {
+            const auto& placeholder = crA({ki, kj}).cores[d];
+            boba_always_assert(placeholder.sizes(1) == cores[d].n && placeholder.sizes(2) == cores[d].m,
+                               "packed_operator: mode sizes must match the operator's cores");
+            packed_by_core_[static_cast<const void*>(&placeholder)] = &cores[d];
+          }
+        }
+      }
+    }
     data_t norm_cry = ::boba::norm_frobenius(cry);
     if (::boba::is_tiny(norm_cry))
     {
@@ -1092,9 +1122,11 @@ struct TensorTrainAMENBlock
                 auto row_norms = [&]() {
                   if constexpr (space == ::boba::execution_space::CPU)
                   {
+                    refuse_packed(&crA({ki, kj}).cores[i], "site scaling (operator row norms)");
                     if (const auto* gram = cached_operator_row_gram(crA({ki, kj}).cores[i], ki, kj, i))
                       return ::boba::bfun3_matrix_row_norms_squared_from_gram(phia[ki][kj].cores[i], *gram, phia[ki][kj].cores[i + 1]);
                   }
+                  refuse_packed(&crA({ki, kj}).cores[i], "site scaling (operator row norms)");
                   return ::boba::bfun3_matrix_row_norms_squared(phia[ki][kj].cores[i], crA({ki, kj}).cores[i], phia[ki][kj].cores[i + 1]);
                 };
                 auto scalar_block_norm_squared = flatten(row_norms());
@@ -1112,6 +1144,7 @@ struct TensorTrainAMENBlock
 
               if (assemble_coupled_matrix)
               {
+                refuse_packed(&crA({ki, kj}).cores[i], "the assembled coupled site matrix");
                 auto B_block = bfun3_matrix(
                   phia[ki][kj].cores[i],
                   crA({ki, kj}).cores[i],
@@ -1181,11 +1214,12 @@ struct TensorTrainAMENBlock
                 coupled_operator.phi_right[ki][kj] = &phia[ki][kj].cores[i + 1];
                 if constexpr (space == ::boba::execution_space::CPU)
                 {
-                  if (sparse_site_operator_max_fraction > 0)
+                  const auto* packed = packed_for(&crA({ki, kj}).cores[i]);
+                  if (packed != nullptr || sparse_site_operator_max_fraction > 0)
                   {
                     if (coupled_operator.sparse_cores.empty())
                       coupled_operator.sparse_cores.resize(Kay, std::vector<const CoreSliceSparsity<data_t>*>(Kay, nullptr));
-                    coupled_operator.sparse_cores[ki][kj] = cached_core_sparsity(crA({ki, kj}).cores[i], ki, kj, i);
+                    coupled_operator.sparse_cores[ki][kj] = packed != nullptr ? packed : cached_core_sparsity(crA({ki, kj}).cores[i], ki, kj, i);
                   }
                 }
               }
@@ -2210,6 +2244,20 @@ private:
   AmenTiming timing_;
   // nonzero-slice patterns of the operator cores, per (block row, block column, site); the cores do not change
   std::map<std::tuple<size_t, size_t, size_t>, CoreSliceSparsity<data_t>> core_sparsity_cache_;
+  // packed_operator, keyed by the address of the corresponding (placeholder) dense core of the operator in solve()
+  std::map<const void*, const CoreSliceSparsity<data_t>*> packed_by_core_;
+  const CoreSliceSparsity<data_t>* packed_for(const void* core) const
+  {
+    if (packed_by_core_.empty()) return nullptr;
+    const auto it = packed_by_core_.find(core);
+    return it == packed_by_core_.end() ? nullptr : it->second;
+  }
+  void refuse_packed(const void* core, const char* what) const
+  {
+    if (packed_for(core) != nullptr)
+      throw std::invalid_argument(std::string("TensorTrainAMENBlock: ") + what + " needs dense operator cores; with packed_operator use "
+                                  "the matrix-free GMRES site solve without site scaling");
+  }
   const CoreSliceSparsity<data_t>* cached_core_sparsity(const boba::Tensor<4, ::boba::execution_space::CPU, data_t>& A,
                                                          size_t ki, size_t kj, size_t site)
   {
@@ -2251,17 +2299,33 @@ private:
       const auto& P1 = *op.phi_left[b][b];
       const auto& A = *op.operator_cores[b][b];
       const auto& P2 = *op.phi_right[b][b];
+      // packed (or sparse-slice) operator: the diagonal slices (n, n) only
+      const CoreSliceSparsity<data_t>* sp = op.sparse_cores.empty() ? nullptr : op.sparse_cores[b][b];
+      const bool packedDiag = sp != nullptr && !sp->pairs.empty();
       const index_t Y1 = P1.sizes(0), X1 = P1.sizes(1), R1 = P1.sizes(2);
-      const index_t N = A.sizes(1), M = A.sizes(2), R2 = A.sizes(3);
+      const index_t N = packedDiag ? sp->n : A.sizes(1), M = packedDiag ? sp->m : A.sizes(2), R2 = packedDiag ? sp->ra2 : A.sizes(3);
       const index_t X2 = P2.sizes(0), Y2 = P2.sizes(2);
       if (Y1 != X1 || N != M || X2 != Y2) continue;
       MatX p1(Y1, R1), p2(R2, Y2), an(R1, R2);
       for (index_t r = 0; r < R1; ++r) for (index_t i = 0; i < Y1; ++i) p1(i, r) = P1.data()[i + Y1 * (i + X1 * r)];
       for (index_t j = 0; j < Y2; ++j) for (index_t r = 0; r < R2; ++r) p2(r, j) = P2.data()[j + X2 * (r + R2 * j)];
       data_t* db = d + op.offsets[b];
+      std::vector<long> diagSlice;
+      if (packedDiag)
+      {
+        diagSlice.assign(static_cast<size_t>(N), -1);
+        for (size_t q = 0; q < sp->pairs.size(); ++q)
+          if (sp->pairs[q].first == sp->pairs[q].second) diagSlice[static_cast<size_t>(sp->pairs[q].first)] = long(q);
+      }
       for (index_t n = 0; n < N; ++n)
       {
-        for (index_t r2 = 0; r2 < R2; ++r2) for (index_t r1 = 0; r1 < R1; ++r1) an(r1, r2) = A.data()[r1 + R1 * (n + N * (n + M * r2))];
+        if (packedDiag)
+        {
+          if (diagSlice[static_cast<size_t>(n)] < 0) { for (index_t j = 0; j < Y2; ++j) for (index_t i = 0; i < Y1; ++i) db[i + Y1 * (n + N * j)] = 0; continue; }
+          an = Eigen::Map<const MatX>(sp->blocks.data() + size_t(diagSlice[static_cast<size_t>(n)]) * static_cast<size_t>(R1 * R2), R1, R2);
+        }
+        else
+          for (index_t r2 = 0; r2 < R2; ++r2) for (index_t r1 = 0; r1 < R1; ++r1) an(r1, r2) = A.data()[r1 + R1 * (n + N * (n + M * r2))];
         const MatX dn = p1 * an * p2;   // (Y1, Y2)
         for (index_t j = 0; j < Y2; ++j) for (index_t i = 0; i < Y1; ++i) db[i + Y1 * (n + N * j)] = dn(i, j);
       }
@@ -2471,6 +2535,9 @@ private:
   {
     try
     {
+      if constexpr (space_local == ::boba::execution_space::CPU)
+        if (const auto* packed = packed_for(&A_core))
+          return compute_next_Phi_packed<dimension_local>(Phi_prev, x, *packed, y, sweep_left_right, external_norm);
       return compute_next_Phi<dimension_local>(Phi_prev, x, A_core, y, sweep_left_right, external_norm);
     }
     catch (const std::exception& error)
@@ -2724,6 +2791,9 @@ private:
   {
     try
     {
+      if constexpr (space_local == ::boba::execution_space::CPU)
+        if (const auto* packed = packed_for(&A))
+          return bfun3_sparse(Phi1, *packed, Phi2, x);
       return bfun3(Phi1, A, Phi2, x);
     }
     catch (const std::exception& error)
@@ -2765,6 +2835,9 @@ private:
   {
     try
     {
+      if constexpr (space_local == ::boba::execution_space::CPU)
+        if (const auto* packed = packed_for(&A))
+          return bfun3_sparse(Phi1, *packed, Phi2, x);
       return bfun3(Phi1, A, Phi2, x);
     }
     catch (const std::exception& error)
@@ -2832,6 +2905,7 @@ private:
   {
     try
     {
+      refuse_packed(&A_core, "the projected six-index operator (diagonal-block site solve)");
       return project_operator_A(phia_i, A_core, phia_ip1);
     }
     catch (const std::exception& error)

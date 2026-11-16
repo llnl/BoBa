@@ -396,6 +396,58 @@ void run_block_test(
   {
     pass_or_fail_bool(check, saw_rank_growth);
   }
+
+  // Packed operator (packed_operator): the same coupled system, matrix-free GMRES site solves, once with the dense
+  // cores and once with packed cores and rank-one zero placeholder cores; the solutions must agree.
+  if constexpr (space == boba::execution_space::CPU)
+  {
+    if (coupling_strength > 0.0)
+    {
+      std::vector<std::vector<std::vector<boba::CoreSliceSparsity<double>>>> packed(
+        n_blocks, std::vector<std::vector<boba::CoreSliceSparsity<double>>>(n_blocks));
+      block_ttm_t placeholder(n_blocks, n_blocks);
+      for (size_t r = 0; r < n_blocks; r++)
+        for (size_t c = 0; c < n_blocks; c++)
+        {
+          placeholder({r, c}) = A({r, c});
+          if (A({r, c}).get_number_elements() == 0) continue;
+          for (size_t d = 0; d < dimension; d++)
+          {
+            packed[r][c].push_back(boba::core_slice_sparsity(A({r, c}).cores[d], 1.0));
+            const auto n = A({r, c}).cores[d].sizes(1), m = A({r, c}).cores[d].sizes(2);
+            placeholder({r, c}).cores[d].resize({1, n, m, 1});
+            placeholder({r, c}).cores[d].fill_with_zeros();
+          }
+        }
+      auto configured = [&]() {
+        boba::TensorTrainAMENBlock<double> s;
+        s.max_direct_solve_size = parameters.max_direct_solve_size;
+        s.convergence_tolerance = parameters.convergence_tolerance;
+        s.solve3d_2ml_options.method = parameters.solve3d_2ml_method;
+        s.solve3d_2ml_options.tolerance_relative = 1e-12;
+        s.use_boba_gmres_for_coupled_site_solve = true;
+        s.site_jacobi_preconditioner = true;
+        s.scale_coupled_site_system = false;
+        s.verbose = false;
+        return s;
+      };
+      auto denseSolver = configured();
+      auto packedSolver = configured();
+      packedSolver.packed_operator = &packed;
+      const auto denseSolution = denseSolver.solve(A, rhs, initial_guess);
+      const auto packedSolution = packedSolver.solve(placeholder, rhs, initial_guess);
+      for (size_t blk = 0; blk < n_blocks; blk++)
+      {
+        const double ref = boba::norm_frobenius(denseSolution(blk));
+        double packed_vs_dense = boba::norm_difference_frobenius(packedSolution(blk), denseSolution(blk)) / (ref > 0 ? ref : 1.0);
+        double packed_error = boba::norm_difference_frobenius(packedSolution(blk), exact_solution_tt_host(blk)) /
+                              boba::max(boba::norm_frobenius(exact_solution_tt_host(blk)), 1e-14);
+        std::cout << "Block " << blk << " packed vs dense: " << packed_vs_dense << ", packed error " << packed_error << std::endl;
+        pass_or_fail(check, packed_vs_dense, 1e-8);
+        pass_or_fail(check, packed_error, solution_tolerance);
+      }
+    }
+  }
 }
 
 /// Packed (nonzero-slice) operator cores against the dense kernels: compute_next_Phi in both sweep directions,
