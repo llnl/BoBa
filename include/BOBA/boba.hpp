@@ -101,6 +101,7 @@
 #include "BOBA/QuantizedTensorTrain/QuantizedTensorTrain.hpp"
 #include "BOBA/TensorTrain/StaticTensorTrainView.hpp"
 #include "BOBA/TensorTrain/DynamicTensorTrainView.hpp"
+#include "BOBA/TensorTrain/RuntimeTensorTrain.hpp"
 #include "BOBA/TensorTrain/TensorTrainMatrix.hpp"
 #include "BOBA/TensorTrain/SparseTensorTrainMatrix.hpp"
 #include "BOBA/TensorTrain/TensorTrainSplitMatrix.hpp"
