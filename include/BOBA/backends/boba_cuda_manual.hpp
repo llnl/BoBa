@@ -213,9 +213,9 @@ void cuda_reduce(const data_t* data, index_t length, const operation_t operation
 template <reduction_t reduction, int block_size, typename data_t, typename index_t, typename operation_t>
 inline std::invoke_result_t<operation_t, data_t> reduction_final(const data_t* data, index_t length, operation_t final_operation)
 {
+  using output_t = std::invoke_result_t<operation_t, data_t>;
 #ifdef BOBA_CUDA
   // Output memory
-  using output_t = std::invoke_result_t<operation_t, data_t>;
   void* d_output = nullptr;
   cuda_assert(cudaMalloc(&d_output, sizeof(output_t)));
   cudaStream_t stream = 0;
