@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 #include "common.hpp"
+#include <random>
 #include "common_ttm.hpp"
 
 constexpr boba::execution_space space = ::boba::default_execution_space;
@@ -397,6 +398,79 @@ void run_block_test(
   }
 }
 
+/// Packed (nonzero-slice) operator cores against the dense kernels: compute_next_Phi in both sweep directions,
+/// bfun3, and the transpose.  The cores are cell-local, as the explicit Schur complement of a DPG system: block
+/// diagonal (a field block) and block bidiagonal (a field-trace block in the trace's normal direction).
+void run_packed_core_test(bool& check)
+{
+  using T3 = boba::Tensor<3, boba::execution_space::CPU, double>;
+  using T4 = boba::Tensor<4, boba::execution_space::CPU, double>;
+  std::mt19937 gen(4242);
+  std::normal_distribution<double> nd;
+  auto randomT3 = [&](boba::index_t a, boba::index_t b, boba::index_t c) {
+    T3 t({a, b, c}); for (boba::index_t k = 0; k < a * b * c; ++k) t.data()[k] = nd(gen); return t; };
+  const boba::index_t cells = 5, na = 3, nbF = 3, ra1 = 4, ra2 = 6, rx1 = 5, rx2 = 3, ry1 = 4, ry2 = 2;
+  for (int pattern = 0; pattern < 2; ++pattern)
+  {
+    // pattern 0: rows and columns (cell, basis), block diagonal; pattern 1: columns are the interior faces
+    const boba::index_t N = cells * na, M = pattern == 0 ? cells * nbF : cells - 1;
+    T4 A({ra1, N, M, ra2}); A.fill_with_zeros();
+    for (boba::index_t c = 0; c < cells; ++c)
+      for (boba::index_t i = 0; i < na; ++i)
+      {
+        std::vector<boba::index_t> cols;
+        if (pattern == 0) for (boba::index_t j = 0; j < nbF; ++j) cols.push_back(c * nbF + j);
+        else { if (c >= 1) cols.push_back(c - 1); if (c + 1 < cells) cols.push_back(c); }
+        for (boba::index_t m : cols)
+          for (boba::index_t r2 = 0; r2 < ra2; ++r2) for (boba::index_t r1 = 0; r1 < ra1; ++r1)
+            A.data()[r1 + ra1 * ((c * na + i) + N * (m + M * r2))] = nd(gen);
+      }
+    const auto packed = boba::core_slice_sparsity(A, 1.0);
+    const double denseNorm = boba::norm_frobenius(A);
+    double densifyError = boba::norm_frobenius(boba::densify_core_slices(packed) - A) / denseNorm;
+    pass_or_fail(check, densifyError, 1e-15);
+    for (bool leftRight : {true, false})
+    {
+      const T3 x = randomT3(rx1, N, rx2), y = randomT3(ry1, M, ry2);
+      const T3 Phi = leftRight ? randomT3(rx1, ry1, ra1) : randomT3(ry2, ra2, rx2);
+      for (double externalNorm : {0.0, 3.0})
+      {
+        auto dense = boba::compute_next_Phi<4>(Phi, x, A, y, leftRight, externalNorm);
+        auto sparse = boba::compute_next_Phi_packed<4>(Phi, x, packed, y, leftRight, externalNorm);
+        double phiError = boba::norm_frobenius(dense.first - sparse.first) / boba::norm_frobenius(dense.first);
+        double normError = std::abs(dense.second - sparse.second) / std::max(1.0, std::abs(dense.second));
+        pass_or_fail(check, phiError, 1e-13);
+        pass_or_fail(check, normError, 1e-13);
+      }
+    }
+    // bfun3: Phi1(ry1, rx1, ra1), Phi2(rx2, ra2, ry2), x(rx1, m, rx2) -> (ry1, n, ry2)
+    {
+      const T3 Phi1 = randomT3(ry1, rx1, ra1), Phi2 = randomT3(rx2, ra2, ry2), x = randomT3(rx1, M, rx2);
+      auto dense = boba::bfun3(Phi1, A, Phi2, x);
+      auto sparse = boba::bfun3_sparse(Phi1, packed, Phi2, x);
+      double bfunError = boba::norm_frobenius(dense - sparse) / boba::norm_frobenius(dense);
+      pass_or_fail(check, bfunError, 1e-13);
+    }
+    // transpose: densify(transpose(packed)) == A with rows and columns swapped
+    {
+      const auto packedT = boba::transpose_core_slices(packed);
+      const auto D = boba::densify_core_slices(packedT);
+      double transposeError = 0;
+      for (boba::index_t r2 = 0; r2 < ra2; ++r2) for (boba::index_t m = 0; m < M; ++m) for (boba::index_t n = 0; n < N; ++n)
+        for (boba::index_t r1 = 0; r1 < ra1; ++r1)
+          transposeError = std::max(transposeError, std::abs(D.data()[r1 + ra1 * (m + M * (n + N * r2))] -
+                                                             A.data()[r1 + ra1 * (n + N * (m + M * r2))]));
+      pass_or_fail(check, transposeError, 1e-15);
+      bool columnMajor = true;
+      for (size_t q = 1; q < packedT.pairs.size(); ++q)
+        if (packedT.pairs[q].second < packedT.pairs[q - 1].second ||
+            (packedT.pairs[q].second == packedT.pairs[q - 1].second && packedT.pairs[q].first <= packedT.pairs[q - 1].first))
+          columnMajor = false;
+      pass_or_fail_bool(check, columnMajor);
+    }
+  }
+}
+
 int main(int argc, char* argv[])
 {
 
@@ -515,6 +589,9 @@ int main(int argc, char* argv[])
       run_block_test<4, 2>(check, parameters, parameters.coupling_strength);
     }
   }
+
+  boba_print("Running packed operator-core kernel test");
+  run_packed_core_test(check);
 
   boba::finalize();
   return final_check(check);

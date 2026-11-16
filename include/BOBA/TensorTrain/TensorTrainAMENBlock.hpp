@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <map>
 #include <tuple>
 
@@ -69,6 +70,169 @@ boba::Tensor<3, space, data_t> bfun3_sparse(
   }
   return boba::tensor_contraction<2>(
     {"ry1", "rx1", "ra1"}, Phi1, {"ra1", "n", "rx1", "ry2"}, AxPhi2, {"ry1", "n", "ry2"});
+}
+
+/// compute_next_Phi (TensorTrainSolver_utilities.hpp) for an operator core given only by its nonzero slices.
+/// Same result and index order as the dense version:
+///   left to right:  Phi_out(rx2, ry2, ra2) = sum x(rx1, n, rx2) Phi_prev(rx1, ry1, ra1) A(ra1, n, m, ra2) y(ry1, m, ry2)
+///   right to left:  Phi_out(ry1, ra1, rx1) = sum y(ry1, m, ry2) Phi_prev(ry2, ra2, rx2) A(ra1, n, m, ra2) x(rx1, n, rx2)
+/// then normalized as in compute_next_Phi.  Data ordering: the slices are stored column-major in (n, m) -- column m
+/// outer -- and each slice's ra1 x ra2 block is contiguous, so a pass over the slices reads the core once,
+/// sequentially.  Left to right, the slices of one column share y(:, m, :): their contributions are summed into one
+/// buffer and meet y_m in a single GEMM.  The row factors x_n^T Phi_prev (left to right) and the per-row accumulators
+/// (right to left) are formed when first needed and dropped after their last use (cell-local operators: only one
+/// cell's rows are alive at a time).  Host tensors, first index fastest.
+template <size_t dimension, execution_space space, typename data_t>
+std::pair<::boba::Tensor<3, space, data_t>, data_t> compute_next_Phi_packed(
+  const ::boba::Tensor<3, space, data_t>& Phi_prev,
+  const ::boba::Tensor<3, space, data_t>& x,
+  const CoreSliceSparsity<data_t>& A,
+  const ::boba::Tensor<3, space, data_t>& y,
+  bool sweep_left_right,
+  data_t external_norm)
+{
+  using MatX = Eigen::Matrix<data_t, Eigen::Dynamic, Eigen::Dynamic>;
+  using Stride = Eigen::OuterStride<>;
+  const index_t RA1 = A.ra1, RA2 = A.ra2, N = A.n, M = A.m;
+  const index_t RX1 = x.sizes(0), RX2 = x.sizes(2), RY1 = y.sizes(0), RY2 = y.sizes(2);
+  boba_always_assert(x.sizes(1) == N && y.sizes(1) == M, "compute_next_Phi_packed: mode sizes do not match the core");
+  const size_t P = A.pairs.size(), blk = static_cast<size_t>(RA1 * RA2);
+  std::vector<size_t> lastUse(static_cast<size_t>(N), 0);
+  for (size_t q = 0; q < P; ++q) lastUse[static_cast<size_t>(A.pairs[q].first)] = q;
+  ::boba::Tensor<3, space, data_t> Phi_out;
+  if (sweep_left_right)
+  {
+    boba_always_assert(Phi_prev.sizes(0) == RX1 && Phi_prev.sizes(1) == RY1 && Phi_prev.sizes(2) == RA1,
+                       "compute_next_Phi_packed: left environment size mismatch");
+    // G_n(ra1, rx2, ry1) = sum_rx1 Phi_prev(rx1, ry1, ra1) x(rx1, n, rx2): for each ry1, Phi(:, ry1, :)^T x_n
+    std::vector<MatX> G(static_cast<size_t>(N));
+    auto rowFactor = [&](index_t n) -> const MatX& {
+      MatX& g = G[static_cast<size_t>(n)];
+      if (g.size() == 0)
+      {
+        g.resize(RA1, RX2 * RY1);
+        Eigen::Map<const MatX, 0, Stride> Xn(x.data() + RX1 * n, RX1, RX2, Stride(RX1 * N));
+        for (index_t ry1 = 0; ry1 < RY1; ++ry1)
+        {
+          Eigen::Map<const MatX, 0, Stride> Pr(Phi_prev.data() + RX1 * ry1, RX1, RA1, Stride(RX1 * RY1));
+          g.middleCols(RX2 * ry1, RX2).noalias() = Pr.transpose() * Xn;
+        }
+      }
+      return g;
+    };
+    MatX Phit = MatX::Zero(RA2 * RX2, RY2);   // (ra2, rx2) x ry2, permuted to (rx2, ry2, ra2) at the end
+    MatX U(RA2 * RX2, RY1);
+    for (size_t q = 0; q < P;)
+    {
+      const index_t m = A.pairs[q].second;
+      U.setZero();
+      Eigen::Map<MatX> Ur(U.data(), RA2, RX2 * RY1);
+      for (; q < P && A.pairs[q].second == m; ++q)
+      {
+        const index_t n = A.pairs[q].first;
+        Eigen::Map<const MatX> Anm(A.blocks.data() + q * blk, RA1, RA2);
+        // U(ra2, (rx2, ry1)) += sum_ra1 A(ra1, ra2) G_n(ra1, (rx2, ry1)); read as (ra2 + RA2 rx2) x ry1 below
+        Ur.noalias() += Anm.transpose() * rowFactor(n);
+        if (lastUse[static_cast<size_t>(n)] == q) MatX().swap(G[static_cast<size_t>(n)]);
+      }
+      Eigen::Map<const MatX, 0, Stride> Ym(y.data() + RY1 * m, RY1, RY2, Stride(RY1 * M));
+      Phit.noalias() += U * Ym;
+    }
+    Phi_out = ::boba::Tensor<3, space, data_t>({RX2, RY2, RA2});
+    data_t* o = Phi_out.data();
+    for (index_t ra2 = 0; ra2 < RA2; ++ra2)
+      for (index_t ry2 = 0; ry2 < RY2; ++ry2)
+        for (index_t rx2 = 0; rx2 < RX2; ++rx2)
+          o[rx2 + RX2 * (ry2 + RY2 * ra2)] = Phit(ra2 + RA2 * rx2, ry2);
+  }
+  else
+  {
+    boba_always_assert(Phi_prev.sizes(0) == RY2 && Phi_prev.sizes(1) == RA2 && Phi_prev.sizes(2) == RX2,
+                       "compute_next_Phi_packed: right environment size mismatch");
+    // Phi_prev permuted once to (ry2, rx2, ra2) so that H_m = y_m Phi' has rows ry1 and columns (rx2, ra2)
+    MatX Pp(RY2, RX2 * RA2);
+    {
+      const data_t* p = Phi_prev.data();
+      for (index_t rx2 = 0; rx2 < RX2; ++rx2)
+        for (index_t ra2 = 0; ra2 < RA2; ++ra2)
+          for (index_t ry2 = 0; ry2 < RY2; ++ry2)
+            Pp(ry2, rx2 + RX2 * ra2) = p[ry2 + RY2 * (ra2 + RA2 * rx2)];
+    }
+    std::vector<MatX> V(static_cast<size_t>(N));    // V_n((ry1, rx2), ra1), per row, until its last slice
+    Phi_out = ::boba::Tensor<3, space, data_t>({RY1, RA1, RX1});
+    Phi_out.fill_with_zeros();
+    data_t* o = Phi_out.data();
+    MatX H;
+    for (size_t q = 0; q < P;)
+    {
+      const index_t m = A.pairs[q].second;
+      Eigen::Map<const MatX, 0, Stride> Ym(y.data() + RY1 * m, RY1, RY2, Stride(RY1 * M));
+      H.noalias() = Ym * Pp;                          // ry1 x (rx2, ra2)
+      Eigen::Map<const MatX> Hr(H.data(), RY1 * RX2, RA2);
+      for (; q < P && A.pairs[q].second == m; ++q)
+      {
+        const index_t n = A.pairs[q].first;
+        Eigen::Map<const MatX> Anm(A.blocks.data() + q * blk, RA1, RA2);
+        MatX& v = V[static_cast<size_t>(n)];
+        if (v.size() == 0) v = MatX::Zero(RY1 * RX2, RA1);
+        v.noalias() += Hr * Anm.transpose();           // (ry1, rx2) x ra1
+        if (lastUse[static_cast<size_t>(n)] == q)
+        {
+          // Phi_out(ry1, ra1, rx1) += sum_rx2 V_n(ry1, rx2, ra1) x(rx1, n, rx2)
+          Eigen::Map<const MatX, 0, Stride> Xn(x.data() + RX1 * n, RX1, RX2, Stride(RX1 * N));
+          for (index_t ra1 = 0; ra1 < RA1; ++ra1)
+          {
+            Eigen::Map<const MatX> Vr(v.data() + RY1 * RX2 * ra1, RY1, RX2);
+            Eigen::Map<MatX, 0, Stride> Or(o + RY1 * ra1, RY1, RX1, Stride(RY1 * RA1));
+            Or.noalias() += Vr * Xn.transpose();
+          }
+          MatX().swap(v);
+        }
+      }
+    }
+  }
+  data_t phi_norm = 0.0;
+  if (external_norm > 0.0) Phi_out *= 1.0 / external_norm;
+  else
+  {
+    phi_norm = ::boba::norm_frobenius(Phi_out);
+    if (not(is_tiny(phi_norm))) Phi_out *= 1.0 / phi_norm;
+    else phi_norm = 1.0;
+  }
+  return std::make_pair(Phi_out, phi_norm);
+}
+
+/// The transpose of a packed core (A^T has slice A(:, n, m, :) at (m, n)), kept in column-major slice order.
+template <typename data_t>
+CoreSliceSparsity<data_t> transpose_core_slices(const CoreSliceSparsity<data_t>& A)
+{
+  CoreSliceSparsity<data_t> T; T.ra1 = A.ra1; T.n = A.m; T.m = A.n; T.ra2 = A.ra2;
+  std::vector<size_t> order(A.pairs.size());
+  for (size_t q = 0; q < order.size(); ++q) order[q] = q;
+  // transposed pair (m, n), column-major: sorted by n (the new column), then m
+  std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+    return A.pairs[a].first != A.pairs[b].first ? A.pairs[a].first < A.pairs[b].first : A.pairs[a].second < A.pairs[b].second; });
+  const size_t blk = static_cast<size_t>(A.ra1 * A.ra2);
+  T.pairs.reserve(order.size()); T.blocks.resize(A.blocks.size());
+  for (size_t k = 0; k < order.size(); ++k)
+  {
+    const size_t q = order[k];
+    T.pairs.push_back({A.pairs[q].second, A.pairs[q].first});
+    std::copy(A.blocks.begin() + q * blk, A.blocks.begin() + (q + 1) * blk, T.blocks.begin() + k * blk);
+  }
+  return T;
+}
+
+/// Dense core of a packed one (tests, fallbacks).
+template <typename data_t>
+::boba::Tensor<4, ::boba::execution_space::CPU, data_t> densify_core_slices(const CoreSliceSparsity<data_t>& A)
+{
+  ::boba::Tensor<4, ::boba::execution_space::CPU, data_t> D({A.ra1, A.n, A.m, A.ra2});
+  D.fill_with_zeros(); data_t* d = D.data(); const size_t blk = static_cast<size_t>(A.ra1 * A.ra2);
+  for (size_t q = 0; q < A.pairs.size(); ++q)
+    for (index_t ra2 = 0; ra2 < A.ra2; ++ra2) for (index_t ra1 = 0; ra1 < A.ra1; ++ra1)
+      d[ra1 + A.ra1 * (A.pairs[q].first + A.n * (A.pairs[q].second + A.m * ra2))] = A.blocks[q * blk + ra1 + A.ra1 * ra2];
+  return D;
 }
 
 /// The nonzero-slice pattern of a host core, or an empty pattern if more than maxFraction of the slices are nonzero.
