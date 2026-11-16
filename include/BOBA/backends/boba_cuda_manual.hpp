@@ -306,10 +306,10 @@ inline std::invoke_result_t<operation_t, data_t> reduction_driver(const data_t* 
   // Perform reduction on the workspace to a final scalar value.
   //
   auto identity = []__boba_host_device__(operation_result_t x) { return x; };
-  auto recursed_value = reduction_final<reduction, reduction_block_size>(d_workspace, grid_size, identity);
+  auto final_value = reduction_final<reduction, reduction_block_size>(d_workspace, grid_size, identity);
 
   cuda_assert(cudaFree(d_workspace));
-  return recursed_value;
+  return final_value;
 #else
   boba_ignore(data);
   boba_ignore(length);
