@@ -210,15 +210,16 @@ void cuda_reduce(const data_t* data, index_t length, const operation_t operation
  * @brief See reduction_driver
  */
 
-template <reduction_t reduction, int block_size, typename data_t, typename index_t>
-inline data_t reduction_final(const data_t* data, index_t length, auto final_operation)
+template <reduction_t reduction, int block_size, typename data_t, typename index_t, typename operation_t>
+inline std::invoke_result_t<operation_t, data_t> reduction_final(const data_t* data, index_t length, operation_t final_operation)
 {
 #ifdef BOBA_CUDA
   // Output memory
+  using output_t = std::invoke_result_t<operation_t, data_t>;
   void* d_output = nullptr;
-  cuda_assert(cudaMalloc(&d_output, sizeof(data_t)));
+  cuda_assert(cudaMalloc(&d_output, sizeof(output_t)));
   cudaStream_t stream = 0;
-  cuda_assert(cudaMemsetAsync(d_output, 0, sizeof(data_t), stream));
+  cuda_assert(cudaMemsetAsync(d_output, 0, sizeof(output_t), stream));
 
   size_t shared_memory_bytes = 0;
   constexpr size_t threads_per_block = static_cast<size_t>(block_size);
@@ -229,22 +230,22 @@ inline data_t reduction_final(const data_t* data, index_t length, auto final_ope
   }
   void* args[] = {(void*)&data, (void*)&length, (void*)&final_operation, (void*)&d_output};
   cuda_assert(cudaLaunchKernel(
-    (const void*)cuda_reduce<reduction, block_size, true, data_t, index_t, data_t, decltype(final_operation)>,
+    (const void*)cuda_reduce<reduction, block_size, true, data_t, index_t, output_t, decltype(final_operation)>,
     grid_size,
     block_size,
     args,
     shared_memory_bytes,
     stream));
 
-  data_t output;
+  output_t output;
   cudaMemcpyKind kind = cudaMemcpyDefault;
-  cuda_assert(cudaMemcpy(&output, d_output, sizeof(data_t), kind));
+  cuda_assert(cudaMemcpy(&output, d_output, sizeof(output_t), kind));
 
   cuda_assert(cudaFree(d_output));
 #else
   boba_ignore(data);
   boba_ignore(length);
-  data_t output{0};
+  output_t output{0};
 #endif
   return output;
 }
