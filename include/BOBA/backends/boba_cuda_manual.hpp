@@ -210,8 +210,8 @@ void cuda_reduce(const data_t* data, index_t length, const operation_t operation
  * @brief See reduction_driver
  */
 
-template <reduction_t reduction, typename data_t, typename index_t>
-inline data_t reduction_final(const data_t* data, index_t length)
+template <reduction_t reduction, int block_size, typename data_t, typename index_t>
+inline data_t reduction_final(const data_t* data, index_t length, auto final_operation)
 {
 #ifdef BOBA_CUDA
   // Output memory
@@ -220,11 +220,13 @@ inline data_t reduction_final(const data_t* data, index_t length)
   cudaStream_t stream = 0;
   cuda_assert(cudaMemsetAsync(d_output, 0, sizeof(data_t), stream));
 
-  auto final_operation = []__boba_host_device__(data_t x) { return x; };
-
   size_t shared_memory_bytes = 0;
-  static constexpr size_t block_size = reduction_block_size;
-  size_t grid_size = block_size;
+  constexpr size_t threads_per_block = static_cast<size_t>(block_size);
+  size_t grid_size = (static_cast<size_t>(length) + threads_per_block - 1) / threads_per_block;
+  if (grid_size > reduction_block_size)
+  {
+    grid_size = reduction_block_size;
+  }
   void* args[] = {(void*)&data, (void*)&length, (void*)&final_operation, (void*)&d_output};
   cuda_assert(cudaLaunchKernel(
     (const void*)cuda_reduce<reduction, block_size, true, data_t, index_t, data_t, decltype(final_operation)>,
@@ -278,10 +280,16 @@ inline void reduction_workspace(index_t grid_size, const data_t* data, index_t l
   */
 
 template <reduction_t reduction, typename data_t, typename index_t, typename operation_t>
-inline auto reduction_driver(const data_t* data, index_t length, operation_t&& operation)
+inline std::invoke_result_t<operation_t, data_t> reduction_driver(const data_t* data, index_t length, operation_t&& operation)
 {
-  using operation_result_t = std::invoke_result_t<decltype(operation), data_t>;
+  using operation_result_t = std::invoke_result_t<operation_t, data_t>;
 #ifdef BOBA_CUDA
+
+  if (length < reduction_block_size*reduction_block_size)
+  {
+    return reduction_final<reduction, 512>(data, length, std::forward<operation_t>(operation));
+  }
+
   //
   // Prepare data to be reduced into grid_size block summations, stored in the workspace
   //
@@ -297,7 +305,8 @@ inline auto reduction_driver(const data_t* data, index_t length, operation_t&& o
   //
   // Perform reduction on the workspace to a final scalar value.
   //
-  auto recursed_value = reduction_final<reduction>(d_workspace, grid_size);
+  auto identity = []__boba_host_device__(operation_result_t x) { return x; };
+  auto recursed_value = reduction_final<reduction, reduction_block_size>(d_workspace, grid_size, identity);
 
   cuda_assert(cudaFree(d_workspace));
   return recursed_value;
