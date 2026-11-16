@@ -56,7 +56,14 @@
       skip: [cuda, hip]
 
   test_reductions:
-    test_reductions:
+    test_reductions_1e2:
+      inputs: "-n 100"
+      skip: []
+    test_reductions_1e5:
+      inputs: "-n 10000"
+      skip: []
+    test_reductions_1e7:
+      inputs: "-n 1000000"
       skip: []
 
   test_argparse:
