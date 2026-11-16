@@ -249,14 +249,18 @@ struct DMRGCross
     size_t core_id = 0;
     auto max_relative_error = 0.0;
 
-    // When the sweep turns around, the next two-site step is at the same core with the same left and right index
-    // sets, so its entries are the ones just evaluated: keep them instead of calling the function again.
-    ::boba::Tensor<4, host_space, data_t> previous_score_tensor;
-    bool reuse_previous_score = false;
-
     BOBA_CALI_SWITCH("DMRGCross_core_setup", "DMRGCross_sweep");
     while ((sweep_count < max_sweeps) && not_converged)
     {
+      // At an end bond, the incoming update's interpolation indices and transfer matrix would be replaced
+      // immediately by the outgoing update. Turn before processing the bond so it is analyzed only once.
+      const bool turn_at_right = (dimension > 2) && sweep_right && (core_id == dimension - 2);
+      const bool turn_at_left = (dimension > 2) && !sweep_right && (core_id == 0);
+      if (turn_at_right || turn_at_left)
+      {
+        sweep_right = !sweep_right;
+      }
+
       checkpoint();
       auto left_core = approximated_tt.cores[core_id];
       auto right_core = approximated_tt.cores[core_id + 1];
@@ -266,16 +270,7 @@ struct DMRGCross
       checkpoint();
       ::boba::Tensor<4, host_space, data_t> score_tensor({tt_ranks[core_id], mode_sizes[core_id], mode_sizes[core_id + 1], tt_ranks[core_id + 2]});
 
-      if (reuse_previous_score and previous_score_tensor.sizes() == score_tensor.sizes())
-      {
-        score_tensor = previous_score_tensor;
-      }
-      else
-      {
-        create_score_tensor_from_index_and_function<dimension>(left_indices, right_indices, score_tensor, std::forward<lambda_t>(function_to_approximate));
-      }
-      previous_score_tensor = score_tensor;
-      reuse_previous_score = false;
+      create_score_tensor_from_index_and_function<dimension>(left_indices, right_indices, score_tensor, std::forward<lambda_t>(function_to_approximate));
 
       checkpoint();
       ::boba::Matrix<host_space, data_t> score({tt_ranks[core_id], mode_sizes[core_id] * mode_sizes[core_id + 1] * tt_ranks[core_id + 2]});
@@ -478,23 +473,6 @@ struct DMRGCross
         }
 
         interpolation_indices[core_id + 1] = updated_indices;
-        if (core_id == dimension - 2)
-        {
-          sweep_right = not(sweep_right);
-          reuse_previous_score = true;
-          if (max_relative_error < convergence_tolerance)
-          {
-            not_converged = false;
-          }
-          else
-          {
-            max_relative_error = 0.0;
-          }
-        }
-        else
-        {
-          core_id += 1;
-        }
       }
       else
       {
@@ -581,11 +559,22 @@ struct DMRGCross
 
         interpolation_indices[core_id + 1] = updated_indices;
 
-        if (core_id == 0)
+        checkpoint();
+      }
+
+      if constexpr (dimension == 2)
+      {
+        // The single two-site block is the entire target tensor.
+        not_converged = false;
+      }
+      else
+      {
+        if (turn_at_right || turn_at_left)
         {
-          sweep_right = not(sweep_right);
-          reuse_previous_score = true;
-          sweep_count = sweep_count + 1;
+          if (turn_at_left)
+          {
+            sweep_count += 1;
+          }
           if (max_relative_error < convergence_tolerance)
           {
             not_converged = false;
@@ -595,11 +584,15 @@ struct DMRGCross
             max_relative_error = 0.0;
           }
         }
+
+        if (sweep_right)
+        {
+          core_id += 1;
+        }
         else
         {
-          core_id--;
+          core_id -= 1;
         }
-        checkpoint();
       }
       checkpoint();
     }

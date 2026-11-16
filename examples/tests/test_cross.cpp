@@ -2,6 +2,9 @@
 
 #include "common.hpp"
 
+#include <atomic>
+#include <random>
+
 /*
   Tests BoBa's implementation of the TT-Cross algorithm
 */
@@ -277,6 +280,67 @@ int main(int argc, char* argv[])
 
     std::cout << "DEIM Error (inf norm): " << error_inf_norm << std::endl;
     pass_or_fail(check, error_inf_norm, 1.0e-9);
+  }
+
+  // The end bond is sampled once per turn, including the single bond of a two-site train.
+  {
+    std::atomic<size_t> evaluations{0};
+    auto constant_function = [&](auto)
+    {
+      evaluations.fetch_add(1, std::memory_order_relaxed);
+      return 1.0;
+    };
+
+    ::boba::TensorTrain<3, host_space, double> initial_guess({2, 2, 2});
+    initial_guess.fill_with(1.0);
+    boba::DMRGCross<double> cross;
+    cross.kickrank = 0;
+    cross.max_sweeps = 2;
+    cross.convergence_tolerance = 0.0;
+    auto result = cross.apply(initial_guess, constant_function);
+    pass_or_fail_bool(check, evaluations.load() == 12);
+    pass_or_fail(check, ::boba::norm_difference_frobenius(result.decompress(), initial_guess.decompress()), 1.0e-9);
+
+    evaluations.store(0);
+    ::boba::TensorTrain<4, host_space, double> four_site_guess({2, 2, 2, 2});
+    four_site_guess.fill_with(1.0);
+    auto four_site_result = cross.apply(four_site_guess, constant_function);
+    pass_or_fail_bool(check, evaluations.load() == 20);
+    pass_or_fail(check, ::boba::norm_difference_frobenius(four_site_result.decompress(), four_site_guess.decompress()), 1.0e-9);
+
+    evaluations.store(0);
+    ::boba::TensorTrain<2, host_space, double> two_site_guess({2, 2});
+    two_site_guess.fill_with(1.0);
+    auto two_site_result = cross.apply(two_site_guess, constant_function);
+    pass_or_fail_bool(check, evaluations.load() == 4);
+    pass_or_fail(check, ::boba::norm_difference_frobenius(two_site_result.decompress(), two_site_guess.decompress()), 1.0e-9);
+  }
+
+  {
+    const ::boba::Array<size_t, 4> four_site_sizes{2, 3, 2, 3};
+    ::boba::TensorTrain<4, host_space, double> initial_guess(four_site_sizes);
+    std::mt19937_64 random_generator(42);
+    for (auto& core : initial_guess.cores)
+    {
+      core.fill_with_random(random_generator);
+    }
+    auto additive_function = [](::boba::Array<size_t, 4> indices)
+    {
+      return 1.0 + static_cast<double>(::boba::sum(indices));
+    };
+
+    ::boba::Tensor<4, host_space, double> expected(four_site_sizes);
+    auto expected_view = expected.view();
+    ::boba::loop<host_space, 1>(expected_view.size(), [=] __boba_host_device__(size_t i)
+    {
+      expected_view(i) = additive_function(expected_view.multiindex(i));
+    });
+
+    boba::DMRGCross<double> cross;
+    auto result = cross.apply(initial_guess, additive_function, random_generator);
+    auto relative_error = ::boba::norm_difference_frobenius(result.decompress(), expected) /
+                          ::boba::norm_frobenius(expected);
+    pass_or_fail(check, relative_error, 1.0e-9);
   }
 
   std::cout << "\n=== Summary ===" << std::endl;
