@@ -228,6 +228,9 @@ inline std::invoke_result_t<operation_t, data_t> reduction_final(const data_t* d
   {
     grid_size = reduction_block_size;
   }
+
+  printf("length %d grid_size %d  block_size %d \n", length, grid_size, block_size);
+
   void* args[] = {(void*)&data, (void*)&length, (void*)&final_operation, (void*)&d_output};
   cuda_assert(cudaLaunchKernel(
     (const void*)cuda_reduce<reduction, block_size, true, data_t, index_t, output_t, decltype(final_operation)>,
