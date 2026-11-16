@@ -13,7 +13,11 @@ namespace boba
 namespace detail
 {
 
-constexpr size_t reduction_block_size = 512;
+constexpr size_t reduction_block_size = 1024;
+
+/**
+ * @brief Supported reduction types
+ */
 
 enum struct reduction_t
 {
@@ -138,9 +142,10 @@ __device__ inline auto block_reduce(data_t value)
 
 /**
  * @brief Device-wise reduction where
- * (1) the collection of threads iterate over the whole array,
- * (2) block-wise reductions compute the reduced value over a whole block and
- * (3) each block atomically adds the result to the final pointer
+ * (1) the collection of threads iterate over the whole array pulling in data elements
+ * (2) "operation" is applied to each data element
+ * (3) block-wise reductions compute the reduced value over a whole block
+ * (4) each block writes the result to either an output array or atomically to the final result (see force_atomics)
  */
 
  template <reduction_t reduction, size_t block_size, bool force_atomics, typename data_t, typename index_t, typename out_data_t, typename operation_t>
@@ -154,11 +159,9 @@ void cuda_reduce(const data_t* data, index_t length, const operation_t operation
   int bsize = gridDim.x;
   int tsize = blockDim.x;
 
-  boba::Multiindexer<2> grid_mid(
-    {static_cast<boba::index_t>(tsize), static_cast<boba::index_t>(bsize)});
+  boba::Multiindexer<2> grid_mid({static_cast<boba::index_t>(tsize), static_cast<boba::index_t>(bsize)});
 
-  auto thread_offset = grid_mid.index(
-    {static_cast<boba::index_t>(thread_id), static_cast<boba::index_t>(block_id)});
+  auto thread_offset = grid_mid.index({static_cast<boba::index_t>(thread_id), static_cast<boba::index_t>(block_id)});
   auto grid_size = grid_mid.size();
 
   // Multiindex the block and iterate over the whole array with stride = size of grid
@@ -270,6 +273,10 @@ inline void reduction_workspace(index_t grid_size, const data_t* data, index_t l
 #endif
 }
 
+/**
+  * @brief Performs a reduction of operation(data_i) on gpus, using a workspace to store intermediate results
+  */
+
 template <reduction_t reduction, typename data_t, typename index_t, typename operation_t>
 inline auto reduction_driver(const data_t* data, index_t length, operation_t&& operation)
 {
@@ -301,6 +308,10 @@ inline auto reduction_driver(const data_t* data, index_t length, operation_t&& o
   return operation_result_t{0};
 #endif
 }
+
+/**
+  * @brief Performs a reduction of data_i on gpus (the operation is the identity)
+  */
 
 template <reduction_t reduction, typename data_t, typename index_t>
 inline data_t reduction_driver(const data_t* data, index_t length)
