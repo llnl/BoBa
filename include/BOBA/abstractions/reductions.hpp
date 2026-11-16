@@ -483,7 +483,17 @@ auto unary_sum_reduce(const tensorlike_t& tensorlike) -> typename tensorlike_t::
   }
   else if constexpr(use_cuda and (implementation == 1))
   {
-    return detail::sum_reduction_driver(tensorlike.data(), tensorlike.size());
+    return detail::reduction_driver<detail::reduction_t::sum>(tensorlike.data(), tensorlike.size());
+  }
+  else if constexpr((space == default_execution_space) and (implementation == 2))
+  {
+    data_t sum_result = 0;
+    const data_t* data = tensorlike.data();
+    ::boba::sum_reduce<space>(sum_result, 0_z, tensorlike.size(), [=] __boba_host_device__(size_t i, boba::sum_reducer_operator<data_t>& _summation)
+    {
+      _summation += data[i];
+    });
+    return sum_result;
   }
   else if constexpr((space == default_execution_space) and (implementation == 2))
   {

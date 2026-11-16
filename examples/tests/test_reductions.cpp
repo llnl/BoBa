@@ -134,6 +134,25 @@ int main(int argc, char* argv[])
     std::cout << std::endl;
   }
 
+  {
+    std::cout << " norm_frobenius using reductions" << std::endl;
+    boba::Vector<boba::host_space, double> reduction_vector({N});
+    reduction_vector.fill_with_random();
+    boba::Vector<boba::default_execution_space, double> device_reduction_vector(reduction_vector);
+    auto vector_view = device_reduction_vector.const_view();
+
+    auto device_result = boba::norm_frobenius(device_reduction_vector);
+
+    auto cub_result = boba::norm_frobenius(device_reduction_vector);
+
+    auto host_result = boba::norm_frobenius(reduction_vector);
+
+    double tolerance = 0.1;
+    pass_or_fail(check, device_result - host_result, tolerance);
+    pass_or_fail(check, cub_result - host_result, tolerance);
+    std::cout << std::endl;
+  }
+
   boba::finalize();
   return final_check(check);
 }

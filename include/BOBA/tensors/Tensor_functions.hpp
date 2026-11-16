@@ -1675,11 +1675,27 @@ norm_frobenius(Tensor<dimension, space, data_t> const& tensor)
 
   real_data_t value = 0.0;
 
+#if 1
+  if constexpr(boba_cuda_enabled() and space == execution_space::CUDA)
+  {
+    auto square = []__boba_host_device__(data_t x){ return ::boba::abs(::boba::conj(x)*x); };
+    value = detail::reduction_driver<detail::reduction_t::sum>(tensor.data(), tensor.size(), square);
+  }
+  else
+  {
+    ::boba::sum_reduce<space>(value, index_t(0), tensor.size(), [=] __boba_host_device__(index_t i, sum_reducer_operator<real_data_t> & local_value)
+    {
+      auto entry = tensor_data[i];
+      local_value += ::boba::conj(entry) * entry;
+    });
+  }
+#else
   ::boba::sum_reduce<space>(value, index_t(0), tensor.size(), [=] __boba_host_device__(index_t i, sum_reducer_operator<real_data_t> & local_value)
   {
-    auto abs_local_entry = boba::abs(tensor_data[i]);
-    local_value += abs_local_entry * abs_local_entry;
+    auto entry = tensor_data[i];
+    local_value += ::boba::conj(entry) * entry;
   });
+#endif
 
   return boba::sqrt(value);
 }
