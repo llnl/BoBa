@@ -418,35 +418,37 @@ struct SparseTensorTrainMatrix
       boba_error("not yet implemented");
       return output;
     }
-
-    for (size_t d = 0; d < dimension; ++d)
+    else
     {
-      boba_always_assert_equal(core_cols(d), input.sizes(d), "invalid size and cols for tensor-train matvec");
-
-      const Array<size_t, 2> new_rank_left{get_ranks_left(d), input.get_ranks_left(d)};
-      const Array<size_t, 2> new_rank_right{get_ranks_right(d), input.get_ranks_right(d)};
-      const auto ranks_left_view = Multiindexer<2>(new_rank_left);
-      const auto ranks_right_view = Multiindexer<2>(new_rank_right);
-      const size_t new_ranks_left = ranks_left_view.size();
-      const size_t new_ranks_right = ranks_right_view.size();
-
-      if ((new_ranks_left == 0) || (new_ranks_right == 0))
+      for (size_t d = 0; d < dimension; ++d)
       {
-        output.fill_with_zeros();
-        return output;
+        boba_always_assert_equal(core_cols(d), input.sizes(d), "invalid size and cols for tensor-train matvec");
+
+        const Array<size_t, 2> new_rank_left{get_ranks_left(d), input.get_ranks_left(d)};
+        const Array<size_t, 2> new_rank_right{get_ranks_right(d), input.get_ranks_right(d)};
+        const auto ranks_left_view = Multiindexer<2>(new_rank_left);
+        const auto ranks_right_view = Multiindexer<2>(new_rank_right);
+        const size_t new_ranks_left = ranks_left_view.size();
+        const size_t new_ranks_right = ranks_right_view.size();
+
+        if ((new_ranks_left == 0) || (new_ranks_right == 0))
+        {
+          output.fill_with_zeros();
+          return output;
+        }
+
+        auto temporary = tensor_contraction<1>(
+          {"ml", "row", "col", "mr"},
+          cores[d],
+          {"l", "col", "r"},
+          input.cores[d],
+          {"ml", "l", "row", "mr", "r"});
+        output.cores[d] = reshape<3>(temporary, {new_ranks_left, core_rows(d), new_ranks_right});
       }
 
-      auto temporary = tensor_contraction<1>(
-        {"ml", "row", "col", "mr"},
-        cores[d],
-        {"l", "col", "r"},
-        input.cores[d],
-        {"ml", "l", "row", "mr", "r"});
-      output.cores[d] = reshape<3>(temporary, {new_ranks_left, core_rows(d), new_ranks_right});
+      checkpoint();
+      return output;
     }
-
-    checkpoint();
-    return output;
   }
 
   /**
