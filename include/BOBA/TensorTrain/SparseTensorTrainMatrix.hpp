@@ -11,15 +11,18 @@ namespace boba
  * \brief Tensor-train matrix whose cores store only explicitly present entries.
  *
  * Each core has shape `(r_left, rows, cols, r_right)` and is represented by a
- * `SparseTensor<4, space, data_t>`. Sparse entries not present in a core are
- * interpreted as zero. Matrix-vector products return dense tensor trains;
- * rounding and matrix arithmetic are not provided by this type.
+ * sparse 4-tensor of type `_core_t`: `SparseTensor<4, space, data_t>` (COO, the
+ * default) or `BCOOTensor<4, space, data_t>` (dense `r_left x r_right` blocks at
+ * the stored `(row, col)` pairs; see BCOOTensorTrainMatrix). Entries not present
+ * in a core are interpreted as zero. Matrix-vector products return dense tensor
+ * trains; rounding and matrix arithmetic are not provided by this type.
  */
-template <size_t dimension, execution_space space, typename _data_t>
+template <size_t dimension, execution_space space, typename _data_t, typename _core_t = SparseTensor<4, space, _data_t>>
 struct SparseTensorTrainMatrix
 {
+  static_assert(IsSparseCoreType<_core_t>, "SparseTensorTrainMatrix cores must be SparseTensor<4> or BCOOTensor<4>");
   using data_t = _data_t;
-  using core_t = SparseTensor<4, space, data_t>;
+  using core_t = _core_t;
   using real_data_t = real_type_t<data_t>;
 
   std::string m_name = "SparseTensorTrainMatrix";
@@ -68,9 +71,9 @@ struct SparseTensorTrainMatrix
    *
    * \param rhs Sparse tensor-train matrix to copy.
    */
-  template <execution_space rhs_space>
+  template <execution_space rhs_space, typename rhs_core_t>
     requires(space != rhs_space)
-  SparseTensorTrainMatrix(SparseTensorTrainMatrix<dimension, rhs_space, data_t> const& rhs)
+  SparseTensorTrainMatrix(SparseTensorTrainMatrix<dimension, rhs_space, data_t, rhs_core_t> const& rhs)
       : m_name(rhs.m_name)
   {
     for (size_t d = 0; d < dimension; ++d)
@@ -85,9 +88,9 @@ struct SparseTensorTrainMatrix
    * \param rhs Sparse tensor-train matrix to copy.
    * \return This sparse tensor-train matrix.
    */
-  template <execution_space rhs_space>
+  template <execution_space rhs_space, typename rhs_core_t>
     requires(space != rhs_space)
-  SparseTensorTrainMatrix& operator=(SparseTensorTrainMatrix<dimension, rhs_space, data_t> const& rhs)
+  SparseTensorTrainMatrix& operator=(SparseTensorTrainMatrix<dimension, rhs_space, data_t, rhs_core_t> const& rhs)
   {
     m_name = rhs.m_name;
     for (size_t d = 0; d < dimension; ++d)
@@ -396,7 +399,7 @@ struct SparseTensorTrainMatrix
         indices_view(entry) = entry;
         values_view(entry) = core_value;
       });
-      cores[d] = core_t({1, rows, cols, 1}, std::move(indices), std::move(values));
+      cores[d] = core_from_entries({1, rows, cols, 1}, std::move(indices), std::move(values));
       cores[d].rename(m_name + "_core_" + std::to_string(d));
     }
   }
@@ -433,7 +436,7 @@ struct SparseTensorTrainMatrix
         indices_view(row) = row + rows * row;
         values_view(row) = data_t(1);
       });
-      cores[d] = core_t({1, rows, cols, 1}, std::move(indices), std::move(values));
+      cores[d] = core_from_entries({1, rows, cols, 1}, std::move(indices), std::move(values));
       cores[d].rename(m_name + "_core_" + std::to_string(d));
     }
   }
@@ -485,13 +488,20 @@ struct SparseTensorTrainMatrix
         return output;
       }
 
-      auto temporary = tensor_contraction<1>(
-        {"ml", "row", "col", "mr"},
-        cores[d],
-        {"l", "col", "r"},
-        input.cores[d],
-        {"ml", "l", "row", "mr", "r"});
-      output.cores[d] = reshape<3>(temporary, {new_ranks_left, core_rows(d), new_ranks_right});
+      if constexpr (IsBCOOTensorType<core_t>)
+      {
+        output.cores[d] = matrix_core_vector_core_product(cores[d], input.cores[d]);
+      }
+      else
+      {
+        auto temporary = tensor_contraction<1>(
+          {"ml", "row", "col", "mr"},
+          cores[d],
+          {"l", "col", "r"},
+          input.cores[d],
+          {"ml", "l", "row", "mr", "r"});
+        output.cores[d] = reshape<3>(temporary, {new_ranks_left, core_rows(d), new_ranks_right});
+      }
     }
 
     checkpoint();
@@ -535,6 +545,39 @@ struct SparseTensorTrainMatrix
     return output;
   }
 
+private:
+  /**
+   * \brief Builds a core from column-major linear indices and values (COO), converted to the core format.
+   */
+  static core_t core_from_entries(Array<index_t, 4> sizes, Vector<space, index_t> indices, Vector<space, data_t> values)
+  {
+    SparseTensor<4, space, data_t> coo(sizes, std::move(indices), std::move(values));
+    if constexpr (IsBCOOTensorType<core_t>)
+    {
+      return convert_to_BCOOTensor(coo);
+    }
+    else
+    {
+      return coo;
+    }
+  }
+};
+
+/**
+ * \brief Sparse tensor-train matrix with block coordinate cores: dense rank blocks at the stored (row, col) pairs.
+ */
+template <size_t dimension, execution_space space, typename data_t>
+using BCOOTensorTrainMatrix = SparseTensorTrainMatrix<dimension, space, data_t, BCOOTensor<4, space, data_t>>;
+
+template <typename tensor_train_t, size_t dimension, execution_space space, typename data_t>
+struct is_sparse_tensor_train_matrix : std::false_type
+{
+};
+
+template <size_t dimension, execution_space space, typename data_t, typename core_t>
+struct is_sparse_tensor_train_matrix<SparseTensorTrainMatrix<dimension, space, data_t, core_t>, dimension, space, data_t>
+    : std::true_type
+{
 };
 
 /**
@@ -546,9 +589,9 @@ struct SparseTensorTrainMatrix
  * \param sparse Sparse tensor-train matrix to convert.
  * \return Dense tensor-train matrix with the same cores and name.
  */
-template <size_t dimension, execution_space output_space, execution_space input_space, typename data_t>
+template <size_t dimension, execution_space output_space, execution_space input_space, typename data_t, typename core_t>
 TensorTrainMatrix<dimension, output_space, data_t>
-to_dense(SparseTensorTrainMatrix<dimension, input_space, data_t> const& sparse)
+to_dense(SparseTensorTrainMatrix<dimension, input_space, data_t, core_t> const& sparse)
 {
   TensorTrainMatrix<dimension, output_space, data_t> output(sparse.core_rows(), sparse.core_cols());
   output.rename(sparse.name());
@@ -564,11 +607,11 @@ to_dense(SparseTensorTrainMatrix<dimension, input_space, data_t> const& sparse)
 /**
  * \brief Converts a sparse tensor-train matrix to a dense matrix in its input space.
  */
-template <size_t dimension, execution_space input_space, typename data_t>
+template <size_t dimension, execution_space input_space, typename data_t, typename core_t>
 TensorTrainMatrix<dimension, input_space, data_t>
-to_dense(SparseTensorTrainMatrix<dimension, input_space, data_t> const& sparse)
+to_dense(SparseTensorTrainMatrix<dimension, input_space, data_t, core_t> const& sparse)
 {
-  return to_dense<dimension, input_space, input_space, data_t>(sparse);
+  return to_dense<dimension, input_space, input_space, data_t, core_t>(sparse);
 }
 
 /**
@@ -621,6 +664,44 @@ from_dense(
   real_type_t<data_t> tolerance = static_cast<real_type_t<data_t>>(0))
 {
   return from_dense<dimension, input_space, input_space, data_t>(ttm, tolerance);
+}
+
+/**
+ * \brief Converts a dense tensor-train matrix to block coordinate cores.
+ *
+ * A `(row, col)` block of core `d` is stored if any entry has magnitude greater than \p tolerance; stored blocks keep
+ * all their entries exactly. Runs on host.
+ */
+template <size_t dimension, execution_space space, typename data_t>
+BCOOTensorTrainMatrix<dimension, space, data_t> from_dense_bcoo(
+  TensorTrainMatrix<dimension, space, data_t> const& ttm,
+  real_type_t<data_t> tolerance = static_cast<real_type_t<data_t>>(0))
+{
+  BCOOTensorTrainMatrix<dimension, space, data_t> output(ttm.core_rows(), ttm.core_cols());
+  output.rename(ttm.m_name);
+  for (size_t d = 0; d < dimension; ++d)
+  {
+    output.cores[d] = from_dense_bcoo(ttm.cores[d], tolerance);
+  }
+  return output;
+}
+
+/**
+ * \brief Converts a COO sparse tensor-train matrix to block coordinate cores.
+ *
+ * Every `(row, col)` pair with a stored entry becomes a dense block. Runs on host.
+ */
+template <size_t dimension, execution_space space, typename data_t>
+BCOOTensorTrainMatrix<dimension, space, data_t> convert_to_BCOOTensorTrainMatrix(
+  SparseTensorTrainMatrix<dimension, space, data_t> const& sparse)
+{
+  BCOOTensorTrainMatrix<dimension, space, data_t> output(sparse.core_rows(), sparse.core_cols());
+  output.rename(sparse.name());
+  for (size_t d = 0; d < dimension; ++d)
+  {
+    output.cores[d] = convert_to_BCOOTensor(sparse.cores[d]);
+  }
+  return output;
 }
 
 } // namespace boba

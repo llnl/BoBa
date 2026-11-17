@@ -108,6 +108,7 @@ struct input
   size_t coupling_rank = 1;
   size_t exact_solution_rank = 3;
   bool sparse_operator = false;
+  bool bcoo_operator = false;
   bool verbose = false;
   double dx = 1.0;
 };
@@ -341,7 +342,7 @@ void run_block_test(
 
   auto solve_and_check = [&](auto const& operator_to_solve)
   {
-    if (parameters.sparse_operator)
+    if (parameters.sparse_operator || parameters.bcoo_operator)
     {
       auto applied = operator_to_solve * exact_solution_tt;
       for (size_t blk = 0; blk < n_blocks; ++blk)
@@ -423,6 +424,29 @@ void run_block_test(
     }
     solve_and_check(sparse_A);
   }
+  else if (parameters.bcoo_operator)
+  {
+    if constexpr (space == boba::host_space)
+    {
+      using bcoo_ttm_t = boba::BCOOTensorTrainMatrix<dimension, space, double>;
+      boba::BlockOperator<bcoo_ttm_t> bcoo_A(n_blocks, n_blocks);
+      for (size_t row = 0; row < n_blocks; ++row)
+      {
+        for (size_t col = 0; col < n_blocks; ++col)
+        {
+          if (A({row, col}).get_number_elements() > 0)
+          {
+            bcoo_A({row, col}) = boba::from_dense_bcoo(A({row, col}));
+          }
+        }
+      }
+      solve_and_check(bcoo_A);
+    }
+    else
+    {
+      boba_error("--bcoo_operator: BCOOTensor kernels are host-only");
+    }
+  }
   else
   {
     solve_and_check(A);
@@ -502,6 +526,12 @@ int main(int argc, char* argv[])
     "-s",
     "--sparse_operator",
     "Use sparse tensor-train matrix blocks in the solver.");
+
+  args.add_optional_argument(
+    parameters.bcoo_operator,
+    "-b",
+    "--bcoo_operator",
+    "Use block coordinate (BCOOTensor) tensor-train matrix blocks in the solver.");
 
   args.add_optional_argument(
     parameters.verbose,

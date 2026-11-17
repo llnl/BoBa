@@ -365,7 +365,7 @@ boba::Tensor<3, space, data_t> solve3d_2ml(
   auto real_tol = tol / norm_dy;
   auto x = x0;
 
-  if constexpr (not IsSparseTensorType<tensor_4_t>)
+  if constexpr (not IsSparseCoreType<tensor_4_t>)
   {
     if (space != host_space)
     {
@@ -373,7 +373,7 @@ boba::Tensor<3, space, data_t> solve3d_2ml(
     }
   }
 
-  if constexpr (IsSparseTensorType<tensor_4_t>)
+  if constexpr (IsSparseCoreType<tensor_4_t>)
   {
     if (options.method < 2)
     {
@@ -388,7 +388,7 @@ boba::Tensor<3, space, data_t> solve3d_2ml(
     {
     case 0: // Using Eigen GMRES
     {
-      if constexpr (IsSparseTensorType<tensor_4_t>)
+      if constexpr (IsSparseCoreType<tensor_4_t>)
       {
         boba_error("Methods 0 and 1 of solve3d_2ml require a dense Tensor<4> operator.");
         break;
@@ -416,7 +416,7 @@ boba::Tensor<3, space, data_t> solve3d_2ml(
     }
     case 1: // BoBa GMRES
     {
-      if constexpr (IsSparseTensorType<tensor_4_t>)
+      if constexpr (IsSparseCoreType<tensor_4_t>)
       {
         boba_error("Methods 0 and 1 of solve3d_2ml require a dense Tensor<4> operator.");
         break;
@@ -478,7 +478,7 @@ boba::Tensor<3, space, data_t> solve3d_2ml(
       solver.relative_threshold = options.tolerance_relative;
       solver.absolute_threshold = options.tolerance_absolute;
 
-      if constexpr (not IsSparseTensorType<tensor_4_t>)
+      if constexpr (not IsSparseCoreType<tensor_4_t>)
       {
         if (options.use_row_norm_preconditioner)
         {

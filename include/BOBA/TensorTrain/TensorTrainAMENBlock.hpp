@@ -1792,17 +1792,25 @@ private:
     const Tensor<3, space, data_t>& phia_ip1)
   {
     BOBA_CALI_MARK
-    checkpoint();
-    // First contract the left environment into the operator core.
-    auto phi1A1 = ::boba::tensor_contraction<1>(
-      {"rx", "rx_", "ra"}, phia_i, {"ra", "row", "col", "rap1"}, A_core, {"rx", "rx_", "row", "col", "rap1"});
+    if constexpr (IsBCOOTensorType<core_t>)
+    {
+      // The projected operator is dense; expand the block coordinate core once.
+      return project_operator_A(phia_i, to_dense(A_core), phia_ip1);
+    }
+    else
+    {
+      checkpoint();
+      // First contract the left environment into the operator core.
+      auto phi1A1 = ::boba::tensor_contraction<1>(
+        {"rx", "rx_", "ra"}, phia_i, {"ra", "row", "col", "rap1"}, A_core, {"rx", "rx_", "row", "col", "rap1"});
 
-    checkpoint();
-    // Then contract the right environment to finish the local operator tensor.
-    auto phi1A1phi2 = ::boba::tensor_contraction<1>(
-      {"rx", "rx_", "row", "col", "rap1"}, phi1A1, {"rxp1", "rap1", "rxp1_"}, phia_ip1, {"rx", "rx_", "row", "col", "rxp1", "rxp1_"});
+      checkpoint();
+      // Then contract the right environment to finish the local operator tensor.
+      auto phi1A1phi2 = ::boba::tensor_contraction<1>(
+        {"rx", "rx_", "row", "col", "rap1"}, phi1A1, {"rxp1", "rap1", "rxp1_"}, phia_ip1, {"rx", "rx_", "row", "col", "rxp1", "rxp1_"});
 
-    return phi1A1phi2;
+      return phi1A1phi2;
+    }
   }
 
   /**
