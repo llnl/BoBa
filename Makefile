@@ -545,8 +545,8 @@ test_matrix_norms: test_matrix_norms${NAME_FLAG}.out
 test_matrix_norms${NAME_FLAG}.out: test_matrix_norms${NAME_FLAG}.o boba${NAME_FLAG}.o
 	${LINK} -o $@ $^ ${LIBS}
 
-test_matrix_norms${NAME_FLAG}.o: ${BENCHMARKS_DIR}/test_matrix_norms.cpp ${BOBA_INC} boba${NAME_FLAG}.o
-	${COMPILE} ${OPTS} -c ${BENCHMARKS_DIR}/test_matrix_norms.cpp -o test_matrix_norms${NAME_FLAG}.o
+test_matrix_norms${NAME_FLAG}.o: ${BENCHMARKS_DIR}/matrix_norms/test_matrix_norms.cpp ${BOBA_INC} boba${NAME_FLAG}.o
+	${COMPILE} ${OPTS} -c ${BENCHMARKS_DIR}/matrix_norms/test_matrix_norms.cpp -o test_matrix_norms${NAME_FLAG}.o
 
 ###############################
 test_SparseMatrix: test_SparseMatrix${NAME_FLAG}.out
