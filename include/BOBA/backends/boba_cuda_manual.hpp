@@ -445,9 +445,10 @@ inline data_t reduction_driver(const data_t* data, index_t length)
 
 #ifdef BOBA_CUDA
 
-//
-//
-//
+/**
+  * @brief Performs reduction of a portion of the matrix rows
+  */
+
 constexpr size_t reduction_block_rows = 1024;
 
 template<typename data_t, typename index_t>
