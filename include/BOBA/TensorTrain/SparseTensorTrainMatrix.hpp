@@ -12,8 +12,8 @@ namespace boba
  *
  * Each core has shape `(r_left, rows, cols, r_right)` and is represented by a
  * `SparseTensor<4, space, data_t>`. Sparse entries not present in a core are
- * interpreted as zero. Operations that require dense tensor-train algorithms,
- * such as rounding and matvec, are intentionally not part of this type yet.
+ * interpreted as zero. Matrix-vector products return dense tensor trains;
+ * rounding and matrix arithmetic are not provided by this type.
  */
 template <size_t dimension, execution_space space, typename _data_t>
 struct SparseTensorTrainMatrix
@@ -375,9 +375,29 @@ struct SparseTensorTrainMatrix
    */
   void fill_with(data_t value)
   {
+    if (::boba::abs(value) <= real_data_t(0))
+    {
+      fill_with_zeros();
+      return;
+    }
+
     for (size_t d = 0; d < dimension; ++d)
     {
-      cores[d] = make_constant_core(core_rows(d), core_cols(d), d == 0 ? value : data_t(1));
+      const auto rows = static_cast<index_t>(core_rows(d));
+      const auto cols = static_cast<index_t>(core_cols(d));
+      const auto count = rows * cols;
+      Vector<space, index_t> indices({count});
+      Vector<space, data_t> values({count});
+      auto indices_view = indices.view();
+      auto values_view = values.view();
+      const data_t core_value = d == 0 ? value : data_t(1);
+      ::boba::loop<space, 1>(0_z, count, [=] __boba_host_device__(index_t entry)
+      {
+        indices_view(entry) = entry;
+        values_view(entry) = core_value;
+      });
+      cores[d] = core_t({1, rows, cols, 1}, std::move(indices), std::move(values));
+      cores[d].rename(m_name + "_core_" + std::to_string(d));
     }
   }
 
@@ -389,16 +409,40 @@ struct SparseTensorTrainMatrix
     for (size_t d = 0; d < dimension; ++d)
     {
       cores[d] = core_t({1, static_cast<index_t>(core_rows(d)), static_cast<index_t>(core_cols(d)), 1});
+      cores[d].rename(m_name + "_core_" + std::to_string(d));
+    }
+  }
+
+  /** \brief Replaces this matrix with a rank-one identity train. */
+  void set_to_identity_train()
+  {
+    for (size_t d = 0; d < dimension; ++d)
+    {
+      boba_always_assert_equal(core_rows(d), core_cols(d), "identity train requires square matrix modes");
+    }
+    for (size_t d = 0; d < dimension; ++d)
+    {
+      const auto rows = static_cast<index_t>(core_rows(d));
+      const auto cols = static_cast<index_t>(core_cols(d));
+      Vector<space, index_t> indices({rows});
+      Vector<space, data_t> values({rows});
+      auto indices_view = indices.view();
+      auto values_view = values.view();
+      ::boba::loop<space, 1>(0_z, rows, [=] __boba_host_device__(index_t row)
+      {
+        indices_view(row) = row + rows * row;
+        values_view(row) = data_t(1);
+      });
+      cores[d] = core_t({1, rows, cols, 1}, std::move(indices), std::move(values));
+      cores[d].rename(m_name + "_core_" + std::to_string(d));
     }
   }
 
   /**
    * \brief Applies this sparse matrix to a tensor-train vector.
    *
-   * This is the host-side reference implementation. Each sparse matrix core
-   * is contracted with the corresponding dense vector core, and the resulting
-   * dense core is reshaped into the output tensor train. The low-memory
-   * implementation used by the dense matrix class is intentionally omitted.
+   * Each sparse matrix core is contracted with the corresponding dense vector
+   * core in the selected execution space. The result has the matrix row modes.
    *
    * \param input Tensor-train vector to multiply.
    * \return The resulting tensor-train vector.
@@ -409,46 +453,49 @@ struct SparseTensorTrainMatrix
     BOBA_CALI_MARK
     checkpoint();
 
-    TensorTrain<dimension, space, data_t> output(input.sizes());
+    TensorTrain<dimension, space, data_t> output(core_rows());
     output.svd_tolerance_relative = input.svd_tolerance_relative;
     output.svd_tolerance_absolute = input.svd_tolerance_absolute;
 
-    if constexpr (space != host_space)
+    for (size_t d = 0; d < dimension; ++d)
     {
-      boba_error("not yet implemented");
-      return output;
+      boba_always_assert_equal(core_cols(d), input.sizes(d), "invalid size and cols for tensor-train matvec");
     }
-    else
+    for (size_t d = 0; d < dimension; ++d)
     {
-      for (size_t d = 0; d < dimension; ++d)
+      if (cores[d].nnz() == 0)
       {
-        boba_always_assert_equal(core_cols(d), input.sizes(d), "invalid size and cols for tensor-train matvec");
+        output.fill_with_zeros();
+        return output;
+      }
+    }
 
-        const Array<size_t, 2> new_rank_left{get_ranks_left(d), input.get_ranks_left(d)};
-        const Array<size_t, 2> new_rank_right{get_ranks_right(d), input.get_ranks_right(d)};
-        const auto ranks_left_view = Multiindexer<2>(new_rank_left);
-        const auto ranks_right_view = Multiindexer<2>(new_rank_right);
-        const size_t new_ranks_left = ranks_left_view.size();
-        const size_t new_ranks_right = ranks_right_view.size();
+    for (size_t d = 0; d < dimension; ++d)
+    {
+      const Array<size_t, 2> new_rank_left{get_ranks_left(d), input.get_ranks_left(d)};
+      const Array<size_t, 2> new_rank_right{get_ranks_right(d), input.get_ranks_right(d)};
+      const auto ranks_left_view = Multiindexer<2>(new_rank_left);
+      const auto ranks_right_view = Multiindexer<2>(new_rank_right);
+      const size_t new_ranks_left = ranks_left_view.size();
+      const size_t new_ranks_right = ranks_right_view.size();
 
-        if ((new_ranks_left == 0) || (new_ranks_right == 0))
-        {
-          output.fill_with_zeros();
-          return output;
-        }
-
-        auto temporary = tensor_contraction<1>(
-          {"ml", "row", "col", "mr"},
-          cores[d],
-          {"l", "col", "r"},
-          input.cores[d],
-          {"ml", "l", "row", "mr", "r"});
-        output.cores[d] = reshape<3>(temporary, {new_ranks_left, core_rows(d), new_ranks_right});
+      if ((new_ranks_left == 0) || (new_ranks_right == 0))
+      {
+        output.fill_with_zeros();
+        return output;
       }
 
-      checkpoint();
-      return output;
+      auto temporary = tensor_contraction<1>(
+        {"ml", "row", "col", "mr"},
+        cores[d],
+        {"l", "col", "r"},
+        input.cores[d],
+        {"ml", "l", "row", "mr", "r"});
+      output.cores[d] = reshape<3>(temporary, {new_ranks_left, core_rows(d), new_ranks_right});
     }
+
+    checkpoint();
+    return output;
   }
 
   /**
@@ -461,6 +508,18 @@ struct SparseTensorTrainMatrix
     TensorTrain<dimension, space, data_t> const& input) const
   {
     return TensorTrainMatrix_vector_multiply(input);
+  }
+
+  /** \brief Applies this matrix to a tensor-train vector. */
+  TensorTrain<dimension, space, data_t> operator*(TensorTrain<dimension, space, data_t> const& input) const
+  {
+    return TensorTrainMatrix_vector_multiply(input);
+  }
+
+  /** \brief Expands the sparse cores and returns the full matrix. */
+  Matrix<space, data_t> decompress() const
+  {
+    return to_dense(*this).decompress();
   }
 
   /**

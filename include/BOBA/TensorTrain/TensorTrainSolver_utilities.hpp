@@ -181,13 +181,14 @@ struct DiagonalTensorScalingOperator
 };
 
 /**
- * @brief Creates a matrix M such that M*reshape(x) = Phi1*A*Phi2*x
+ * @brief Creates a matrix M such that M*reshape(x) = Phi1*A*Phi2*x.
+ * The operator core may be dense or sparse; the projected matrix is dense.
  * @return A matrix that corresponds to the action of Phi1*A*Phi2
  */
-template <::boba::execution_space space, typename data_t>
+template <::boba::execution_space space, typename data_t, typename tensor_4_t>
 boba::Matrix<space, data_t> bfun3_matrix(
   const boba::Tensor<3, space, data_t>& Phi1,
-  const boba::Tensor<4, space, data_t>& A,
+  const tensor_4_t& A,
   const boba::Tensor<3, space, data_t>& Phi2)
 {
   BOBA_CALI_MARK

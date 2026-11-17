@@ -426,7 +426,7 @@
 
   test_SparseTensorTrainMatrix:
     test_SparseTensorTrainMatrix:
-      skip: [cuda, hip]
+      skip: []
 
   test_sparse_contraction_benchmark:
     test_sparse_contraction_benchmark:
@@ -1148,6 +1148,18 @@
       skip: [cpu, cuda, hip, debug, ubsan, asan]
 
   test_amen_block:
+    test_amen_block_sparse_2d_direct:
+      inputs: "--dimension 2 --resolution 3 --coupling_strength 0.2 --coupling_rank 2 --exact_solution_rank 3 --max_direct_solve_size 1500 --sparse_operator"
+      skip: []
+    test_amen_block_sparse_2d_iterative:
+      inputs: "--dimension 2 --resolution 4 --coupling_strength 0.2 --coupling_rank 2 --exact_solution_rank 3 --max_direct_solve_size 0 --solve3d_2ml_method 2 --solve3d_2ml_tolerance_relative 1e-10 --sparse_operator"
+      skip: []
+    test_amen_block_sparse_3d_iterative:
+      inputs: "--dimension 3 --resolution 2 --coupling_strength 0.1 --coupling_rank 1 --exact_solution_rank 2 --max_direct_solve_size 0 --solve3d_2ml_method 2 --solve3d_2ml_tolerance_relative 1e-10 --sparse_operator"
+      skip: []
+    test_amen_block_sparse_4d_direct:
+      inputs: "--dimension 4 --resolution 2 --coupling_strength 0.1 --coupling_rank 1 --exact_solution_rank 2 --max_direct_solve_size 1500 --sparse_operator"
+      skip: []
     test_amen_block_2d_direct:
       inputs: "--dimension 2 --resolution 4 --coupling_strength 0.2 --coupling_rank 2 --exact_solution_rank 3 --max_direct_solve_size 1500"
       skip: [cuda, hip]

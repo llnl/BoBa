@@ -2,7 +2,7 @@
 
 #include "common.hpp"
 
-constexpr boba::execution_space space = boba::host_space;
+constexpr boba::execution_space space = boba::default_execution_space;
 
 // Build one matrix factor for each tensor-train mode.  The diagonal and two
 // off-diagonal entries give the dense cores a reproducible, sparse pattern.
@@ -13,14 +13,14 @@ boba::Array<boba::Matrix<space, double>, dimension> make_matrix_term(double scal
   for (size_t d = 0; d < dimension; ++d)
   {
     // Each mode uses a 3-by-3 matrix, with values that vary by mode.
-    boba::Matrix<space, double> matrix({3, 3});
+    boba::Matrix<boba::host_space, double> matrix({3, 3});
     matrix.fill_with_zeros();
     matrix({0, 0}) = scale * (1.0 + d);
     matrix({1, 1}) = scale * (2.0 + d);
     matrix({2, 2}) = scale * (3.0 + d);
     matrix({0, 1}) = scale * 0.25 * (1.0 + d);
     matrix({1, 2}) = -scale * 0.5 * (1.0 + d);
-    matrices[d] = matrix;
+    matrices[d] = boba::Matrix<space, double>(matrix);
   }
   return matrices;
 }
@@ -60,6 +60,10 @@ void test_sparse_tensor_train_matrix(bool& check)
     check,
     boba::norm_difference_frobenius(dense_result.decompress(), sparse_result.decompress()),
     1.0e-14);
+  pass_or_fail(
+    check,
+    boba::norm_difference_frobenius(dense_result.decompress(), (sparse_ttm * input).decompress()),
+    1.0e-14);
 
   // Converting back to a dense TTM must restore the original core values,
   // including explicit zeros that were omitted from sparse storage.
@@ -67,6 +71,43 @@ void test_sparse_tensor_train_matrix(bool& check)
   pass_or_fail(
     check,
     boba::norm_difference_frobenius(dense_ttm.decompress(), reconstructed_ttm.decompress()),
+    1.0e-14);
+  pass_or_fail(
+    check,
+    boba::norm_difference_frobenius(dense_ttm.decompress(), sparse_ttm.decompress()),
+    1.0e-14);
+}
+
+void test_basic_sparse_matrix_operations(bool& check)
+{
+  const boba::Array<size_t, 2> rows{2, 3};
+  const boba::Array<size_t, 2> cols{3, 2};
+  boba::SparseTensorTrainMatrix<2, space, double> sparse_ttm(rows, cols);
+  boba::TensorTrain<2, space, double> input(cols);
+  input.fill_with(1.0);
+
+  auto zero_result = sparse_ttm * input;
+  pass_or_fail_bool(check, zero_result.sizes() == rows);
+  pass_or_fail(check, boba::norm_frobenius(zero_result.decompress()), 1.0e-14);
+
+  sparse_ttm.fill_with(2.0);
+  boba::TensorTrainMatrix<2, space, double> dense_ttm(rows, cols);
+  dense_ttm.fill_with(2.0);
+  pass_or_fail_bool(check, sparse_ttm.get_number_elements() == 2 * (2 * 3));
+  pass_or_fail(
+    check,
+    boba::norm_difference_frobenius((sparse_ttm * input).decompress(), (dense_ttm * input).decompress()),
+    1.0e-14);
+
+  const boba::Array<size_t, 2> square_sizes{2, 3};
+  boba::SparseTensorTrainMatrix<2, space, double> identity(square_sizes, square_sizes);
+  identity.set_to_identity_train();
+  boba::TensorTrain<2, space, double> square_input(square_sizes);
+  square_input.fill_with(1.0);
+  pass_or_fail_bool(check, identity.get_number_elements() == 5);
+  pass_or_fail(
+    check,
+    boba::norm_difference_frobenius((identity * square_input).decompress(), square_input.decompress()),
     1.0e-14);
 }
 
@@ -77,6 +118,7 @@ int main()
 
   bool check = true;
   test_sparse_tensor_train_matrix<3>(check);
+  test_basic_sparse_matrix_operations(check);
 
   // Report all accumulated checks before releasing runtime resources.
   const int result = final_check(check);

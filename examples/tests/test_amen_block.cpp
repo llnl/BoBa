@@ -107,6 +107,7 @@ struct input
   double coupling_strength = 1.0e-2;
   size_t coupling_rank = 1;
   size_t exact_solution_rank = 3;
+  bool sparse_operator = false;
   bool verbose = false;
   double dx = 1.0;
 };
@@ -338,60 +339,93 @@ void run_block_test(
   tt_amen_block.solve3d_2ml_options.tolerance_relative = parameters.solve3d_2ml_tolerance_relative;
   tt_amen_block.verbose = parameters.verbose;
 
-  boba::TicToc<tictoc_units> timer;
-  timer.tic();
-  auto solution = tt_amen_block.solve(A, rhs, initial_guess);
-  timer.end_and_print("Block TT AMEn solver time:");
-
-  // Compute residual for each block
-  double max_residual = 0.0;
-  double max_solution_error = 0.0;
-  bool saw_rank_growth = false;
-  constexpr double tiny_norm = 1.0e-14;
-  double residual_tolerance = boba::max(1000.0 * parameters.convergence_tolerance, 1.0e-8);
-  double solution_tolerance = boba::max(100.0 * parameters.convergence_tolerance, 1.0e-10);
-  for (size_t blk = 0; blk < n_blocks; blk++)
+  auto solve_and_check = [&](auto const& operator_to_solve)
   {
-    auto residual_vec = rhs(blk);
-    residual_vec *= -1.0;
-    for (size_t src = 0; src < n_blocks; src++)
+    if (parameters.sparse_operator)
     {
-      if (A({blk, src}).get_number_elements() == 0)
+      auto applied = operator_to_solve * exact_solution_tt;
+      for (size_t blk = 0; blk < n_blocks; ++blk)
       {
-        continue;
+        pass_or_fail(check, boba::norm_difference_frobenius(applied(blk), rhs(blk)), 1.0e-8);
       }
-      residual_vec += A({blk, src}) * solution(src);
     }
-    residual_vec.round();
-    auto residual_norm = ::boba::norm_frobenius(residual_vec);
-    auto rhs_norm = ::boba::norm_frobenius(rhs(blk));
-    auto exact_norm = ::boba::norm_frobenius(exact_solution_tt(blk));
-    auto solution_error_norm = boba::norm_difference_frobenius(solution(blk), exact_solution_tt_host(blk));
-    auto relative_residual = (rhs_norm > tiny_norm) ? (residual_norm / rhs_norm) : residual_norm;
-    auto relative_solution_error = (exact_norm > tiny_norm) ? (solution_error_norm / exact_norm) : solution_error_norm;
 
-    std::cout << "Block " << blk << " relative residual: " << relative_residual << std::endl;
-    std::cout << "Block " << blk << " relative solution error: " << relative_solution_error << std::endl;
-    std::cout << "Block " << blk << " solution ranks: " << solution(blk).ranks_string() << std::endl;
+    boba::TicToc<tictoc_units> timer;
+    timer.tic();
+    auto solution = tt_amen_block.solve(operator_to_solve, rhs, initial_guess);
+    timer.end_and_print("Block TT AMEn solver time:");
 
-    pass_or_fail(check, relative_residual, residual_tolerance);
-    pass_or_fail(check, relative_solution_error, solution_tolerance);
-
-    max_residual = boba::max(max_residual, relative_residual);
-    max_solution_error = boba::max(max_solution_error, relative_solution_error);
-
-    for (size_t d = 1; d < dimension; d++)
+    // Compute residual for each block
+    double max_residual = 0.0;
+    double max_solution_error = 0.0;
+    bool saw_rank_growth = false;
+    constexpr double tiny_norm = 1.0e-14;
+    double residual_tolerance = boba::max(1000.0 * parameters.convergence_tolerance, 1.0e-8);
+    double solution_tolerance = boba::max(100.0 * parameters.convergence_tolerance, 1.0e-10);
+    for (size_t blk = 0; blk < n_blocks; blk++)
     {
-      saw_rank_growth = saw_rank_growth || (solution(blk).ranks(d) > 1);
+      auto residual_vec = rhs(blk);
+      residual_vec *= -1.0;
+      for (size_t src = 0; src < n_blocks; src++)
+      {
+        if (operator_to_solve({blk, src}).get_number_elements() == 0)
+        {
+          continue;
+        }
+        residual_vec += operator_to_solve({blk, src}) * solution(src);
+      }
+      residual_vec.round();
+      auto residual_norm = ::boba::norm_frobenius(residual_vec);
+      auto rhs_norm = ::boba::norm_frobenius(rhs(blk));
+      auto exact_norm = ::boba::norm_frobenius(exact_solution_tt(blk));
+      auto solution_error_norm = boba::norm_difference_frobenius(solution(blk), exact_solution_tt_host(blk));
+      auto relative_residual = (rhs_norm > tiny_norm) ? (residual_norm / rhs_norm) : residual_norm;
+      auto relative_solution_error = (exact_norm > tiny_norm) ? (solution_error_norm / exact_norm) : solution_error_norm;
+
+      std::cout << "Block " << blk << " relative residual: " << relative_residual << std::endl;
+      std::cout << "Block " << blk << " relative solution error: " << relative_solution_error << std::endl;
+      std::cout << "Block " << blk << " solution ranks: " << solution(blk).ranks_string() << std::endl;
+
+      pass_or_fail(check, relative_residual, residual_tolerance);
+      pass_or_fail(check, relative_solution_error, solution_tolerance);
+
+      max_residual = boba::max(max_residual, relative_residual);
+      max_solution_error = boba::max(max_solution_error, relative_solution_error);
+
+      for (size_t d = 1; d < dimension; d++)
+      {
+        saw_rank_growth = saw_rank_growth || (solution(blk).ranks(d) > 1);
+      }
     }
-  }
 
-  std::cout << "Max relative residual across all blocks: " << max_residual << std::endl;
-  std::cout << "Max relative solution error across all blocks: " << max_solution_error << std::endl;
+    std::cout << "Max relative residual across all blocks: " << max_residual << std::endl;
+    std::cout << "Max relative solution error across all blocks: " << max_solution_error << std::endl;
 
-  if (parameters.exact_solution_rank > 1)
+    if (parameters.exact_solution_rank > 1)
+    {
+      pass_or_fail_bool(check, saw_rank_growth);
+    }
+  };
+
+  if (parameters.sparse_operator)
   {
-    pass_or_fail_bool(check, saw_rank_growth);
+    using sparse_ttm_t = boba::SparseTensorTrainMatrix<dimension, space, double>;
+    boba::BlockOperator<sparse_ttm_t> sparse_A(n_blocks, n_blocks);
+    for (size_t row = 0; row < n_blocks; ++row)
+    {
+      for (size_t col = 0; col < n_blocks; ++col)
+      {
+        if (A({row, col}).get_number_elements() > 0)
+        {
+          sparse_A({row, col}) = boba::from_dense(A({row, col}));
+        }
+      }
+    }
+    solve_and_check(sparse_A);
+  }
+  else
+  {
+    solve_and_check(A);
   }
 }
 
@@ -462,6 +496,12 @@ int main(int argc, char* argv[])
     "-r",
     "--exact_solution_rank",
     "Target rank for the manufactured exact block solution.");
+
+  args.add_optional_argument(
+    parameters.sparse_operator,
+    "-s",
+    "--sparse_operator",
+    "Use sparse tensor-train matrix blocks in the solver.");
 
   args.add_optional_argument(
     parameters.verbose,
