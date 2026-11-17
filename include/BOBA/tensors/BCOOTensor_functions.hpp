@@ -182,7 +182,7 @@ BCOOTensor<dimension, space, data_t> convert_to_BCOOTensor(SparseTensor<dimensio
     index_t a = 0;
     index_t b = 0;
     Array<index_t, dimension - 2> interior{};
-    detail::split_bcoo_index<dimension>(sizes, linear_view({entry}), a, interior, b);
+    detail::split_bcoo_index<dimension>(sizes, linear_view(entry), a, interior, b);
     const index_t mid = detail::interior_linear_index<dimension>(sizes, interior);
     if (block_of_mid.emplace(mid, static_cast<index_t>(coordinates.size())).second)
     {
@@ -207,9 +207,9 @@ BCOOTensor<dimension, space, data_t> convert_to_BCOOTensor(SparseTensor<dimensio
     index_t a = 0;
     index_t b = 0;
     Array<index_t, dimension - 2> interior{};
-    detail::split_bcoo_index<dimension>(sizes, linear_view({entry}), a, interior, b);
+    detail::split_bcoo_index<dimension>(sizes, linear_view(entry), a, interior, b);
     const index_t k = block_of_mid[detail::interior_linear_index<dimension>(sizes, interior)];
-    out[a + first * (b + last * k)] += values_view({entry});
+    out[a + first * (b + last * k)] += values_view(entry);
   }
   return BCOOTensor<dimension, space, data_t>(
     BCOOTensor<dimension, host_space, data_t>(sizes, indices, values, host.name()));
@@ -249,8 +249,8 @@ SparseTensor<dimension, space, data_t> convert_to_SparseTensor(BCOOTensor<dimens
     {
       for (index_t a = 0; a < first; ++a, ++entry)
       {
-        linear_view({entry}) = a + first * (mid + interior_size * b);
-        values_view({entry}) = blocks[a + first * (b + last * k)];
+        linear_view(entry) = a + first * (mid + interior_size * b);
+        values_view(entry) = blocks[a + first * (b + last * k)];
       }
     }
   }
