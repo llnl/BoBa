@@ -455,8 +455,8 @@ template<typename data_t, typename index_t>
 __global__
 void reduce_row_portion(const data_t* input, index_t rows, index_t cols, data_t* output, index_t size_cols_portion)
 {
-  const index_t row = blockIdx.x;
-  const index_t column_block = blockIdx.y;
+  const index_t row = blockIdx.x % rows;
+  const index_t column_block = blockIdx.x / rows;
   const index_t first_col = column_block * size_cols_portion;
   const index_t last_col = first_col + boba::min(size_cols_portion, cols - first_col);
 
@@ -480,12 +480,12 @@ inline void row_wise_reduction(const data_t* input, index_t rows, index_t cols, 
   size_t shared_memory_bytes = 0;
   cudaStream_t stream = 0;
   static constexpr size_t block_size0 = reduction_block_rows;
-  size_t grid_size0 = rows;
-  size_t grid_size1 = 1 + (cols - 1) / cols_per_portion;
+  const index_t num_cols_portions = 1 + (cols - 1) / cols_per_portion;
+  const index_t grid_size = rows * num_cols_portions;
   void* args[] = {(void*)&input, (void*)&rows, (void*)&cols, (void*)&d_output, (void*)&cols_per_portion};
   cuda_assert(cudaLaunchKernel(
     (const void*)reduce_row_portion<data_t, index_t>,
-    dim3(grid_size0, grid_size1),
+    dim3(grid_size),
     dim3(block_size0),
     args,
     shared_memory_bytes,
@@ -543,8 +543,9 @@ template<typename data_t, typename index_t>
 __global__
 void reduce_col_portion(const data_t* input, index_t rows, index_t cols, data_t* output, index_t size_rows_portion)
 {
-  const index_t col = blockIdx.x;
-  const index_t row_block = blockIdx.y;
+  const index_t num_rows_portions = 1 + (rows - 1) / size_rows_portion;
+  const index_t row_block = blockIdx.x % num_rows_portions;
+  const index_t col = blockIdx.x / num_rows_portions;
   const index_t first_row = row_block * size_rows_portion;
   const index_t last_row = boba::min(first_row + size_rows_portion, rows);
 
@@ -558,7 +559,7 @@ void reduce_col_portion(const data_t* input, index_t rows, index_t cols, data_t*
 
   if(threadIdx.x == 0)
   {
-    output[row_block + col * gridDim.y] = portion_sum;
+    output[row_block + col * num_rows_portions] = portion_sum;
   }
 }
 
@@ -568,12 +569,12 @@ inline void col_wise_reduction(const data_t* input, index_t rows, index_t cols, 
   size_t shared_memory_bytes = 0;
   cudaStream_t stream = 0;
   static constexpr size_t block_size0 = reduction_block_cols;
-  size_t grid_size0 = cols;
-  size_t grid_size1 = 1 + (rows - 1) / rows_per_portion;
+  const index_t num_rows_portions = 1 + (rows - 1) / rows_per_portion;
+  const index_t grid_size = cols * num_rows_portions;
   void* args[] = {(void*)&input, (void*)&rows, (void*)&cols, (void*)&d_output, (void*)&rows_per_portion};
   cuda_assert(cudaLaunchKernel(
     (const void*)reduce_col_portion<data_t, index_t>,
-    dim3(grid_size0, grid_size1),
+    dim3(grid_size),
     dim3(block_size0),
     args,
     shared_memory_bytes,
