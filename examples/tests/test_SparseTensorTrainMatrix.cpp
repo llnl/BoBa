@@ -111,6 +111,73 @@ void test_basic_sparse_matrix_operations(bool& check)
     1.0e-14);
 }
 
+// The same checks with block coordinate (BCOOTensor) cores, which store dense rank blocks at the nonzero
+// (row, col) pairs; the BCOO kernels are host-only.
+template <size_t dimension>
+void test_bcoo_tensor_train_matrix(bool& check)
+{
+  if constexpr (space == boba::host_space)
+  {
+    const auto sizes = boba::filled_array<dimension>(3_z);
+    auto dense_ttm = boba::make_ttm_from_matrices(make_matrix_term<dimension>(1.0));
+    dense_ttm += boba::make_ttm_from_matrices(make_matrix_term<dimension>(-0.3));
+
+    auto bcoo_ttm = boba::from_dense_bcoo(dense_ttm);
+    auto coo_ttm = boba::from_dense(dense_ttm);
+    pass_or_fail_bool(check, bcoo_ttm.rows() == dense_ttm.rows());
+    pass_or_fail_bool(check, bcoo_ttm.get_number_elements() > 0);
+    pass_or_fail_bool(check, bcoo_ttm.get_number_elements() < dense_ttm.get_number_elements());
+
+    boba::TensorTrain<dimension, space, double> input(sizes);
+    input.fill_with(1.0);
+    pass_or_fail(
+      check,
+      boba::norm_difference_frobenius(dense_ttm.TensorTrainMatrix_vector_multiply(input).decompress(),
+                                      (bcoo_ttm * input).decompress()),
+      1.0e-14);
+    pass_or_fail(
+      check,
+      boba::norm_difference_frobenius(dense_ttm.decompress(), boba::to_dense(bcoo_ttm).decompress()),
+      1.0e-14);
+    pass_or_fail(
+      check,
+      boba::norm_difference_frobenius(boba::to_dense(coo_ttm.transpose()).decompress(),
+                                      boba::to_dense(bcoo_ttm.transpose()).decompress()),
+      1.0e-14);
+
+    // COO -> BCOO conversion gives the same operator.
+    auto converted = boba::convert_to_BCOOTensorTrainMatrix(coo_ttm);
+    pass_or_fail(
+      check,
+      boba::norm_difference_frobenius(dense_ttm.decompress(), converted.decompress()),
+      1.0e-14);
+
+    // Constant and identity trains.
+    const boba::Array<size_t, 2> rows{2, 3};
+    const boba::Array<size_t, 2> cols{3, 2};
+    boba::BCOOTensorTrainMatrix<2, space, double> constant(rows, cols);
+    constant.fill_with(2.0);
+    boba::TensorTrainMatrix<2, space, double> dense_constant(rows, cols);
+    dense_constant.fill_with(2.0);
+    boba::TensorTrain<2, space, double> constant_input(cols);
+    constant_input.fill_with(1.0);
+    pass_or_fail(
+      check,
+      boba::norm_difference_frobenius((constant * constant_input).decompress(), (dense_constant * constant_input).decompress()),
+      1.0e-14);
+    const boba::Array<size_t, 2> square_sizes{2, 3};
+    boba::BCOOTensorTrainMatrix<2, space, double> identity(square_sizes, square_sizes);
+    identity.set_to_identity_train();
+    boba::TensorTrain<2, space, double> square_input(square_sizes);
+    square_input.fill_with(1.0);
+    pass_or_fail_bool(check, identity.get_number_elements() == 5);
+    pass_or_fail(
+      check,
+      boba::norm_difference_frobenius((identity * square_input).decompress(), square_input.decompress()),
+      1.0e-14);
+  }
+}
+
 int main()
 {
   // Initialize the BoBa runtime before constructing tensors.
@@ -119,6 +186,7 @@ int main()
   bool check = true;
   test_sparse_tensor_train_matrix<3>(check);
   test_basic_sparse_matrix_operations(check);
+  test_bcoo_tensor_train_matrix<3>(check);
 
   // Report all accumulated checks before releasing runtime resources.
   const int result = final_check(check);

@@ -12,8 +12,7 @@ template <typename tensor_train_operator_t, size_t dimension, execution_space sp
 concept TensorTrainOperatorType =
   std::same_as<
     std::remove_cvref_t<tensor_train_operator_t>, TensorTrainMatrix<dimension, space, data_t>> or
-  std::same_as<
-    std::remove_cvref_t<tensor_train_operator_t>, SparseTensorTrainMatrix<dimension, space, data_t>>;
+  is_sparse_tensor_train_matrix<std::remove_cvref_t<tensor_train_operator_t>, dimension, space, data_t>::value;
 
 template <typename data_t>
 struct TensorTrainAMEN
@@ -684,7 +683,7 @@ private:
 
     // Sparse operator contractions visit stored entries instead of the full
     // operator extent, so replace the first-contraction cost accordingly.
-    if constexpr (IsSparseTensorType<tensor_4_t>)
+    if constexpr (IsSparseCoreType<tensor_4_t>)
     {
       const auto operator_nonzeros = static_cast<long double>(A_core.number_nonzeros());
       left_first_work = operator_nonzeros * left_environment_extent +

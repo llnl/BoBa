@@ -80,6 +80,8 @@
 #include "BOBA/tensors/Matrix_functions.hpp"
 #include "BOBA/tensors/Tensor_functions.hpp"
 #include "BOBA/tensors/SparseTensor_functions.hpp"
+#include "BOBA/tensors/BCOOTensor.hpp"
+#include "BOBA/tensors/BCOOTensor_functions.hpp"
 
 // Fast Fourier Transform
 #include "BOBA/backends/boba_eigen_fft.hpp"
@@ -140,6 +142,7 @@
 #include "BOBA/Krylov/Krylov.hpp"
 #include "BOBA/TensorTrain/DMRGCross.hpp"
 #include "BOBA/TensorTrain/TensorTrainSolver_utilities.hpp"
+#include "BOBA/TensorTrain/BCOOTensor_kernels.hpp"
 #include "BOBA/TensorTrain/TensorTrainAMEN.hpp"
 #include "BOBA/TensorTrain/TensorTrainAMENBlock.hpp"
 #include "BOBA/TensorTrain/TensorTrainDMRG.hpp"
