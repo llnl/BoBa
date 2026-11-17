@@ -1662,9 +1662,10 @@ auto norm_l1(Vector<space, data_t> const& vector)
 /**
  * \brief
  * Frobenius norm of a tensor.
+ * \tparam force_naive Use the backend reduction instead of the manual CUDA reduction.
  */
 
-template <size_t dimension, execution_space space, typename data_t>
+template <bool force_naive = false, size_t dimension, execution_space space, typename data_t>
 typename Tensor<dimension, space, data_t>::real_data_t
 norm_frobenius(Tensor<dimension, space, data_t> const& tensor)
 {
@@ -1675,7 +1676,7 @@ norm_frobenius(Tensor<dimension, space, data_t> const& tensor)
 
   real_data_t value = 0.0;
 
-  if constexpr(boba_cuda_enabled() and space == execution_space::CUDA)
+  if constexpr(boba_cuda_enabled() and (space == execution_space::CUDA) and not(force_naive))
   {
     auto square = []__boba_host_device__(data_t x){ return ::boba::abs(::boba::conj(x)*x); };
     value = detail::reduction_driver<detail::reduction_t::sum>(tensor.data(), tensor.size(), square);
@@ -1692,18 +1693,18 @@ norm_frobenius(Tensor<dimension, space, data_t> const& tensor)
   return boba::sqrt(value);
 }
 
-template <execution_space space, typename data_t>
+template <bool force_naive = false, execution_space space, typename data_t>
 auto norm_frobenius(Matrix<space, data_t> const& matrix)
 {
   checkpoint();
-  return norm_frobenius(static_cast<Tensor<2, space, data_t> const&>(matrix));
+  return norm_frobenius<force_naive>(static_cast<Tensor<2, space, data_t> const&>(matrix));
 }
 
-template <execution_space space, typename data_t>
+template <bool force_naive = false, execution_space space, typename data_t>
 auto norm_frobenius(Vector<space, data_t> const& vector)
 {
   checkpoint();
-  return norm_frobenius(static_cast<Tensor<1, space, data_t> const&>(vector));
+  return norm_frobenius<force_naive>(static_cast<Tensor<1, space, data_t> const&>(vector));
 }
 
 /**
