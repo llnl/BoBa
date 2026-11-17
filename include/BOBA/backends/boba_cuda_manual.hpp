@@ -445,6 +445,134 @@ inline data_t reduction_driver(const data_t* data, index_t length)
 
 #ifdef BOBA_CUDA
 
+/** @brief Reduces each short row or column, then keeps the largest sum in its section. */
+template <bool sum_columns, typename data_t, typename index_t>
+__global__
+void reduce_short_matrix_norm_sections(
+  const data_t* input, index_t rows, index_t cols, data_t* output, index_t section_size)
+{
+  const index_t sum_size = sum_columns ? cols : rows;
+  const index_t max_size = sum_columns ? rows : cols;
+  const index_t first = static_cast<index_t>(blockIdx.x) * section_size;
+  const index_t last = boba::min(first + section_size, max_size);
+
+  data_t section_max = reduction_identity<reduction_t::max, data_t>();
+  for (index_t max_index = first; max_index < last; ++max_index)
+  {
+    data_t value{};
+    if (threadIdx.x < sum_size)
+    {
+      if constexpr (sum_columns)
+      {
+        value = boba::abs(input[max_index + threadIdx.x * rows]);
+      }
+      else
+      {
+        value = boba::abs(input[threadIdx.x + max_index * rows]);
+      }
+    }
+
+    const data_t sum = block_reduce<reduction_t::sum>(value);
+    if (threadIdx.x == 0)
+    {
+      section_max = ::max(section_max, sum);
+    }
+    __syncthreads();
+  }
+
+  if (threadIdx.x == 0)
+  {
+    output[blockIdx.x] = section_max;
+  }
+}
+
+/** @brief Lets each thread sum a very short row or column before reducing block maxima. */
+template <bool sum_columns, typename data_t, typename index_t>
+__global__
+void reduce_short_matrix_norm_thread_sections(
+  const data_t* input, index_t rows, index_t cols, data_t* output)
+{
+  const index_t sum_size = sum_columns ? cols : rows;
+  const index_t max_size = sum_columns ? rows : cols;
+  const index_t first = static_cast<index_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const index_t stride = static_cast<index_t>(gridDim.x) * blockDim.x;
+
+  data_t thread_max = reduction_identity<reduction_t::max, data_t>();
+  for (index_t max_index = first; max_index < max_size; max_index += stride)
+  {
+    data_t sum{};
+    for (index_t sum_index = 0; sum_index < sum_size; ++sum_index)
+    {
+      if constexpr (sum_columns)
+      {
+        sum += boba::abs(input[max_index + sum_index * rows]);
+      }
+      else
+      {
+        sum += boba::abs(input[sum_index + max_index * rows]);
+      }
+    }
+    thread_max = ::max(thread_max, sum);
+  }
+
+  const data_t block_max = block_reduce<reduction_t::max>(thread_max);
+  if (threadIdx.x == 0)
+  {
+    output[blockIdx.x] = block_max;
+  }
+}
+
+/** @brief Computes a matrix norm with a short summation direction in two reductions. */
+template <bool sum_columns, typename data_t, typename index_t>
+inline data_t short_matrix_norm(const data_t* matrix, index_t rows, index_t cols)
+{
+  const index_t sum_size = sum_columns ? cols : rows;
+  const index_t max_size = sum_columns ? rows : cols;
+
+  data_t* d_workspace = nullptr;
+  cuda_assert(cudaMalloc(&d_workspace, reduction_block_size * sizeof(data_t)));
+  if (sum_size <= 32)
+  {
+    size_t block_threads = 32;
+    while (block_threads < 256 && block_threads * reduction_block_size < max_size)
+    {
+      block_threads *= 2;
+    }
+
+    void* args[] = {(void*)&matrix, (void*)&rows, (void*)&cols, (void*)&d_workspace};
+    cuda_assert(cudaLaunchKernel(
+      (const void*)reduce_short_matrix_norm_thread_sections<sum_columns, data_t, index_t>,
+      dim3(reduction_block_size),
+      dim3(block_threads),
+      args,
+      0,
+      0));
+  }
+  else
+  {
+    const index_t section_size = 1 + (max_size - 1) / reduction_block_size;
+    size_t block_threads = 32;
+    while (block_threads < sum_size)
+    {
+      block_threads *= 2;
+    }
+
+    void* args[] = {(void*)&matrix, (void*)&rows, (void*)&cols, (void*)&d_workspace, (void*)&section_size};
+    cuda_assert(cudaLaunchKernel(
+      (const void*)reduce_short_matrix_norm_sections<sum_columns, data_t, index_t>,
+      dim3(reduction_block_size),
+      dim3(block_threads),
+      args,
+      0,
+      0));
+  }
+
+  auto identity = []__boba_host_device__(data_t x) { return x; };
+  const data_t result = reduction_final<reduction_t::max, reduction_block_size>(d_workspace, reduction_block_size, identity);
+  cuda_assert(cudaFree(d_workspace));
+  return result;
+}
+
 /**
   * @brief Performs reduction of a portion of the matrix rows
   */
@@ -498,7 +626,11 @@ inline data_t matrix_linf_norm(const data_t* matrix, index_t rows, index_t cols)
 {
   data_t result;
 #ifdef BOBA_CUDA
-  if(cols > 1)
+  if (cols > 1 && cols < reduction_block_size)
+  {
+    result = short_matrix_norm<true>(matrix, rows, cols);
+  }
+  else if(cols > 1)
   {
     const index_t block_parallelism = 132;
     const index_t target_portions = 1 + (block_parallelism - 1) / rows;
@@ -587,7 +719,11 @@ inline data_t matrix_one_norm(const data_t* matrix, index_t rows, index_t cols)
 {
   data_t result;
 #ifdef BOBA_CUDA
-  if(rows > 1)
+  if (rows > 1 && rows < reduction_block_size)
+  {
+    result = short_matrix_norm<false>(matrix, rows, cols);
+  }
+  else if(rows > 1)
   {
     const index_t block_parallelism = 132;
     const index_t target_portions = 1 + (block_parallelism - 1) / cols;

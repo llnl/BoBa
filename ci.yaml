@@ -393,6 +393,24 @@
     test_matrix_norms_tall:
       inputs: "--rows 9 --cols 8"
       skip: []
+    test_matrix_norms_short_columns:
+      inputs: "--rows 4097 --cols 10"
+      skip: []
+    test_matrix_norms_short_rows:
+      inputs: "--rows 10 --cols 4097"
+      skip: []
+    test_matrix_norms_block_sum_columns:
+      inputs: "--rows 4097 --cols 33"
+      skip: []
+    test_matrix_norms_block_sum_rows:
+      inputs: "--rows 33 --cols 4097"
+      skip: []
+    test_matrix_norms_short_columns_thread_stride:
+      inputs: "--rows 262145 --cols 10"
+      skip: []
+    test_matrix_norms_short_rows_thread_stride:
+      inputs: "--rows 10 --cols 262145"
+      skip: []
     test_matrix_norms_single_row:
       inputs: "--rows 1 --cols 9"
       skip: []
