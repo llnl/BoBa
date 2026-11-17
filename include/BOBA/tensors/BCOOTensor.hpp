@@ -204,10 +204,11 @@ struct BCOOTensor
     std::iota(order.begin(), order.end(), index_t{0});
     auto column_major_less = [&](index_t a, index_t b)
     {
-      for (size_t j = interior_dimension; j-- > 0;)
+      for (size_t j = interior_dimension; j > 0; --j)
       {
-        const index_t ia = indices_view({a, static_cast<index_t>(j)});
-        const index_t ib = indices_view({b, static_cast<index_t>(j)});
+        const auto mode = static_cast<index_t>(j - 1);
+        const index_t ia = indices_view({a, mode});
+        const index_t ib = indices_view({b, mode});
         if (ia != ib)
         {
           return ia < ib;
