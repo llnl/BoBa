@@ -437,31 +437,45 @@ struct Matrix : Tensor<2, space, _data_t>
    * Computes the Matrix 1-norm of this Matrix, ||A||_1.
    */
 
+  template<bool force_naive = false>
   data_t matrix_one_norm() const
   {
     BOBA_CALI_OBJECT_MARK
-
-    const auto rows = this->rows();
-    const auto cols = this->cols();
-    const auto this_view = this->const_view();
 
     if (this->size() == 0)
     {
       return data_t{0};
     }
 
-    ::boba::Vector<space, data_t> column_sums({cols});
-    column_sums.fill_with_zeros();
-    auto column_sums_view = column_sums.atomic_view();
+    const auto rows = this->rows();
+    const auto cols = this->cols();
 
-    ::boba::loop<space, 2>({rows, cols},
-                           [=] __boba_host_device__(Array<index_t, 2> ij)
+    constexpr bool use_cuda = boba_cuda_enabled() and (space == execution_space::CUDA);
+
+    data_t result;
+
+    if constexpr (false)//(use_cuda and not(force_naive))
     {
-      auto j = ij[1];
-      column_sums_view(j) += ::boba::abs(this_view(ij));
-    });
+      result = matrix_one_norm(this->data(), rows, cols);
+    }
+    else
+    {
+      const auto this_view = this->const_view();
+      ::boba::Vector<space, data_t> column_sums({cols});
+      column_sums.fill_with_zeros();
+      auto column_sums_view = column_sums.atomic_view();
 
-    return column_sums.max_reduce();
+      ::boba::loop<space, 2>({rows, cols},
+                            [=] __boba_host_device__(Array<index_t, 2> ij)
+      {
+        auto j = ij[1];
+        column_sums_view(j) += ::boba::abs(this_view(ij));
+      });
+
+      result = column_sums.max_reduce();
+    }
+
+    return result;
   }
 
   /**
@@ -469,31 +483,47 @@ struct Matrix : Tensor<2, space, _data_t>
    * Computes the Matrix infinity-norm of this Matrix, ||A||_inf.
    */
 
+  template<bool force_naive = false>
   data_t matrix_inf_norm() const
   {
     BOBA_CALI_OBJECT_MARK
-
-    const auto rows = this->rows();
-    const auto cols = this->cols();
-    const auto this_view = this->const_view();
 
     if (this->size() == 0)
     {
       return data_t{0};
     }
 
-    ::boba::Vector<space, data_t> row_sums({rows});
-    row_sums.fill_with_zeros();
-    auto row_sums_view = row_sums.atomic_view();
+    const auto rows = this->rows();
+    const auto cols = this->cols();
 
-    ::boba::loop<space, 2>({rows, cols},
-                           [=] __boba_host_device__(Array<index_t, 2> ij)
+    constexpr bool use_cuda = boba_cuda_enabled() and (space == execution_space::CUDA);
+
+    data_t result;
+
+    if constexpr (use_cuda and not(force_naive))
     {
-      auto i = ij[0];
-      row_sums_view(i) += ::boba::abs(this_view(ij));
-    });
+#ifdef BOBA_CUDA
+      result = ::boba::detail::matrix_linf_norm(this->data(), rows, cols);
+#endif
+    }
+    else
+    {
+      const auto this_view = this->const_view();
+      ::boba::Vector<space, data_t> row_sums({rows});
+      row_sums.fill_with_zeros();
+      auto row_sums_view = row_sums.atomic_view();
 
-    return row_sums.max_reduce();
+      ::boba::loop<space, 2>({rows, cols},
+                            [=] __boba_host_device__(Array<index_t, 2> ij)
+      {
+        auto i = ij[0];
+        row_sums_view(i) += ::boba::abs(this_view(ij));
+      });
+
+      result = row_sums.max_reduce();
+    }
+
+    return result;
   }
 
   /**

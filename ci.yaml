@@ -386,6 +386,23 @@
     test_SparseTensor_functions:
       skip: []
 
+  test_matrix_norms:
+    test_matrix_norms:
+      inputs: "--rows 8 --cols 9"
+      skip: []
+    test_matrix_norms_tall:
+      inputs: "--rows 9 --cols 8"
+      skip: []
+    test_matrix_norms_single_row:
+      inputs: "--rows 1 --cols 9"
+      skip: []
+    test_matrix_norms_single_column:
+      inputs: "--rows 9 --cols 1"
+      skip: []
+    test_matrix_norms_timing:
+      inputs: "--rows 128 --cols 128 --timing --repetitions 10"
+      skip: []
+
   test_SparseTensorTrainMatrix:
     test_SparseTensorTrainMatrix:
       skip: [cuda, hip]
