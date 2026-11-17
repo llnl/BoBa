@@ -257,8 +257,8 @@ void print_observed_counts(const sparse_tensor<dimension>& tensor, const CPAPRMo
 {
   std::cout << "\nNon-zero count bin data (CP-APR)\n";
   auto tensor_view = tensor.const_view();
-  auto values_view = tensor.values_tensor().const_view();
-  const auto nnz = tensor.number_nonzeros();
+  auto values_view = tensor.values().const_view();
+  const auto nnz = tensor.nnz();
   for (boba::index_t entry = 0; entry < nnz; ++entry)
   {
     const auto idx = tensor_view.entry_multiindex(entry);
@@ -279,7 +279,7 @@ void print_empty_estimated_counts(const sparse_tensor<dimension>& tensor, const 
   auto tensor_view = tensor.const_view();
   std::vector<bool> observed_bins(bins, false);
 
-  const auto nnz = tensor.number_nonzeros();
+  const auto nnz = tensor.nnz();
   for (boba::index_t entry = 0; entry < nnz; ++entry)
   {
     const auto idx = tensor_view.entry_multiindex(entry);
@@ -314,37 +314,51 @@ void print_empty_estimated_counts(const sparse_tensor<dimension>& tensor, const 
   }
 }
 
+/**
+ * \brief Returns true when every weight and factor entry is finite and
+ * nonnegative and every factor column sums to one within 1e-10.
+ */
 template <std::size_t dimension>
 bool model_is_valid_probability_model(const CPAPRModel<dimension>& model)
 {
   auto weights_view = model.weights().const_view();
-  for (boba::index_t r = 0; r < model.weights().size(); ++r)
+  boba::index_t number_invalid_weights = 0;
+  ::boba::sum_reduce<space>(number_invalid_weights, 0_z, model.weights().size(), [=] __boba_host_device__(boba::index_t r, boba::sum_reducer_operator<boba::index_t>& local_count)
   {
-    if (!std::isfinite(weights_view(r)) || weights_view(r) < 0.0)
+    if (!boba::isfinite(weights_view(r)) || weights_view(r) < 0.0)
     {
-      return false;
+      local_count += boba::index_t(1);
     }
+  });
+  if (number_invalid_weights > 0)
+  {
+    return false;
   }
 
   for (std::size_t mode = 0; mode < dimension; ++mode)
   {
-    auto factor_view = model.m_cores[mode].const_view();
-    for (boba::index_t r = 0; r < model.m_cores[mode].cols(); ++r)
+    const auto& factor = model.m_cores[mode];
+    const boba::index_t rows = factor.rows();
+    auto factor_view = factor.const_view();
+    boba::index_t number_invalid_columns = 0;
+    ::boba::sum_reduce<space>(number_invalid_columns, 0_z, factor.cols(), [=] __boba_host_device__(boba::index_t r, boba::sum_reducer_operator<boba::index_t>& local_count)
     {
+      bool valid = true;
       double column_sum = 0.0;
-      for (boba::index_t i = 0; i < model.m_cores[mode].rows(); ++i)
+      for (boba::index_t i = 0; i < rows; ++i)
       {
         const double value = factor_view({i, r});
-        if (!std::isfinite(value) || value < 0.0)
-        {
-          return false;
-        }
+        valid = valid && boba::isfinite(value) && value >= 0.0;
         column_sum += value;
       }
-      if (std::abs(column_sum - 1.0) > 1.0e-10)
+      if (!valid || boba::abs(column_sum - 1.0) > 1.0e-10)
       {
-        return false;
+        local_count += boba::index_t(1);
       }
+    });
+    if (number_invalid_columns > 0)
+    {
+      return false;
     }
   }
 
@@ -419,9 +433,11 @@ sparse_tensor<dimension> generate_gaussian_binned_tensor(
   }));
 
   typename sparse_tensor<dimension>::index_list_array_t index_lists;
+  boba::Array<decltype(index_lists[0].view()), dimension> index_list_views;
   for (std::size_t mode = 0; mode < dimension; ++mode)
   {
     index_lists[mode].resize({nnz});
+    index_list_views[mode] = index_lists[mode].view();
   }
 
   typename sparse_tensor<dimension>::values_list_t values({nnz});
@@ -435,7 +451,7 @@ sparse_tensor<dimension> generate_gaussian_binned_tensor(
       const auto idx = indexer.multiindex(static_cast<boba::index_t>(flat));
       for (std::size_t mode = 0; mode < dimension; ++mode)
       {
-        index_lists[mode].view()(entry) = static_cast<boba::index_t>(idx[mode]);
+        index_list_views[mode](entry) = static_cast<boba::index_t>(idx[mode]);
       }
       values_view(entry) = dense_counts[flat];
       ++entry;
@@ -445,32 +461,10 @@ sparse_tensor<dimension> generate_gaussian_binned_tensor(
 }
 
 template <std::size_t dimension>
-dense_tensor<dimension> dense_tensor_from_sparse(const sparse_tensor<dimension>& tensor)
-{
-  dense_tensor<dimension> dense(tensor.sizes());
-  dense.fill_with_zeros();
-  auto tensor_view = tensor.const_view();
-  auto values_view = tensor.values_tensor().const_view();
-  auto dense_view = dense.view();
-
-  ::boba::detail::loop<space>(
-    0_z,
-    static_cast<std::size_t>(tensor.number_nonzeros()),
-    [=] __boba_host_device__(std::size_t entry)
-  {
-    const auto boba_entry = static_cast<boba::index_t>(entry);
-    const auto idx = tensor_view.entry_multiindex(boba_entry);
-    dense_view(idx) = values_view(boba_entry);
-  });
-
-  return dense;
-}
-
-template <std::size_t dimension>
 double sparse_tensor_entropy(const sparse_tensor<dimension>& tensor)
 {
-  auto values_view = tensor.values_tensor().const_view();
-  const auto nnz = static_cast<std::size_t>(tensor.number_nonzeros());
+  auto values_view = tensor.values().const_view();
+  const auto nnz = static_cast<std::size_t>(tensor.nnz());
   double mass = 0.0;
   ::boba::sum_reduce<space>(mass, 0_z, nnz, [=] __boba_host_device__(std::size_t entry, boba::sum_reducer_operator<double>& local_mass)
   {
@@ -493,53 +487,60 @@ double sparse_tensor_entropy(const sparse_tensor<dimension>& tensor)
   return entropy;
 }
 
+/**
+ * \brief Shannon entropy (nats) of the completed tensor, normalized to a distribution.
+ *
+ * Non-finite and nonpositive estimates are treated as zero. Estimates are
+ * scaled by their maximum before normalizing to avoid overflow.
+ */
 template <std::size_t dimension>
-double tensor_entropy(const CPAPRModel<dimension>& model, const tensor_shape<dimension>& dims)
+double tensor_entropy(const CPAPRModel<dimension>& model)
 {
-  const auto indexer = boba::Multiindexer<dimension>(dims);
-  const auto bins = static_cast<std::size_t>(indexer.size());
-  std::vector<double> estimates(bins, 0.0);
-  double max_estimate = 0.0;
-  for (std::size_t flat = 0; flat < bins; ++flat)
-  {
-    const auto idx = indexer.multiindex(static_cast<boba::index_t>(flat));
-    const double estimate = raw_tensor_entry_estimate(model, idx);
-    if (std::isfinite(estimate) && estimate > 0.0)
-    {
-      estimates[flat] = estimate;
-      max_estimate = std::max(max_estimate, estimate);
-    }
-  }
+  const auto estimates = model.decompress();
+  auto estimates_view = estimates.const_view();
+  const auto bins = estimates.size();
 
-  if (!(max_estimate > 0.0) || !std::isfinite(max_estimate))
+  double max_estimate = 0.0;
+  ::boba::max_reduce<space>(max_estimate, 0_z, bins, [=] __boba_host_device__(boba::index_t flat, boba::max_reducer_operator<double>& local_max)
+  {
+    const double estimate = estimates_view(flat);
+    if (boba::isfinite(estimate) && estimate > 0.0)
+    {
+      local_max.max(estimate);
+    }
+  });
+  if (!(max_estimate > 0.0) || !boba::isfinite(max_estimate))
   {
     return 0.0;
   }
 
   double scaled_mass = 0.0;
-  for (double estimate : estimates)
+  ::boba::sum_reduce<space>(scaled_mass, 0_z, bins, [=] __boba_host_device__(boba::index_t flat, boba::sum_reducer_operator<double>& local_mass)
   {
-    scaled_mass += estimate / max_estimate;
-  }
-
-  if (!(scaled_mass > 0.0) || !std::isfinite(scaled_mass))
+    const double estimate = estimates_view(flat);
+    if (boba::isfinite(estimate) && estimate > 0.0)
+    {
+      local_mass += estimate / max_estimate;
+    }
+  });
+  if (!(scaled_mass > 0.0) || !boba::isfinite(scaled_mass))
   {
     return 0.0;
   }
 
   double entropy = 0.0;
-  for (double estimate : estimates)
+  ::boba::sum_reduce<space>(entropy, 0_z, bins, [=] __boba_host_device__(boba::index_t flat, boba::sum_reducer_operator<double>& local_entropy)
   {
-    if (estimate > 0.0)
+    const double estimate = estimates_view(flat);
+    if (boba::isfinite(estimate) && estimate > 0.0)
     {
       const double probability = (estimate / max_estimate) / scaled_mass;
       if (probability > 0.0)
       {
-        entropy -= probability * std::log(probability);
+        local_entropy += -probability * boba::log(probability);
       }
     }
-  }
-
+  });
   return entropy;
 }
 
@@ -609,7 +610,7 @@ int run_tensor_completion(const CommandLineOptions& options)
   CPAPRModel<dimension> model;
   if (options.dense_apr)
   {
-    const auto dense_observed_tensor = dense_tensor_from_sparse<dimension>(observed_tensor);
+    const auto dense_observed_tensor = boba::to_dense(observed_tensor);
     model = solver.fit(
       dense_observed_tensor,
       static_cast<std::size_t>(options.rank),
@@ -624,9 +625,9 @@ int run_tensor_completion(const CommandLineOptions& options)
   }
 
   const auto observed_dims = observed_tensor.sizes();
-  const double observed_mass = observed_tensor.values_tensor().sum_reduce();
+  const double observed_mass = observed_tensor.values().sum_reduce();
   const double observed_tensor_entropy = sparse_tensor_entropy(observed_tensor);
-  const double completed_tensor_entropy = tensor_entropy(model, observed_dims);
+  const double completed_tensor_entropy = tensor_entropy(model);
 
   boba_print(std::string("Observed tensor entropy (nats): ") + std::to_string(observed_tensor_entropy));
   boba_print(std::string("Completed tensor entropy (nats): ") + std::to_string(completed_tensor_entropy));
@@ -650,7 +651,7 @@ int run_tensor_completion(const CommandLineOptions& options)
     boba_print(std::string("CP rank: ") + std::to_string(options.rank));
     boba_print(std::string("APR input path: ") + (options.dense_apr ? "dense" : "sparse"));
     boba_print(std::string("Total bins: ") + std::to_string(static_cast<long long>(observed_tensor.size())));
-    boba_print(std::string("Nonzero bins: ") + std::to_string(static_cast<long long>(observed_tensor.number_nonzeros())));
+    boba_print(std::string("Nonzero bins: ") + std::to_string(static_cast<long long>(observed_tensor.nnz())));
     boba_print(std::string("Observed total mass: ") + std::to_string(observed_mass));
     print_lambda(model);
     print_observed_counts(observed_tensor, model);

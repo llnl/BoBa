@@ -24,7 +24,7 @@ variables:
   H100_MACHINE: "matrix"
   HIP_MACHINE: "tuolumne"
 
-  BOBA_TPL_FARM: "/usr/workspace/boba_dev/boba_tpl_build_farms/2026_05_20_python"
+  BOBA_TPL_FARM: "/usr/workspace/boba_dev/boba_tpl_build_farms/2026_10_15_cub"
 
 include:
   - project: 'lc-templates/id_tokens'
@@ -62,6 +62,9 @@ default:
     LLNL_SLURM_SCHEDULER_PARAMETERS: "--nodes=1 --ntasks=1 --gres=gpu:1 --time=00:20:00 --cpus-per-task=28 --partition=pci"
 
 .shell_hip:
+  rules:
+# Only run hip in the weekly scheduled tests          
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
   tags:
     - tuolumne
     - batch
@@ -167,7 +170,7 @@ h100_build_and_test:
     - time srun -n 1 make all BOBA_CI=1 BOBA_CUDA=1 BOBA_CUTENSOR=1 BOBA_UMPIRE=1 -j 36
     - time srun -n 1 python3 ci.py --umpire
 
-.hip_build_and_test:
+hip_build_and_test:
   extends:
     - .shell_hip
     - .boba_base
@@ -218,7 +221,20 @@ cmake_boba_h100:
     - time srun -n 1 ./example_cuda_h100/example
     - rm -rf example_cuda_h100
 
-.cmake_boba_hip:
+cmake_boba_kokkos:
+  extends:
+    - .shell_h100
+    - .boba_base
+  stage: build_and_test
+  script:
+    - ${GCC_MATRIX_VERSION}
+    - ${MATRIX_CUDA_VERSION}
+    - ${CMAKE_VERSION}
+    - cd examples/cmake_examples
+    - echo Kokkos CUDA reduction example
+    - time srun -n 1 env KOKKOS_DIR="${BOBA_TPL_FARM}/install/kokkos_cuda_h100/lib/cmake/Kokkos" ./install_example_kokkos.bash
+
+cmake_boba_hip:
   extends:
     - .shell_hip
     - .boba_base

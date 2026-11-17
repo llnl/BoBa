@@ -4,6 +4,7 @@
 
 #include "BOBA/abstractions/common.hpp"
 
+#include <cstdint>
 #include <limits>
 #include <math.h>
 #include <type_traits>
@@ -66,6 +67,17 @@ __boba_host_device__ constexpr double abs(double x)
 __boba_host_device__ constexpr int abs(int x)
 {
   return ::abs(x);
+}
+
+/**
+ * \brief Absolute value of a signed 64-bit integer.
+ * @param x Input value.
+ * @return `|x|`.
+ */
+
+__boba_host_device__ constexpr std::int64_t abs(std::int64_t x)
+{
+  return x < 0 ? -x : x;
 }
 
 /**

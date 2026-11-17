@@ -1,0 +1,6 @@
+Kokkos
+======
+
+Upstream package: `tpl/kokkos`
+Declared license: Apache-2.0 with LLVM exceptions
+Retain the upstream license notice file: `tpl/kokkos/LICENSE`

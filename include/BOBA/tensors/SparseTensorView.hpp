@@ -10,7 +10,10 @@ namespace boba
 {
 
 /**
- * \brief Read-only sparse tensor view backed by per-dimension index lists and values.
+ * \brief Read-only sparse tensor view backed by sorted linear indices and values.
+ *
+ * Entry `e` is stored at the column-major linear index `linear_indices_ptr()[e]`.
+ * Linear indices are strictly increasing, so lookups use binary search.
  */
 template <typename _accessor, std::size_t _dimension>
 struct SparseTensorView : Multiindexer<_dimension>
@@ -23,7 +26,6 @@ struct SparseTensorView : Multiindexer<_dimension>
   using data_pointer = typename accessor::data_pointer;
   using data_const_pointer = data_t const*;
   using index_array = ::boba::Array<index_t, dimension>;
-  using index_pointer_array = ::boba::Array<index_t const*, dimension>;
 
   using base = Multiindexer<dimension>;
   using base::assert_indices;
@@ -45,29 +47,29 @@ struct SparseTensorView : Multiindexer<_dimension>
   /**
    * \brief Constructs a sparse tensor view from sparse buffers and extents.
    */
-  constexpr SparseTensorView(index_pointer_array index_lists,
+  constexpr SparseTensorView(index_t const* linear_indices,
                              data_pointer values,
-                             index_t number_nonzeros,
+                             index_t nnz,
                              index_array view_sizes,
                              index_array view_strides) noexcept
       : base(view_sizes, view_strides),
-        m_index_lists(index_lists),
+        m_linear_indices(linear_indices),
         m_values(values),
-        m_number_nonzeros(number_nonzeros)
+        m_nnz(nnz)
   {
   }
 
   /**
    * \brief Constructs a sparse tensor view from sparse buffers and extents.
    */
-  constexpr SparseTensorView(index_pointer_array index_lists,
+  constexpr SparseTensorView(index_t const* linear_indices,
                              data_pointer values,
-                             index_t number_nonzeros,
+                             index_t nnz,
                              index_array view_sizes) noexcept
       : base(view_sizes),
-        m_index_lists(index_lists),
+        m_linear_indices(linear_indices),
         m_values(values),
-        m_number_nonzeros(number_nonzeros)
+        m_nnz(nnz)
   {
   }
 
@@ -76,20 +78,7 @@ struct SparseTensorView : Multiindexer<_dimension>
    */
   __boba_host_device__ value_t operator()(index_array indices) const
   {
-    assert_indices(indices);
-    for (index_t entry = 0; entry < m_number_nonzeros; ++entry)
-    {
-      bool entry_matches = true;
-      for (std::size_t d = 0; d < dimension; ++d)
-      {
-        entry_matches = entry_matches && (m_index_lists[d][entry] == indices[d]);
-      }
-      if (entry_matches)
-      {
-        return accessor{}.access(m_values, entry);
-      }
-    }
-    return value_t{};
+    return this->operator()(index(indices));
   }
 
   /**
@@ -100,25 +89,58 @@ struct SparseTensorView : Multiindexer<_dimension>
     boba_assert_nonnegative(linear_index, "Negative index");
     boba_assert_lt(linear_index, size(), "Out of bounds");
 
-    return this->operator()(multiindex(linear_index));
+    const index_t entry = entry_lower_bound(linear_index);
+    if (entry < m_nnz && m_linear_indices[entry] == linear_index)
+    {
+      return accessor{}.access(m_values, entry);
+    }
+    return value_t{};
   }
 
   /**
-   * \brief Returns the sparse index-list buffer for one tensor dimension.
+   * \brief Returns the first entry whose linear index is not less than \p linear_index.
+   *
+   * Returns nnz() when every stored linear index is smaller. Binary search,
+   * O(log nnz); runs wherever it is called (host code or a device kernel) and
+   * requires the view's buffers to be accessible there.
    */
   [[nodiscard]]
-  __boba_host_device__ constexpr index_t const* index_list(std::size_t d) const noexcept
+  __boba_host_device__ index_t entry_lower_bound(index_t linear_index) const noexcept
   {
-    return m_index_lists[d];
+    index_t low = 0;
+    index_t high = m_nnz;
+    while (low < high)
+    {
+      const index_t middle = low + (high - low) / 2;
+      if (m_linear_indices[middle] < linear_index)
+      {
+        low = middle + 1;
+      }
+      else
+      {
+        high = middle;
+      }
+    }
+    return low;
   }
 
   /**
-   * \brief Returns all sparse index-list buffers.
+   * \brief Returns the sorted linear-index buffer.
    */
   [[nodiscard]]
-  __boba_host_device__ constexpr index_pointer_array index_lists() const noexcept
+  __boba_host_device__ constexpr index_t const* linear_indices_ptr() const noexcept
   {
-    return m_index_lists;
+    return m_linear_indices;
+  }
+
+  /**
+   * \brief Returns the linear index of a stored sparse entry.
+   */
+  [[nodiscard]]
+  __boba_host_device__ index_t entry_linear_index(index_t entry) const
+  {
+    boba_assert_lt(entry, m_nnz, "Out of bounds");
+    return m_linear_indices[entry];
   }
 
   /**
@@ -127,22 +149,14 @@ struct SparseTensorView : Multiindexer<_dimension>
   [[nodiscard]]
   __boba_host_device__ index_array entry_multiindex(index_t entry) const
   {
-    boba_assert_nonnegative(entry, "Negative index");
-    boba_assert_lt(entry, m_number_nonzeros, "Out of bounds");
-
-    index_array indices;
-    for (std::size_t d = 0; d < dimension; ++d)
-    {
-      indices[d] = m_index_lists[d][entry];
-    }
-    return indices;
+    return base::multiindex(sizes(), entry_linear_index(entry));
   }
 
   /**
    * \brief Returns the sparse value buffer.
    */
   [[nodiscard]]
-  __boba_host_device__ constexpr data_pointer values() const noexcept
+  __boba_host_device__ constexpr data_pointer values_ptr() const noexcept
   {
     return m_values;
   }
@@ -151,15 +165,15 @@ struct SparseTensorView : Multiindexer<_dimension>
    * \brief Returns the number of explicitly stored entries.
    */
   [[nodiscard]]
-  __boba_host_device__ constexpr index_t number_nonzeros() const noexcept
+  __boba_host_device__ constexpr index_t nnz() const noexcept
   {
-    return m_number_nonzeros;
+    return m_nnz;
   }
 
 private:
-  index_pointer_array m_index_lists = ::boba::filled_array<dimension>(static_cast<index_t const*>(nullptr));
+  index_t const* m_linear_indices = nullptr;
   data_pointer m_values = nullptr;
-  index_t m_number_nonzeros = 0;
+  index_t m_nnz = 0;
 };
 
 } // namespace boba

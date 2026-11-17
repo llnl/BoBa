@@ -425,7 +425,8 @@ struct TensorTrainAMENBlock
     Unlike the MATLAB version, it supports block systems whose nonzero blocks
     may have different mode sizes as long as each block maps between compatible
     TensorTrain dimensions. The operator is represented as a
-    BlockOperator<TensorTrainMatrix<...>> and the vectors as
+    BlockOperator<TensorTrainMatrix<...>> or
+    BlockOperator<SparseTensorTrainMatrix<...>> and the vectors as
     BlockVector<TensorTrain<...>>.
   */
 
@@ -540,9 +541,11 @@ struct TensorTrainAMENBlock
    * The operator and vectors are organized as block containers whose entries are
    * TT matrices and TT vectors, respectively. Diagonal-only systems reduce to
    * independent local AMEn updates, while systems with off-diagonal blocks use a
-   * coupled site solve and a final block-scalar correction. Unlike the MATLAB
+   * coupled site solve. Unlike the MATLAB
    * block AMEn implementation, block mode sizes are allowed to differ across
    * rows and columns as long as each nonzero block maps between compatible sizes.
+   * Sparse operator cores remain sparse during contractions. Their iterative
+   * diagonal site solves require `solve3d_2ml_options.method == 2`.
    *
    * \tparam random_generator_t Type satisfying the C++
    *          UniformRandomBitGenerator requirements.
@@ -552,9 +555,10 @@ struct TensorTrainAMENBlock
    * \param[in,out] random_generator Generator used for residual enrichment.
    * \return Final block TT solution, returned in host space.
    */
-  template <size_t dimension, execution_space space, typename random_generator_t>
+  template <size_t dimension, execution_space space, typename operator_t, typename random_generator_t>
+    requires(TensorTrainOperatorType<operator_t, dimension, space, data_t>)
   ::boba::BlockVector<::boba::TensorTrain<dimension, host_space, data_t>> solve(
-    const ::boba::BlockOperator<::boba::TensorTrainMatrix<dimension, space, data_t>>& crA,
+    const ::boba::BlockOperator<operator_t>& crA,
     const ::boba::BlockVector<::boba::TensorTrain<dimension, space, data_t>>& cry,
     const ::boba::BlockVector<::boba::TensorTrain<dimension, space, data_t>>& tt_initial_guess,
     random_generator_t& random_generator)
@@ -2187,9 +2191,10 @@ struct TensorTrainAMENBlock
    * \param[in] tt_initial_guess Initial block TT iterate.
    * \return Final block TT solution, returned in host space.
    */
-  template <size_t dimension, execution_space space>
+  template <size_t dimension, execution_space space, typename operator_t>
+    requires(TensorTrainOperatorType<operator_t, dimension, space, data_t>)
   ::boba::BlockVector<::boba::TensorTrain<dimension, host_space, data_t>> solve(
-    const ::boba::BlockOperator<::boba::TensorTrainMatrix<dimension, space, data_t>>& crA,
+    const ::boba::BlockOperator<operator_t>& crA,
     const ::boba::BlockVector<::boba::TensorTrain<dimension, space, data_t>>& cry,
     const ::boba::BlockVector<::boba::TensorTrain<dimension, space, data_t>>& tt_initial_guess)
   {
@@ -2464,10 +2469,11 @@ private:
     }
   }
 
-  template <size_t dimension_local, execution_space space_local>
+  template <size_t dimension_local, execution_space space_local, typename operator_t>
+    requires(TensorTrainOperatorType<operator_t, dimension_local, space_local, data_t>)
   ::boba::BlockVector<::boba::TensorTrain<dimension_local, space_local, data_t>>
   apply_nonempty_blocks(
-    const ::boba::BlockOperator<::boba::TensorTrainMatrix<dimension_local, space_local, data_t>>& crA,
+    const ::boba::BlockOperator<operator_t>& crA,
     const ::boba::BlockVector<::boba::TensorTrain<dimension_local, space_local, data_t>>& crx)
   {
     BOBA_CALI_MARK
@@ -2520,11 +2526,11 @@ private:
    * \param[in] phase Short label used in exception messages.
    * \return Updated environment tensor and its normalization factor.
    */
-  template <size_t dimension_local, execution_space space_local>
+  template <size_t dimension_local, execution_space space_local, typename core_t>
   std::pair<::boba::Tensor<3, space_local, data_t>, data_t> compute_next_phi_block(
     const ::boba::Tensor<3, space_local, data_t>& Phi_prev,
     const ::boba::Tensor<3, space_local, data_t>& x,
-    const ::boba::Tensor<4, space_local, data_t>& A_core,
+    const core_t& A_core,
     const ::boba::Tensor<3, space_local, data_t>& y,
     bool sweep_left_right,
     data_t external_norm,
@@ -2655,72 +2661,48 @@ public:
   }
 
   /**
-   * \brief Convert a squared local block norm into a multiplicative scale.
-   *
-   * A zero or tiny norm means there is no useful scale information for that
-   * block, so the neutral factor is returned.
+   * \brief Scale a contiguous work-vector slice by scalar-row factors.
    */
-  data_t make_local_scale_factor(data_t norm_squared) const
-  {
-    if (norm_squared <= 0.0)
-    {
-      return 1.0;
-    }
-    auto norm = ::boba::sqrt(norm_squared);
-    if (::boba::is_tiny(norm))
-    {
-      return 1.0;
-    }
-    return 1.0 / norm;
-  }
-
-  /**
-   * \brief Scale one contiguous slice of a dense work vector in place.
-   */
-  template <execution_space space_local>
+  template <execution_space space_local, typename factor_t>
   void scale_vector_block(
     ::boba::Vector<space_local, data_t>& vector,
     index_t offset,
     index_t size,
-    data_t factor)
+    const ::boba::Vector<space_local, factor_t>& factors)
   {
-    if (::boba::abs(factor - 1.0) <= ::boba::epsilon<data_t>())
-    {
-      return;
-    }
+    boba_always_assert_equal(size, factors.size(), "incompatible scalar-row scaling sizes");
     auto vector_view = vector.view();
+    auto factors_view = factors.const_view();
     ::boba::loop<space_local, 1>(size,
                                  [=] __boba_host_device__(index_t idx)
     {
-      vector_view({offset + idx}) *= factor;
+      vector_view({offset + idx}) *= factors_view({idx});
     });
   }
 
   /**
-   * \brief Scale one dense matrix subblock in place.
+   * \brief Scale a dense matrix subblock by scalar-row factors.
    */
-  template <execution_space space_local>
+  template <execution_space space_local, typename factor_t>
   void scale_matrix_block(
     ::boba::Matrix<space_local, data_t>& matrix,
     index_t row_begin,
     index_t row_end,
     index_t col_begin,
     index_t col_end,
-    data_t factor)
+    const ::boba::Vector<space_local, factor_t>& factors)
   {
-    if (::boba::abs(factor - 1.0) <= ::boba::epsilon<data_t>())
-    {
-      return;
-    }
     auto rows = row_end - row_begin;
     auto cols = col_end - col_begin;
+    boba_always_assert_equal(rows, factors.size(), "incompatible scalar-row scaling sizes");
     auto matrix_view = matrix.view();
-    ::boba::loop<space_local, 1>(rows * cols,
+    auto factors_view = factors.const_view();
+    const ::boba::Multiindexer<2> block_indexer({cols, rows});
+    ::boba::loop<space_local, 1>(block_indexer.size(),
                                  [=] __boba_host_device__(index_t idx)
     {
-      auto row = idx / cols;
-      auto col = idx - row * cols;
-      matrix_view({row_begin + row, col_begin + col}) *= factor;
+      const auto [col, row] = block_indexer.multiindex(idx);
+      matrix_view({row_begin + row, col_begin + col}) *= factors_view({row});
     });
   }
 
@@ -2778,10 +2760,10 @@ private:
    * \param[in] phase Short label used in exception messages.
    * \return Local operator application in tensor form.
    */
-  template <execution_space space_local>
+  template <execution_space space_local, typename core_t>
   ::boba::Tensor<3, space_local, data_t> bfun3_block(
     const ::boba::Tensor<3, space_local, data_t>& Phi1,
-    const ::boba::Tensor<4, space_local, data_t>& A,
+    const core_t& A,
     const ::boba::Tensor<3, space_local, data_t>& Phi2,
     const ::boba::Tensor<3, space_local, data_t>& x,
     size_t row,
@@ -2823,10 +2805,10 @@ private:
    * \param[in] phase Short label used in exception messages.
    * \return Local diagonal operator application in tensor form.
    */
-  template <execution_space space_local>
+  template <execution_space space_local, typename core_t>
   ::boba::Tensor<3, space_local, data_t> bfun3_diag_block(
     const ::boba::Tensor<3, space_local, data_t>& Phi1,
-    const ::boba::Tensor<4, space_local, data_t>& A,
+    const core_t& A,
     const ::boba::Tensor<3, space_local, data_t>& Phi2,
     const ::boba::Tensor<3, space_local, data_t>& x,
     size_t row,
@@ -2863,10 +2845,10 @@ private:
    * \param[in] phia_ip1 Right environment tensor.
    * \return Local operator tensor before reshaping to a matrix.
    */
-  template <execution_space space>
+  template <execution_space space, typename core_t>
   Tensor<6, space, data_t> project_operator_A(
     const Tensor<3, space, data_t>& phia_i,
-    const Tensor<4, space, data_t>& A_core,
+    const core_t& A_core,
     const Tensor<3, space, data_t>& phia_ip1)
   {
     BOBA_CALI_MARK
@@ -2894,10 +2876,10 @@ private:
    * \param[in] phase Short label used in exception messages.
    * \return Local operator tensor before reshaping to a matrix.
    */
-  template <execution_space space_local>
+  template <execution_space space_local, typename core_t>
   Tensor<6, space_local, data_t> project_operator_A_block(
     const Tensor<3, space_local, data_t>& phia_i,
-    const Tensor<4, space_local, data_t>& A_core,
+    const core_t& A_core,
     const Tensor<3, space_local, data_t>& phia_ip1,
     size_t row,
     size_t site,

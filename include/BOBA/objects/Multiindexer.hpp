@@ -73,7 +73,7 @@ struct Multiindexer
     index_array indices;
     if constexpr (dimension > 0_z)
     {
-      for (std::size_t d = 0; d < dimension - 1; d++)
+      for (std::size_t d = 0; d + 1 < dimension; d++)
       {
         indices[d] = index % _sizes[d];
         index /= _sizes[d];

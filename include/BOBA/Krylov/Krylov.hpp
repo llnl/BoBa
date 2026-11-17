@@ -23,11 +23,13 @@ struct KrylovMethods
  *
  * \tparam operator_t Operator type
  * \tparam vector_t Vector type
+ * \tparam preconditioner_t Left and right preconditioner type
  *
  * \note The operator_t and vector_t types must support the matrix-vector multiplication interface
- *       (`operator_t * vector_t -> vector_t`)
+ *       (`operator_t * vector_t -> vector_t`). The preconditioner_t type must support the same
+ *       interface with vector_t.
  */
-template <typename operator_t, typename vector_t>
+template <typename operator_t, typename vector_t, typename preconditioner_t = operator_t>
 struct Krylov
 {
   using data_t = typename vector_t::data_t;
@@ -42,10 +44,10 @@ struct Krylov
   operator_t linear_operator;
 
   bool left_preconditioner_set = false;
-  operator_t left_preconditioner;
+  preconditioner_t left_preconditioner;
 
   bool right_preconditioner_set = false;
-  operator_t right_preconditioner;
+  preconditioner_t right_preconditioner;
 
   size_t outer_iterations_width = 0;
   size_t inner_iterations_width = 0;
@@ -88,7 +90,7 @@ struct Krylov
    * \note Given left preconditioner \f$L\f$, the linear system \f$A x = b\f$ is transformed into \f$L A x = L b\f$
    *       (rather than the more traditional \f$L^{-1} A x = L^{-1} b\f$).
    */
-  void set_left_preconditioner(operator_t const& _left_preconditioner)
+  void set_left_preconditioner(preconditioner_t const& _left_preconditioner)
   {
     left_preconditioner = _left_preconditioner;
     left_preconditioner_set = true;
@@ -104,7 +106,7 @@ struct Krylov
    *
    * \note Right preconditioner is not used for conjugate gradient.
    */
-  void set_right_preconditioner(operator_t const& _right_preconditioner)
+  void set_right_preconditioner(preconditioner_t const& _right_preconditioner)
   {
     right_preconditioner = _right_preconditioner;
     right_preconditioner_set = true;

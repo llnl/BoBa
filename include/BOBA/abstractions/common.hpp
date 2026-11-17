@@ -249,6 +249,18 @@ inline constexpr bool boba_raja_enabled()
 }
 
 /**
+ * @brief Returns true when Kokkos support is enabled.
+ */
+inline constexpr bool boba_kokkos_enabled()
+{
+#if defined(BOBA_KOKKOS)
+  return true;
+#else
+  return false;
+#endif
+}
+
+/**
  * @brief Returns true when Umpire support is enabled.
  */
 inline constexpr bool boba_umpire_enabled()

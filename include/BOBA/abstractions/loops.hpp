@@ -414,8 +414,7 @@ struct LoopAdapter1d
                    index_t const& end,
                    L&& lambda)
   {
-    boba::detail::loop<space>(
-      begin, end, std::forward<L>(lambda));
+    boba::detail::loop<space>(begin, end, std::forward<L>(lambda));
   }
 };
 

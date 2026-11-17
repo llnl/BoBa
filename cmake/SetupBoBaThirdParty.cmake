@@ -20,9 +20,49 @@ if(BOBA_ENABLE_CUDA)
     find_package(CUDAToolkit REQUIRED)
     set(CUDA_NAMEFLAG "_cuda")
 endif()
+if(BOBA_CUTENSOR)
+    if(NOT BOBA_ENABLE_CUDA)
+        message(FATAL_ERROR "cuTENSOR requires BOBA_ENABLE_CUDA=On")
+    endif()
+    if(NOT BOBA_CUTENSOR_INCLUDE_DIR OR NOT BOBA_CUTENSOR_LIBRARY)
+        message(FATAL_ERROR
+            "cuTENSOR was enabled but its headers or library were not found. "
+            "Set CUTENSOR_ROOT or BOBA_CUTENSOR_INCLUDE_DIR and BOBA_CUTENSOR_LIBRARY.")
+    endif()
+endif()
+if(BOBA_HIPTENSOR)
+    if(NOT BOBA_ENABLE_HIP)
+        message(FATAL_ERROR "hipTensor requires BOBA_ENABLE_HIP=On")
+    endif()
+    if(NOT BOBA_HIPTENSOR_INCLUDE_DIR OR NOT BOBA_HIPTENSOR_LIBRARY)
+        message(FATAL_ERROR
+            "hipTensor was enabled but its headers or library were not found. "
+            "Set HIPTENSOR_ROOT or BOBA_HIPTENSOR_INCLUDE_DIR and BOBA_HIPTENSOR_LIBRARY.")
+    endif()
+endif()
 if(BOBA_ENABLE_HIP)
     set(boba_device_depends blt::hip CACHE STRING "" FORCE)
     set(HIP_NAMEFLAG "_hip")
+endif()
+
+#------------------------------------------------------------------------------
+# Kokkos
+#------------------------------------------------------------------------------
+if (KOKKOS_DIR AND BOBA_ENABLE_KOKKOS)
+    if (NOT EXISTS "${KOKKOS_DIR}")
+        message(FATAL_ERROR "Given KOKKOS_DIR does not exist: ${KOKKOS_DIR}")
+    endif()
+    if (NOT IS_DIRECTORY "${KOKKOS_DIR}")
+        message(FATAL_ERROR "Given KOKKOS_DIR is not a directory: ${KOKKOS_DIR}")
+    endif()
+    find_package(Kokkos REQUIRED PATHS ${KOKKOS_DIR})
+    if (NOT TARGET Kokkos::kokkos)
+        message(FATAL_ERROR "Kokkos failed to load: ${KOKKOS_DIR}")
+    endif()
+    set(KOKKOS_FOUND TRUE CACHE BOOL "" FORCE)
+else()
+    message(STATUS "Kokkos support is OFF")
+    set(KOKKOS_FOUND FALSE CACHE BOOL "" FORCE)
 endif()
 
 #------------------------------------------------------------------------------
@@ -289,6 +329,37 @@ if(BOBA_ENABLE_HIP AND BOBA_HIP_LIBS)
         set(HIPBLAS_FOUND FALSE CACHE BOOL "" FORCE)
     endif()
 
+    if (NOT HIPSPARSE_DIR AND ROCM_ROOT_DIR AND EXISTS "${ROCM_ROOT_DIR}/lib/cmake/hipsparse")
+        set(HIPSPARSE_DIR "${ROCM_ROOT_DIR}/lib/cmake/hipsparse" CACHE PATH "hipsparse CMake config directory")
+    endif()
+
+    if (HIPSPARSE_DIR)
+        if (NOT EXISTS "${HIPSPARSE_DIR}")
+            message(FATAL_ERROR "Given HIPSPARSE_DIR does not exist: ${HIPSPARSE_DIR}")
+        endif()
+
+        if (NOT IS_DIRECTORY "${HIPSPARSE_DIR}")
+            message(FATAL_ERROR "Given HIPSPARSE_DIR is not a directory: ${HIPSPARSE_DIR}")
+        endif()
+
+        find_package(hipsparse REQUIRED PATHS ${HIPSPARSE_DIR} )
+
+        message(STATUS "Checking for expected hipsparse target 'roc::hipsparse'")
+        if (NOT TARGET roc::hipsparse)
+            message(FATAL_ERROR "hipsparse failed to load: ${HIPSPARSE_DIR}")
+        else()
+            message(STATUS "hipsparse loaded: ${HIPSPARSE_DIR}")
+            get_target_property(HIPSPARSE_INCLUDE_DIRS_BOBA roc::hipsparse INTERFACE_INCLUDE_DIRECTORIES)
+            message(STATUS "hipsparse Includes: ${HIPSPARSE_INCLUDE_DIRS_BOBA}")
+            set_property(TARGET roc::hipsparse
+                 APPEND PROPERTY INTERFACE_SYSTEM_INCLUDE_DIRECTORIES
+                ${HIPSPARSE_INCLUDE_DIRS_BOBA})
+            set(HIPSPARSE_FOUND TRUE CACHE BOOL "" FORCE)
+        endif()
+    else()
+        message(FATAL_ERROR "BOBA_HIP_LIBS requires hipsparse; set HIPSPARSE_DIR or ROCM_ROOT_DIR")
+    endif()
+
     if (ROCSOLVER_DIR)
         if (NOT EXISTS "${ROCSOLVER_DIR}")
             message(FATAL_ERROR "Given ROCSOLVER_DIR does not exist: ${ROCSOLVER_DIR}")
@@ -355,7 +426,7 @@ if( ${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.13.0" )
 endif()
 list(APPEND _props INTERFACE_COMPILE_OPTIONS)
 
-foreach(_target RAJA camp umpire umpire_alloc Eigen3::Eigen caliper)
+foreach(_target RAJA Kokkos::kokkos camp umpire umpire_alloc Eigen3::Eigen caliper)
     if(TARGET ${_target})
 #        message(STATUS "Removing OpenMP Flags from target[${_target}]")
 

@@ -104,6 +104,18 @@
         "CMAKE_CXX_FLAGS": "-g"
       }
     },
+    "kokkos": {
+      "cmake": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_COMPILER": "/usr/tce/packages/gcc/gcc-13.3.1/bin/g++",
+        "Kokkos_ENABLE_SERIAL": "On",
+        "Kokkos_ENABLE_OPENMP": "Off",
+        "Kokkos_ENABLE_CUDA": "Off",
+        "Kokkos_ENABLE_HIP": "Off",
+        "Kokkos_ENABLE_TESTS": "Off",
+        "Kokkos_ENABLE_EXAMPLES": "Off"
+      }
+    },
     "BOBA": {
       "cmake": {
         "CMAKE_BUILD_TYPE": "Release",

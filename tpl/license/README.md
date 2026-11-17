@@ -9,6 +9,7 @@ BoBa vendors several upstream third-party libraries under `tpl/`.
 - fmt (MIT)
 - HDF5 (HDF5 license)
 - RAJA (BSD-3-Clause)
+- Kokkos (Apache-2.0 with LLVM exceptions)
 - Umpire (MIT)
 
 In case of a conflict, the authoritative license texts remain in each package directory.

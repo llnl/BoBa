@@ -8,6 +8,9 @@
 #include "umpire/Umpire.hpp"
 #include "umpire/strategy/QuickPool.hpp"
 #endif
+#ifdef BOBA_KOKKOS
+#include <Kokkos_Core.hpp>
+#endif
 
 // This source file handles backend setup and initialization.
 
@@ -54,9 +57,14 @@ RandomContext& default_context()
 namespace detail
 {
 
+#ifdef BOBA_KOKKOS
+bool kokkos_initialized_by_boba = false;
+#endif
+
 #ifdef BOBA_CUDA_LIBS
 cublasHandle_t cublas_handle;
 cusolverDnHandle_t cusolver_handle;
+cusparseHandle_t cusparse_handle;
 #ifdef BOBA_CUTENSOR
 cutensorHandle_t cutensor_handle;
 #endif
@@ -65,6 +73,7 @@ cutensorHandle_t cutensor_handle;
 #ifdef BOBA_HIP_LIBS
 hipblasHandle_t hipblas_handle;
 hipsolverDnHandle_t hipsolver_handle;
+hipsparseHandle_t hipsparse_handle;
 
 rocblas_handle _rocblas_handle;
 #endif
@@ -193,6 +202,7 @@ inline void init_cuda_libs()
 {
   boba::detail::cublas_assert(cublasCreate(&cublas_handle));
   boba::detail::cusolver_assert(cusolverDnCreate(&cusolver_handle));
+  boba::detail::cusparse_assert(cusparseCreate(&cusparse_handle));
 }
 
 /**
@@ -202,6 +212,7 @@ inline void finalize_cuda_libs()
 {
   boba::detail::cublas_assert(cublasDestroy(cublas_handle));
   boba::detail::cusolver_assert(cusolverDnDestroy(cusolver_handle));
+  boba::detail::cusparse_assert(cusparseDestroy(cusparse_handle));
 }
 #else
 inline void init_cuda_libs()
@@ -247,6 +258,7 @@ inline void init_hip_libs()
 {
   boba::detail::hipblas_assert(hipblasCreate(&hipblas_handle));
   boba::detail::hipsolver_assert(hipsolverDnCreate(&hipsolver_handle));
+  boba::detail::hipsparse_assert(hipsparseCreate(&hipsparse_handle));
   boba::detail::rocblas_assert(rocblas_create_handle(&_rocblas_handle));
   rocblas_initialize();
 }
@@ -258,6 +270,7 @@ inline void finalize_hip_libs()
 {
   boba::detail::hipblas_assert(hipblasDestroy(hipblas_handle));
   boba::detail::hipsolver_assert(hipsolverDnDestroy(hipsolver_handle));
+  boba::detail::hipsparse_assert(hipsparseDestroy(hipsparse_handle));
   boba::detail::rocblas_assert(rocblas_destroy_handle(_rocblas_handle));
 }
 #else
@@ -314,6 +327,14 @@ void init()
   // Cusolver handles
   // ---------------------------------
   checkpoint();
+
+#ifdef BOBA_KOKKOS
+  if (!Kokkos::is_initialized())
+  {
+    Kokkos::initialize();
+    detail::kokkos_initialized_by_boba = true;
+  }
+#endif
   detail::init_cuda_libs();
   detail::init_cutensor();
   detail::init_hip_libs();
@@ -347,6 +368,14 @@ void finalize()
   detail::finalize_hip_libs();
   detail::finalize_hiptensor();
   checkpoint();
+
+#ifdef BOBA_KOKKOS
+  if (detail::kokkos_initialized_by_boba && Kokkos::is_initialized() && !Kokkos::is_finalized())
+  {
+    Kokkos::finalize();
+    detail::kokkos_initialized_by_boba = false;
+  }
+#endif
 
   // ---------------------------------
   // end

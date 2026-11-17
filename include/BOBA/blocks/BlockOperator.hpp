@@ -79,6 +79,7 @@ struct BlockOperator
 
   /**
    * \brief Apply the block operator to a block vector.
+   * Empty blocks are skipped; each row must contain a nonempty block.
    *
    * \param[in] vec input block vector
    * \return resulting block vector
@@ -88,14 +89,29 @@ struct BlockOperator
   BlockVector<vector_t> operator*(const BlockVector<vector_t>& vec) const
   {
     BOBA_CALI_MARK
-    BlockVector<vector_t> output_vector(vec.block_size);
+    boba_always_assert_equal(vec.block_size, block_cols, "block operator and vector sizes differ");
+    BlockVector<vector_t> output_vector(block_rows);
     for (size_t row = 0; row < block_rows; row++)
     {
-      output_vector(row) = this->operator()({row, 0}) * vec(0);
-      for (size_t col = 1; col < block_cols; col++)
+      bool initialized = false;
+      for (size_t col = 0; col < block_cols; col++)
       {
-        output_vector(row) += this->operator()({row, col}) * vec(col);
+        auto const& block = this->operator()({row, col});
+        if (block.get_number_elements() == 0)
+        {
+          continue;
+        }
+        if (initialized)
+        {
+          output_vector(row) += block * vec(col);
+        }
+        else
+        {
+          output_vector(row) = block * vec(col);
+          initialized = true;
+        }
       }
+      boba_always_assert(initialized, "block operator requires a nonempty block in each row");
       output_vector(row).round();
     }
     return output_vector;

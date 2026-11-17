@@ -99,9 +99,11 @@ blt_list_append( TO boba_depends ELEMENTS hdf5-static IF HDF5_FOUND )
 blt_list_append( TO boba_depends ELEMENTS Eigen3::Eigen IF EIGEN_FOUND )
 blt_list_append( TO boba_depends ELEMENTS umpire IF UMPIRE_FOUND )
 blt_list_append( TO boba_depends ELEMENTS RAJA IF RAJA_FOUND )
+blt_list_append( TO boba_depends ELEMENTS Kokkos::kokkos IF KOKKOS_FOUND )
 blt_list_append( TO boba_depends ELEMENTS nvToolsExt IF BOBA_ENABLE_CUDA )
 blt_list_append( TO boba_depends ELEMENTS roc::hipblas IF HIPBLAS_FOUND )
 blt_list_append( TO boba_depends ELEMENTS roc::hipsolver IF HIPSOLVER_FOUND )
+blt_list_append( TO boba_depends ELEMENTS roc::hipsparse IF HIPSPARSE_FOUND )
 blt_list_append( TO boba_depends ELEMENTS roc::rocsolver IF ROCSOLVER_FOUND )
 blt_list_append( TO boba_depends ELEMENTS roc::rocblas IF ROCBLAS_FOUND )
 
@@ -126,6 +128,15 @@ blt_add_library(
   DEFINES ${boba_defines}
   DEPENDS_ON ${boba_depends} ${TPL_DEPS})
 
+if(BOBA_CUTENSOR)
+  target_include_directories(BOBA PUBLIC ${BOBA_CUTENSOR_INCLUDE_DIR})
+  target_link_libraries(BOBA PUBLIC ${BOBA_CUTENSOR_LIBRARY})
+endif()
+if(BOBA_HIPTENSOR)
+  target_include_directories(BOBA PUBLIC ${BOBA_HIPTENSOR_INCLUDE_DIR})
+  target_link_libraries(BOBA PUBLIC ${BOBA_HIPTENSOR_LIBRARY})
+endif()
+
 if(ENABLE_CUDA)
   set_property(TARGET BOBA PROPERTY CUDA_STANDARD ${CMAKE_CUDA_STANDARD})
 endif()
@@ -136,6 +147,23 @@ target_include_directories(BOBA PUBLIC
     $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include>
     $<INSTALL_INTERFACE:include>
     )
+
+if(BOBA_ENABLE_CUDA)
+  unset(BOBA_CCCL_INCLUDE_DIR)
+  foreach(cuda_include_dir IN LISTS CUDAToolkit_INCLUDE_DIRS)
+    if(EXISTS "${cuda_include_dir}/cub/cub.cuh")
+      set(BOBA_CCCL_INCLUDE_DIR "${cuda_include_dir}")
+      break()
+    elseif(EXISTS "${cuda_include_dir}/cccl/cub/cub.cuh")
+      set(BOBA_CCCL_INCLUDE_DIR "${cuda_include_dir}/cccl")
+      break()
+    endif()
+  endforeach()
+  if(NOT BOBA_CCCL_INCLUDE_DIR)
+    message(FATAL_ERROR "The selected CUDA toolkit does not contain CCCL/CUB headers")
+  endif()
+  target_include_directories(BOBA PUBLIC "${BOBA_CCCL_INCLUDE_DIR}")
+endif()
 
 install(TARGETS BOBA ${boba_name}
   EXPORT BOBATargets
@@ -182,6 +210,11 @@ if(RAJA_FOUND AND NOT BOBA_EXTERNAL_RAJA)
   list(APPEND boba_license_files
     tpl/RAJA/LICENSE
     tpl/RAJA/COPYRIGHT)
+endif()
+
+if(KOKKOS_FOUND AND NOT BOBA_EXTERNAL_KOKKOS)
+  list(APPEND boba_license_files
+    tpl/kokkos/LICENSE)
 endif()
 
 if(CAMP_FOUND AND NOT BOBA_EXTERNAL_CAMP)
@@ -241,6 +274,11 @@ endif()
 if(RAJA_FOUND AND NOT BOBA_EXTERNAL_RAJA)
   list(APPEND boba_license_index_files
     tpl/license/raja)
+endif()
+
+if(KOKKOS_FOUND AND NOT BOBA_EXTERNAL_KOKKOS)
+  list(APPEND boba_license_index_files
+    tpl/license/kokkos)
 endif()
 
 if(CAMP_FOUND AND NOT BOBA_EXTERNAL_CAMP)

@@ -17,6 +17,11 @@ These examples assume you have already built the needed TPL dependencies. The fo
 - [install_example_hip.bash](install_example_hip.bash)
 - and more...
 
+The [install_example_kokkos.bash](install_example_kokkos.bash) script is the
+CUDA-specific Kokkos example. Set `BOBA_TPL_FARM` and `KOKKOS_DIR`, then run
+the script. It builds BoBa with RAJA disabled, installs a reductions miniapp
+using `test_abstractions.cpp`, and runs that miniapp.
+
 The [install_example_cpu.bash](install_example_cpu.bash) script demonstrates a CPU-based build, which loads compilers and other required modules. It will set up a build directory structure for CMake, delineated by variant; **example_cpu** in this case (see below). The output executable is called **"example"** and is found in that directory after `make -j 10` is called from the bash script.
 
 - build
@@ -59,15 +64,16 @@ Additionally, we set a few compiler flags needed to build the test, in this case
 In the BoBa installation tree pointed to by `-DBOBA_DIR`, there are several files used to set up everything so that `find_package(BOBA ..)` will detect and bring in information on the third-party libraries (TPLs) used in the BoBa library. The TPLs involved in the export are listed in order of occurrence:
 1. camp [https://github.com/LLNL/camp]
 2. RAJA [https://raja.readthedocs.io/en/develop/]
-3. umpire [https://umpire.readthedocs.io/en/develop/]
-4. eigen [https://gitlab.com/libeigen/eigen]
-5. fmt [https://fmt.dev/latest/index.html]
-6. Caliper [https://software.llnl.gov/Caliper/]
-7. HDF5 [https://www.hdfgroup.org/solutions/hdf5/]
-8. hipblas [https://hipblas.readthedocs.io/en/latest/] (HIP only)
-9. hipsolver [https://hipsolver.readthedocs.io/en/latest/] (HIP only)
-10. rocblas [https://rocm.docs.amd.com/projects/rocBLAS/en/latest/] (HIP only)
-11. rocsolver [https://rocm.docs.amd.com/projects/rocSOLVER/en/latest/] (HIP only)
+3. Kokkos [https://github.com/kokkos/kokkos]
+4. umpire [https://umpire.readthedocs.io/en/develop/]
+5. eigen [https://gitlab.com/libeigen/eigen]
+6. fmt [https://fmt.dev/latest/index.html]
+7. Caliper [https://software.llnl.gov/Caliper/]
+8. HDF5 [https://www.hdfgroup.org/solutions/hdf5/]
+9. hipblas [https://hipblas.readthedocs.io/en/latest/] (HIP only)
+10. hipsolver [https://hipsolver.readthedocs.io/en/latest/] (HIP only)
+11. rocblas [https://rocm.docs.amd.com/projects/rocBLAS/en/latest/] (HIP only)
+12. rocsolver [https://rocm.docs.amd.com/projects/rocSOLVER/en/latest/] (HIP only)
 
 Each of these TPLs is detected by the same CMake pattern (using RAJA for example):
 

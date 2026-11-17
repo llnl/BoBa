@@ -190,12 +190,13 @@ void compute_phi(
   phi.fill_with_zeros();
 
   const auto tensor_view = tensor.const_view();
+  const auto tensor_values = tensor_view.values_ptr();
   const auto cores = model.get_core_const_views();
   const auto factor_view = absorbed_factor.const_view();
   auto phi_view = phi.atomic_view();
   const index_t rank = model.rank();
 
-  ::boba::loop<space, 1>(0_z, tensor.number_nonzeros(), [=] __boba_host_device__(index_t entry)
+  ::boba::loop<space, 1>(0_z, tensor.nnz(), [=] __boba_host_device__(index_t entry)
   {
     const auto indices = tensor_view.entry_multiindex(entry);
     data_t prediction{};
@@ -213,7 +214,7 @@ void compute_phi(
     }
 
     prediction = ::boba::max(prediction, prediction_floor);
-    const data_t scaled_value = tensor_view.values()[entry] / prediction;
+    const data_t scaled_value = tensor_values[entry] / prediction;
     for (index_t component = 0; component < rank; ++component)
     {
       data_t product = static_cast<data_t>(1);
@@ -641,7 +642,7 @@ CanonicalPolyadicDecomposition<dimension, space, data_t> cp_apr_fit(
  * overload avoids work proportional to the full tensor size. The input tensor
  * and initial model must be nonnegative and have identical extents.
  * One full outer sweep costs
- * `O(max_inner_iterations * number_nonzeros * rank * dimension^2)`.
+ * `O(max_inner_iterations * nnz * rank * dimension^2)`.
  *
  * \param[in] tensor Sparse count tensor.
  * \param[in] initial_model Initial nonnegative model and requested rank.

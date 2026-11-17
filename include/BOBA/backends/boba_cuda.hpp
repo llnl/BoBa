@@ -205,8 +205,11 @@ __launch_bounds__(block_size0* block_size1)
   __global__ void boba_lambda_kernel_2d(
     size_t begin0, size_t end0, size_t begin1, size_t end1, Lambda lambda)
 {
-  size_t i0 = begin0 + threadIdx.x + block_size0 * blockIdx.x;
-  size_t i1 = begin1 + threadIdx.y + block_size1 * blockIdx.y;
+  const size_t blocks0 = 1 + (end0 - begin0 - 1) / block_size0;
+  const size_t block0 = blockIdx.x % blocks0;
+  const size_t block1 = blockIdx.x / blocks0;
+  size_t i0 = begin0 + threadIdx.x + block_size0 * block0;
+  size_t i1 = begin1 + threadIdx.y + block_size1 * block1;
   if (i0 < end0 && i1 < end1)
   {
     lambda(i0, i1);
@@ -278,16 +281,22 @@ template <typename Lambda>
 inline void cuda_launch_2d(
   size_t begin0, size_t end0, size_t begin1, size_t end1, Lambda&& lambda)
 {
+  if (begin0 >= end0 || begin1 >= end1)
+  {
+    return;
+  }
+
   size_t shared_memory_bytes = 0;
   cudaStream_t stream = 0;
   static constexpr size_t block_size0 = 32;
   static constexpr size_t block_size1 = 8;
-  size_t grid_size0 = (end0 - begin0 + block_size0 - 1) / block_size0;
-  size_t grid_size1 = (end1 - begin1 + block_size1 - 1) / block_size1;
+  const size_t grid_size0 = 1 + (end0 - begin0 - 1) / block_size0;
+  const size_t grid_size1 = 1 + (end1 - begin1 - 1) / block_size1;
+  const size_t grid_size = grid_size0 * grid_size1;
   void* args[] = {(void*)&begin0, (void*)&end0, (void*)&begin1, (void*)&end1, (void*)&lambda};
   cuda_assert(cudaLaunchKernel(
     (const void*)boba_lambda_kernel_2d<block_size0, block_size1, std::decay_t<Lambda>>,
-    dim3(grid_size0, grid_size1),
+    dim3(grid_size),
     dim3(block_size0, block_size1),
     args,
     shared_memory_bytes,
