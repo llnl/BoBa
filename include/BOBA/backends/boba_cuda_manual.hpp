@@ -550,7 +550,7 @@ inline data_t short_matrix_norm(const data_t* matrix, index_t rows, index_t cols
   }
   else
   {
-    const index_t section_size = 1 + (max_size - 1) / reduction_block_size;
+    index_t section_size = 1 + (max_size - 1) / reduction_block_size;
     size_t block_threads = 32;
     while (block_threads < sum_size)
     {
