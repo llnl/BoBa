@@ -467,6 +467,7 @@ void reduce_row_portion(const data_t* input, index_t rows, index_t cols, data_t*
   }
 
   const data_t portion_sum = block_reduce<reduction_t::sum>(sum);
+
   if(threadIdx.x == 0)
   {
     output[row + column_block * rows] = portion_sum;
@@ -530,28 +531,68 @@ inline data_t matrix_linf_norm(const data_t* matrix, index_t rows, index_t cols)
 }
 
 
+#ifdef BOBA_CUDA
 
+/**
+  * @brief Performs reduction of a portion of the matrix rows
+  */
+
+constexpr size_t reduction_block_cols = 1024;
+
+template<typename data_t, typename index_t>
+__global__
+void reduce_col_portion(const data_t* input, index_t rows, index_t cols, data_t* output, index_t size_rows_portion)
+{
+  const index_t col = blockIdx.x;
+  const index_t row_block = blockIdx.y;
+  const index_t first_row = row_block * size_rows_portion;
+  const index_t last_row = boba::min(first_row +  size_cols_portion, rows);
+
+  data_t sum{0.0};
+  for(index_t row = first_row + threadIdx.x; row < last_row; row += blockDim.x)
+  {
+    sum += boba::abs(input[row + col * rows]);
+  }
+
+  const data_t portion_sum = block_reduce<reduction_t::sum>(sum);
+
+  if(threadIdx.x == 0)
+  {
+    output[row_block + col * rows] = portion_sum;
+  }
+}
+
+template <typename data_t, typename index_t>
+inline void col_wise_reduction(const data_t* input, index_t rows, index_t cols, data_t* d_output, index_t rows_per_portion)
+{
+  size_t shared_memory_bytes = 0;
+  cudaStream_t stream = 0;
+  static constexpr size_t block_size0 = reduction_block_rows;
+  size_t grid_size0 = cols;
+  size_t grid_size1 = 1 + (rows - 1) / rows_per_portion;
+  void* args[] = {(void*)&input, (void*)&rows, (void*)&cols, (void*)&d_output, (void*)&rows_per_portion};
+  cuda_assert(cudaLaunchKernel(
+    (const void*)reduce_col_portion<data_t, index_t>,
+    dim3(grid_size0, grid_size1),
+    dim3(block_size0),
+    args,
+    shared_memory_bytes,
+    stream));
+}
+#endif
 
 template <typename data_t, typename index_t>
 inline data_t matrix_one_norm(const data_t* matrix, index_t rows, index_t cols)
 {
   data_t result;
-
-  /*
-  if(cols > 1)
+#ifdef BOBA_CUDA
+  if(rows > 1)
   {
-    int block_parallelism = 132;
-
-    //
-    // Determine how to rebalance workers for short wide limit
-    //
-    int rows_parallelism_ratio = (block_parallelism + rows - 1) / rows;
-    int num_cols_portions = (cols + rows_parallelism_ratio - 1) / rows_parallelism_ratio;
-    num_cols_portions = boba::min(num_cols_portions, int(reduction_block_rows));
-    num_cols_portions = boba::min(num_cols_portions, cols);
-    int cols_portions = (cols + num_cols_portions - 1) / num_cols_portions;
-
-    int workspace_size = rows * num_cols_portions;
+    const index_t block_parallelism = 132;
+    const index_t target_portions = 1 + (block_parallelism - 1) / rows;
+    const index_t rows_per_portion = boba::max(index_t{2}, 1 + (rows - 1) / target_portions);
+    const index_t num_rows_portions = 1 + (rows - 1) / rows_per_portion;
+    const index_t workspace_size = cols * num_rows_portions;
 
     data_t* d_workspace = nullptr;
     cuda_assert(cudaMalloc(&d_workspace, workspace_size * sizeof(data_t)));
@@ -559,23 +600,21 @@ inline data_t matrix_one_norm(const data_t* matrix, index_t rows, index_t cols)
     //
     // Phase 1 - reduce to smaller grid
     //
-    row_wise_reduction(matrix, rows, cols, d_workspace, cols_portions);
+    col_wise_reduction(matrix, rows, cols, d_workspace, rows_per_portion);
 
     //
-    // Phase 2 - Recurse with the reduced matrix
-    // On the first pass, the result of the second row_wise_reduction will
-    // be a rows x 1 matrix, which when recursed will trigger the max_abs_reduce
+    // Phase 2 - Recurse until each row has one sum, then take the maximum.
     //
-    result = matrix_one_norm(d_workspace, rows, num_cols_portions);
+    result = matrix_one_norm(d_workspace, cols, num_rows_portions);
 
-    cuda_free(d_workspace);
+    cuda_assert(cudaFree(d_workspace));
+
   }
   else
   {
-    result = max_abs_reduce(matrix, rows);
+    result = reduction_driver<reduction_t::max>(matrix, cols, []__boba_host_device__(data_t x){ return ::abs(x); });
   }
-  */
-
+#endif
   return result;
 }
 

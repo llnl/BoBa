@@ -454,7 +454,7 @@ struct Matrix : Tensor<2, space, _data_t>
 
     data_t result;
 
-    if constexpr (false)//(use_cuda and not(force_naive))
+    if constexpr (use_cuda and not(force_naive))
     {
       result = matrix_one_norm(this->data(), rows, cols);
     }
