@@ -396,6 +396,9 @@
     test_matrix_norms_single_row:
       inputs: "--rows 1 --cols 9"
       skip: []
+    test_matrix_norms_wide_cuda_grid:
+      inputs: "--rows 1 --cols 524288"
+      skip: [hip]
     test_matrix_norms_single_column:
       inputs: "--rows 9 --cols 1"
       skip: []
