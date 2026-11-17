@@ -546,7 +546,7 @@ void reduce_col_portion(const data_t* input, index_t rows, index_t cols, data_t*
   const index_t col = blockIdx.x;
   const index_t row_block = blockIdx.y;
   const index_t first_row = row_block * size_rows_portion;
-  const index_t last_row = boba::min(first_row +  size_cols_portion, rows);
+  const index_t last_row = boba::min(first_row + size_rows_portion, rows);
 
   data_t sum{0.0};
   for(index_t row = first_row + threadIdx.x; row < last_row; row += blockDim.x)
@@ -558,7 +558,7 @@ void reduce_col_portion(const data_t* input, index_t rows, index_t cols, data_t*
 
   if(threadIdx.x == 0)
   {
-    output[row_block + col * rows] = portion_sum;
+    output[row_block + col * gridDim.y] = portion_sum;
   }
 }
 
@@ -567,7 +567,7 @@ inline void col_wise_reduction(const data_t* input, index_t rows, index_t cols, 
 {
   size_t shared_memory_bytes = 0;
   cudaStream_t stream = 0;
-  static constexpr size_t block_size0 = reduction_block_rows;
+  static constexpr size_t block_size0 = reduction_block_cols;
   size_t grid_size0 = cols;
   size_t grid_size1 = 1 + (rows - 1) / rows_per_portion;
   void* args[] = {(void*)&input, (void*)&rows, (void*)&cols, (void*)&d_output, (void*)&rows_per_portion};
@@ -589,7 +589,7 @@ inline data_t matrix_one_norm(const data_t* matrix, index_t rows, index_t cols)
   if(rows > 1)
   {
     const index_t block_parallelism = 132;
-    const index_t target_portions = 1 + (block_parallelism - 1) / rows;
+    const index_t target_portions = 1 + (block_parallelism - 1) / cols;
     const index_t rows_per_portion = boba::max(index_t{2}, 1 + (rows - 1) / target_portions);
     const index_t num_rows_portions = 1 + (rows - 1) / rows_per_portion;
     const index_t workspace_size = cols * num_rows_portions;
@@ -603,9 +603,9 @@ inline data_t matrix_one_norm(const data_t* matrix, index_t rows, index_t cols)
     col_wise_reduction(matrix, rows, cols, d_workspace, rows_per_portion);
 
     //
-    // Phase 2 - Recurse until each row has one sum, then take the maximum.
+    // Phase 2 - Recurse until each column has one sum, then take the maximum.
     //
-    result = matrix_one_norm(d_workspace, cols, num_rows_portions);
+    result = matrix_one_norm(d_workspace, num_rows_portions, cols);
 
     cuda_assert(cudaFree(d_workspace));
 
