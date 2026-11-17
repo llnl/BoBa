@@ -502,9 +502,7 @@ struct Matrix : Tensor<2, space, _data_t>
 
     if constexpr (use_cuda and not(force_naive))
     {
-#ifdef BOBA_CUDA
       result = ::boba::detail::matrix_linf_norm(this->data(), rows, cols);
-#endif
     }
     else
     {
