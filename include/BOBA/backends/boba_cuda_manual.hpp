@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "BOBA/abstractions/math.hpp"
 #include "BOBA/backends/boba_cuda.hpp"
 
 // -----------------------------------------------------
@@ -27,6 +28,96 @@ enum struct reduction_t
 };
 
 #ifdef BOBA_CUDA
+
+/** @brief Returns the neutral value for a manual reduction. */
+template <reduction_t reduction, typename data_t>
+__boba_host_device__ constexpr data_t reduction_identity()
+{
+  if constexpr (reduction == reduction_t::max)
+  {
+    return ::boba::lowest_value<data_t>();
+  }
+  else if constexpr (reduction == reduction_t::min)
+  {
+    return ::boba::highest_value<data_t>();
+  }
+  else
+  {
+    return data_t{};
+  }
+}
+
+template <typename data_t>
+struct floating_atomic_bits;
+
+template <>
+struct floating_atomic_bits<float>
+{
+  using bits_t = unsigned int;
+
+  static __device__ float value(bits_t bits)
+  {
+    return __uint_as_float(bits);
+  }
+
+  static __device__ bits_t bits(float value)
+  {
+    return __float_as_uint(value);
+  }
+};
+
+template <>
+struct floating_atomic_bits<double>
+{
+  using bits_t = unsigned long long;
+
+  static __device__ double value(bits_t bits)
+  {
+    return __longlong_as_double(static_cast<long long>(bits));
+  }
+
+  static __device__ bits_t bits(double value)
+  {
+    return static_cast<bits_t>(__double_as_longlong(value));
+  }
+};
+
+/** @brief Atomically combines a block extremum, using CAS for floating point values. */
+template <reduction_t reduction, typename data_t>
+__device__ inline void atomic_extrema(data_t* destination, data_t candidate)
+{
+  static_assert(reduction == reduction_t::min or reduction == reduction_t::max);
+  if constexpr (std::is_floating_point_v<data_t>)
+  {
+    using conversion = floating_atomic_bits<data_t>;
+    using bits_t = typename conversion::bits_t;
+    auto* address = reinterpret_cast<bits_t*>(destination);
+    bits_t observed = atomicCAS(address, bits_t{}, bits_t{});
+    while (true)
+    {
+      const bits_t assumed = observed;
+      const data_t current = conversion::value(assumed);
+      const bool replace = reduction == reduction_t::min ? candidate < current : current < candidate;
+      if (not replace)
+      {
+        break;
+      }
+      observed = atomicCAS(address, assumed, conversion::bits(candidate));
+      if (observed == assumed)
+      {
+        break;
+      }
+    }
+  }
+  else if constexpr (reduction == reduction_t::min)
+  {
+    atomicMin(destination, candidate);
+  }
+  else
+  {
+    atomicMax(destination, candidate);
+  }
+}
 
 /**
  * @brief A warp-level reduction, where a warp of threads share information directly
@@ -75,7 +166,7 @@ __device__ inline data_t warp_reduce(data_t value)
 /**
  * @brief Block-level reduction via a series of warp-wise reductions
  * \param value current thread's value that will be reduced
- * \return The return value of thread 0 (lane 0, warp 0), is the block-wise reduction of values, else 0.
+ * \return Thread 0 holds the block-wise reduction of values.
  */
 
 template <reduction_t reduction, typename data_t>
@@ -114,15 +205,16 @@ __device__ inline auto block_reduce(data_t value)
   __syncthreads();
 
   //
-  // Pull the shared memory into the first warp (pad with zeros)
+  // Pull the shared memory into the first warp (pad with the reduction identity (eg 0 for sum))
   // Other warps do nothing
+  // Example for sum reduce:
   //
   //       warp 0                    warp 1                   warp 2
   //    [ lane 0,    lane 1, ... lane ?, ... ]  [ lane 0, lane 1, ...  ]  [ lane 0, lane 1, ...  ]
-  //   shared[0], shared[1], ...    0.0,         0.0,   0.0, ....
+  //   shared[0], shared[1], ...    0.0,          0.0, ....
   //
   int warps_per_block = tsize / warpSize;
-  data_t warpwise_sums{0.0};
+  data_t warpwise_sums = reduction_identity<reduction, data_t>();
   if(thread_id < warps_per_block)
   {
     warpwise_sums = shared[lane_id];
@@ -131,7 +223,7 @@ __device__ inline auto block_reduce(data_t value)
   //
   // Reduce in warp 0
   //
-  data_t final_warp_value{0.0};
+  data_t final_warp_value = reduction_identity<reduction, data_t>();
   if(warp_id == 0)
   {
     final_warp_value = warp_reduce<reduction>(warpwise_sums);
@@ -150,7 +242,7 @@ __device__ inline auto block_reduce(data_t value)
 
  template <reduction_t reduction, size_t block_size, bool force_atomics, typename data_t, typename index_t, typename out_data_t, typename operation_t>
 __launch_bounds__(block_size)
-__global__ 
+__global__
 void cuda_reduce(const data_t* data, index_t length, const operation_t operation, out_data_t* result)
 {
   int block_id = blockIdx.x;
@@ -166,7 +258,7 @@ void cuda_reduce(const data_t* data, index_t length, const operation_t operation
 
   // Multiindex the block and iterate over the whole array with stride = size of grid
   // Use multiple accumulators to prevent serialization of the reads
-  out_data_t value{0.0};
+  out_data_t value = reduction_identity<reduction, out_data_t>();
 
   for(int i = thread_offset; i < length; i += grid_size)
   {
@@ -189,13 +281,20 @@ void cuda_reduce(const data_t* data, index_t length, const operation_t operation
   // Reduce over the current block
   auto block_reduction_value = block_reduce<reduction>(value);
 
-  // Atomically add back to global memory
+  // Atomically combine block results in global memory
   // thread 0 is warp 0, lane 0
   if(thread_id == 0)
   {
-    if(force_atomics)
+    if constexpr(force_atomics)
     {
-      atomicAdd(result, block_reduction_value);
+      if constexpr(reduction == reduction_t::sum)
+      {
+        atomicAdd(result, block_reduction_value);
+      }
+      else
+      {
+        atomic_extrema<reduction>(result, block_reduction_value);
+      }
     }
     else
     {
@@ -219,7 +318,15 @@ inline std::invoke_result_t<operation_t, data_t> reduction_final(const data_t* d
   void* d_output = nullptr;
   cuda_assert(cudaMalloc(&d_output, sizeof(output_t)));
   cudaStream_t stream = 0;
-  cuda_assert(cudaMemsetAsync(d_output, 0, sizeof(output_t), stream));
+  if constexpr (reduction == reduction_t::sum)
+  {
+    cuda_assert(cudaMemsetAsync(d_output, 0, sizeof(output_t), stream));
+  }
+  else
+  {
+    const output_t identity = reduction_identity<reduction, output_t>();
+    cuda_assert(cudaMemcpy(d_output, &identity, sizeof(output_t), cudaMemcpyHostToDevice));
+  }
 
   size_t shared_memory_bytes = 0;
   constexpr size_t threads_per_block = static_cast<size_t>(block_size);
@@ -289,7 +396,7 @@ inline std::invoke_result_t<operation_t, data_t> reduction_driver(const data_t* 
 
   if (length == 0)
   {
-    return operation_result_t{};
+    return reduction_identity<reduction, operation_result_t>();
   }
 
   if (length < reduction_block_size*reduction_block_size)

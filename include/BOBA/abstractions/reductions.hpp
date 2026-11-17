@@ -550,6 +550,53 @@ inline void max_reduce(
 }
 
 /**
+ * @brief Finds the maximum element of a tensor-like object.
+ * @tparam implementation CUDA implementation: 0 for CCCL/CUB, 1 for the manual kernel,
+ *         or 2 for the backend reducer. Host inputs use a sequential loop.
+ * @return Maximum input value, or the lowest representable value for empty input.
+ */
+template <int implementation = 0, typename tensorlike_t>
+auto unary_max_reduce(const tensorlike_t& tensorlike) -> typename tensorlike_t::data_t
+{
+  constexpr execution_space space = tensorlike_t::get_space();
+  using data_t = typename tensorlike_t::data_t;
+  static_assert(std::is_same_v<data_t, real_type_t<data_t>>, "unary_max_reduce is disabled for complex data type");
+  constexpr bool use_cuda = boba_cuda_enabled() and (space == execution_space::CUDA);
+
+  if constexpr (use_cuda and (implementation == 0))
+  {
+    return detail::cuda_cccl_max_reduce(tensorlike.data(), tensorlike.size());
+  }
+  else if constexpr (use_cuda and (implementation == 1))
+  {
+    return detail::reduction_driver<detail::reduction_t::max>(tensorlike.data(), tensorlike.size());
+  }
+  else if constexpr ((space == default_execution_space) and ((implementation == 2) or (space != host_space)))
+  {
+    data_t maximum = ::boba::lowest_value<data_t>();
+    const data_t* data = tensorlike.data();
+    ::boba::max_reduce<space>(maximum, 0_z, tensorlike.size(), [=] __boba_host_device__(index_t i, boba::max_reducer_operator<data_t>& local_maximum)
+    {
+      local_maximum.max(data[i]);
+    });
+    return maximum;
+  }
+  else
+  {
+    data_t maximum = ::boba::lowest_value<data_t>();
+    const data_t* data = tensorlike.data();
+    for (index_t i = 0; i < tensorlike.size(); ++i)
+    {
+      if (maximum < data[i])
+      {
+        maximum = data[i];
+      }
+    }
+    return maximum;
+  }
+}
+
+/**
  * @brief Performs a min reduction over a 1D index range.
  * @tparam space Execution space.
  * @tparam data_t Reduced value type.
@@ -578,6 +625,53 @@ inline void min_reduce(
   else
   {
     detail::loop<space>(begin, end, detail::ReducerOperator<data_t, detail::reducer_t::min>(&initial_value), std::forward<Lambda>(lambda));
+  }
+}
+
+/**
+ * @brief Finds the minimum element of a tensor-like object.
+ * @tparam implementation CUDA implementation: 0 for CCCL/CUB, 1 for the manual kernel,
+ *         or 2 for the backend reducer. Host inputs use a sequential loop.
+ * @return Minimum input value, or the highest representable value for empty input.
+ */
+template <int implementation = 0, typename tensorlike_t>
+auto unary_min_reduce(const tensorlike_t& tensorlike) -> typename tensorlike_t::data_t
+{
+  constexpr execution_space space = tensorlike_t::get_space();
+  using data_t = typename tensorlike_t::data_t;
+  static_assert(std::is_same_v<data_t, real_type_t<data_t>>, "unary_min_reduce is disabled for complex data type");
+  constexpr bool use_cuda = boba_cuda_enabled() and (space == execution_space::CUDA);
+
+  if constexpr (use_cuda and (implementation == 0))
+  {
+    return detail::cuda_cccl_min_reduce(tensorlike.data(), tensorlike.size());
+  }
+  else if constexpr (use_cuda and (implementation == 1))
+  {
+    return detail::reduction_driver<detail::reduction_t::min>(tensorlike.data(), tensorlike.size());
+  }
+  else if constexpr ((space == default_execution_space) and ((implementation == 2) or (space != host_space)))
+  {
+    data_t minimum = ::boba::highest_value<data_t>();
+    const data_t* data = tensorlike.data();
+    ::boba::min_reduce<space>(minimum, 0_z, tensorlike.size(), [=] __boba_host_device__(index_t i, boba::min_reducer_operator<data_t>& local_minimum)
+    {
+      local_minimum.min(data[i]);
+    });
+    return minimum;
+  }
+  else
+  {
+    data_t minimum = ::boba::highest_value<data_t>();
+    const data_t* data = tensorlike.data();
+    for (index_t i = 0; i < tensorlike.size(); ++i)
+    {
+      if (data[i] < minimum)
+      {
+        minimum = data[i];
+      }
+    }
+    return minimum;
   }
 }
 

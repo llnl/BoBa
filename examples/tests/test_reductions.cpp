@@ -135,6 +135,58 @@ int main(int argc, char* argv[])
   }
 
   {
+    std::cout << " unary_max_reduce implementations with negative values" << std::endl;
+    boba::Vector<boba::host_space, double> reduction_vector({N});
+    auto reduction_view = reduction_vector.view();
+    for (boba::index_t i = 0; i < N; ++i)
+    {
+      reduction_view(i) = -static_cast<double>(N - i);
+    }
+    boba::Vector<boba::default_execution_space, double> device_reduction_vector(reduction_vector);
+
+    auto cub_result = boba::unary_max_reduce<0>(device_reduction_vector);
+    auto device_result = boba::unary_max_reduce<1>(device_reduction_vector);
+    auto raja_result = boba::unary_max_reduce<2>(device_reduction_vector);
+    auto host_result = boba::unary_max_reduce(reduction_vector);
+    double exact = N > 0 ? -1.0 : boba::lowest_value<double>();
+
+    pass_or_fail(check, host_result - exact, 1.0e-13);
+    pass_or_fail(check, cub_result - host_result, 1.0e-13);
+    pass_or_fail(check, device_result - host_result, 1.0e-13);
+    pass_or_fail(check, cub_result - device_result, 1.0e-13);
+    pass_or_fail(check, cub_result - raja_result, 1.0e-13);
+    pass_or_fail(check, device_result - raja_result, 1.0e-13);
+    pass_or_fail(check, raja_result - host_result, 1.0e-13);
+    std::cout << std::endl;
+  }
+
+  {
+    std::cout << " unary_min_reduce implementations with positive values" << std::endl;
+    boba::Vector<boba::host_space, double> reduction_vector({N});
+    auto reduction_view = reduction_vector.view();
+    for (boba::index_t i = 0; i < N; ++i)
+    {
+      reduction_view(i) = static_cast<double>(N - i);
+    }
+    boba::Vector<boba::default_execution_space, double> device_reduction_vector(reduction_vector);
+
+    auto cub_result = boba::unary_min_reduce<0>(device_reduction_vector);
+    auto device_result = boba::unary_min_reduce<1>(device_reduction_vector);
+    auto raja_result = boba::unary_min_reduce<2>(device_reduction_vector);
+    auto host_result = boba::unary_min_reduce(reduction_vector);
+    double exact = N > 0 ? 1.0 : boba::highest_value<double>();
+
+    pass_or_fail(check, host_result - exact, 1.0e-13);
+    pass_or_fail(check, cub_result - host_result, 1.0e-13);
+    pass_or_fail(check, device_result - host_result, 1.0e-13);
+    pass_or_fail(check, cub_result - device_result, 1.0e-13);
+    pass_or_fail(check, cub_result - raja_result, 1.0e-13);
+    pass_or_fail(check, device_result - raja_result, 1.0e-13);
+    pass_or_fail(check, raja_result - host_result, 1.0e-13);
+    std::cout << std::endl;
+  }
+
+  {
     std::cout << " norm_frobenius using reductions" << std::endl;
     boba::Vector<boba::host_space, double> reduction_vector({N});
     reduction_vector.fill_with_random();
