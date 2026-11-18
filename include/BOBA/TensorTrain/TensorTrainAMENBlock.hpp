@@ -462,6 +462,15 @@ struct TensorTrainAMENBlock
   bool use_eigen_gmres_for_coupled_site_solve = false;
   /// Use matrix-free BoBa GMRES for coupled site systems.
   bool use_boba_gmres_for_coupled_site_solve = false;
+  /// With use_boba_gmres_for_coupled_site_solve: solve the matrix-free coupled site systems by preconditioned CG
+  /// (site Jacobi if site_jacobi_preconditioner) instead of GMRES.  For symmetric positive definite operators, whose
+  /// Galerkin site systems are SPD too: CG minimizes the site error in the operator's energy norm, with a short
+  /// recurrence.  Same stopping test as the GMRES path (|r| < max(absolute, relative |r_0|)).  If CG meets
+  /// non-positive curvature (p^T A p <= 0: the operator is not numerically SPD) it falls back to GMRES from its
+  /// current iterate; row-scaled site systems (scale_coupled_site_system) always use GMRES.
+  bool use_cg_for_coupled_site_solve = false;
+  /// Number of site solves that fell back from CG to GMRES (diagnostics).
+  size_t cg_fallbacks = 0;
   /// Assemble a reference matrix and compare it with the matrix-free action.
   bool validate_coupled_matrix_free_operator = false;
   /// Memory budget (bytes) for reusing the operator row Grams of the matrix-free site scaling across sweeps
@@ -2351,6 +2360,65 @@ private:
     BOBA_CALI_BEGIN(site_region.c_str());
     using operator_t = CoupledSolve3DGMRESOperator<space_local, data_t>;
     using vector_t = ::boba::Vector<space_local, data_t>;
+    vector_t guess = initial_guess;
+    if constexpr (space_local == ::boba::execution_space::CPU)
+    {
+      if (use_cg_for_coupled_site_solve && linear_operator.scalar_row_factors.empty())
+      {
+        const auto t_cg = std::chrono::steady_clock::now();
+        const index_t n = rhs.size();
+        vector_t x = initial_guess;
+        vector_t r = rhs - linear_operator * x;
+        vector_t dinv;
+        if (site_jacobi_preconditioner) dinv = site_operator_inverse_diagonal(linear_operator);
+        auto dot = [n](const vector_t& a, const vector_t& b) {
+          const data_t* pa = a.data(); const data_t* pb = b.data(); data_t sum = 0;
+          for (index_t k = 0; k < n; ++k) sum += pa[k] * pb[k];
+          return sum;
+        };
+        auto precondition = [&](const vector_t& v) {
+          vector_t z = v;
+          if (site_jacobi_preconditioner) { data_t* pz = z.data(); const data_t* pd = dinv.data(); for (index_t k = 0; k < n; ++k) pz[k] *= pd[k]; }
+          return z;
+        };
+        const data_t r0 = ::boba::norm_frobenius(r);
+        const data_t target = ::boba::max(solve3d_2ml_options.tolerance_absolute, solve3d_2ml_options.tolerance_relative * r0);
+        vector_t z = precondition(r), p = z;
+        data_t rz = dot(r, z);
+        size_t its = 0;
+        bool converged = r0 <= target, breakdown = false;
+        const size_t max_its = solve3d_2ml_options.eigen_gmres_max_iterations;
+        while (!converged && its < max_its)
+        {
+          const vector_t Ap = linear_operator * p;
+          const data_t pAp = dot(p, Ap);
+          if (!(pAp > 0)) { breakdown = true; break; }
+          const data_t alpha = rz / pAp;
+          { data_t* px = x.data(); data_t* pr = r.data(); const data_t* pp = p.data(); const data_t* pq = Ap.data();
+            for (index_t k = 0; k < n; ++k) { px[k] += alpha * pp[k]; pr[k] -= alpha * pq[k]; } }
+          ++its;
+          if (::boba::norm_frobenius(r) <= target) { converged = true; break; }
+          z = precondition(r);
+          const data_t rz_new = dot(r, z);
+          const data_t beta = rz_new / rz;
+          rz = rz_new;
+          { data_t* pp = p.data(); const data_t* pz = z.data(); for (index_t k = 0; k < n; ++k) pp[k] = pz[k] + beta * pp[k]; }
+        }
+        if (!breakdown)
+        {
+          timing_.add_solve(site, rhs.size(), its, std::chrono::duration<double>(std::chrono::steady_clock::now() - t_cg).count());
+          if (verbose)
+            std::cout << "TensorTrainAMENBlock: coupled CG site " << site << ", size: " << n << ", iterations: " << its
+                      << (converged ? "" : " (iteration limit)") << "\n";
+          BOBA_CALI_END(site_region.c_str());
+          return x;
+        }
+        ++cg_fallbacks;
+        std::cout << "TensorTrainAMENBlock: CG site " << site << " met non-positive curvature after " << its
+                  << " iterations; GMRES from the CG iterate" << std::endl;
+        guess = x;
+      }
+    }
     ::boba::Krylov<operator_t, vector_t> solver(
       1, solve3d_2ml_options.eigen_gmres_max_iterations,
       solve3d_2ml_options.tolerance_relative);
@@ -2371,7 +2439,7 @@ private:
 
     vector_t result(rhs.sizes());
     const auto t_solve = std::chrono::steady_clock::now();
-    solver.solve(rhs, initial_guess, result);
+    solver.solve(rhs, guess, result);
     timing_.add_solve(site, rhs.size(), solver.used_inner_iterations,
                       std::chrono::duration<double>(std::chrono::steady_clock::now() - t_solve).count());
     if (verbose)
