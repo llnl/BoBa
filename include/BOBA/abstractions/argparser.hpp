@@ -10,6 +10,8 @@
 #include <cstdlib>
 #include <functional>
 #include <iomanip>
+#include <locale>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -1091,10 +1093,10 @@ public:
       return false;
     }
 
-    const auto begin = s.data();
-    const auto end = begin + s.size();
-    const auto [ptr, error_code] = std::from_chars(begin, end, value);
-    return error_code == std::errc{} && ptr == end;
+    std::istringstream input{std::string(s)};
+    input.imbue(std::locale::classic());
+    input >> std::noskipws >> value;
+    return !input.fail() && input.rdbuf()->sgetc() == std::char_traits<char>::eof();
   }
 
   /**
