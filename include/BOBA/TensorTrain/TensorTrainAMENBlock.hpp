@@ -469,6 +469,12 @@ struct TensorTrainAMENBlock
   /// non-positive curvature (p^T A p <= 0: the operator is not numerically SPD) it falls back to GMRES from its
   /// current iterate; row-scaled site systems (scale_coupled_site_system) always use GMRES.
   bool use_cg_for_coupled_site_solve = false;
+  /// CG site solves: > 0 adds an energy-norm stop.  Each PCG step lowers the site energy by alpha_j r_j^T z_j; the last
+  /// cg_energy_delay terms estimate the remaining energy error from below (Hestenes-Stiefel / Gauss quadrature), and
+  /// CG stops once they sum to at most cg_energy_tolerance times the energy decrease so far in this solve (the update's
+  /// remaining error is small relative to the update).  The residual test stays as a limit.  0: residual test only.
+  double cg_energy_tolerance = 0;
+  size_t cg_energy_delay = 4;
   /// Number of site solves that fell back from CG to GMRES (diagnostics).
   size_t cg_fallbacks = 0;
   /// Assemble a reference matrix and compare it with the matrix-free action.
@@ -2386,7 +2392,9 @@ private:
         vector_t z = precondition(r), p = z;
         data_t rz = dot(r, z);
         size_t its = 0;
-        bool converged = r0 <= target, breakdown = false;
+        bool converged = r0 <= target, breakdown = false, energy_stop = false;
+        std::vector<data_t> decrease;   // alpha_j r_j^T z_j
+        data_t decrease_sum = 0;
         const size_t max_its = solve3d_2ml_options.eigen_gmres_max_iterations;
         while (!converged && its < max_its)
         {
@@ -2394,10 +2402,17 @@ private:
           const data_t pAp = dot(p, Ap);
           if (!(pAp > 0)) { breakdown = true; break; }
           const data_t alpha = rz / pAp;
+          decrease.push_back(alpha * rz); decrease_sum += alpha * rz;
           { data_t* px = x.data(); data_t* pr = r.data(); const data_t* pp = p.data(); const data_t* pq = Ap.data();
             for (index_t k = 0; k < n; ++k) { px[k] += alpha * pp[k]; pr[k] -= alpha * pq[k]; } }
           ++its;
           if (::boba::norm_frobenius(r) <= target) { converged = true; break; }
+          if (cg_energy_tolerance > 0 && decrease.size() > cg_energy_delay)
+          {
+            data_t tail = 0;
+            for (size_t j = decrease.size() - cg_energy_delay; j < decrease.size(); ++j) tail += decrease[j];
+            if (tail <= cg_energy_tolerance * decrease_sum) { converged = true; energy_stop = true; break; }
+          }
           z = precondition(r);
           const data_t rz_new = dot(r, z);
           const data_t beta = rz_new / rz;
@@ -2409,7 +2424,7 @@ private:
           timing_.add_solve(site, rhs.size(), its, std::chrono::duration<double>(std::chrono::steady_clock::now() - t_cg).count());
           if (verbose)
             std::cout << "TensorTrainAMENBlock: coupled CG site " << site << ", size: " << n << ", iterations: " << its
-                      << (converged ? "" : " (iteration limit)") << "\n";
+                      << (converged ? (energy_stop ? " (energy stop)" : "") : " (iteration limit)") << "\n";
           BOBA_CALI_END(site_region.c_str());
           return x;
         }
