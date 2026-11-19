@@ -288,8 +288,12 @@ struct CoupledSolve3DGMRESOperator
   std::vector<::boba::Vector<space, data_t>> scalar_row_factors;
   /// Diagonal mode: when set and no blocks are given, the operator is diag(diagonal) (a Jacobi preconditioner).
   ::boba::Vector<space, data_t> diagonal;
-  /// CPU: number of std::threads over the nonzero (row, column) blocks of the apply.  The contributions of a row are
-  /// summed in column order as in the serial apply, so the result does not depend on the thread count.
+  /// CPU: number of std::threads for the apply.  Each nonzero (row, column) block is cut into chunks of the output's
+  /// trailing rank index ry2 (the last index of phi_right), in proportion to its cost, so the threads share the large
+  /// blocks; each chunk runs the block kernel on its slice of phi_right and writes a disjoint part of the output (no
+  /// reduction; per-thread working set ~ 1/chunks of the block's).  The contributions of a row are summed in column
+  /// order as in the serial apply.  Chunking can change round-off (GEMM blocking depends on the width).
+  /// BOBA_AMEN_APPLY_BY_BLOCK=1: whole blocks per task (the previous behaviour).
   int threads = 1;
 
   [[nodiscard]]
@@ -348,11 +352,53 @@ struct CoupledSolve3DGMRESOperator
     {
       if (threads > 1)
       {
-        std::vector<std::pair<size_t, size_t>> tasks;
+        // the kernel on a slice [y0, y1) of phi_right's last index (the output's ry2): phi_right is (rx2, ra2, ry2),
+        // first index fastest, so the slice is contiguous
+        auto block_apply_slice = [&](size_t row, size_t col, index_t y0, index_t y1) {
+          const tensor3_t& P2 = *phi_right[row][col];
+          const index_t a = P2.sizes(0), b = P2.sizes(1);
+          tensor3_t P2s({a, b, y1 - y0});
+          std::copy(P2.data() + a * b * y0, P2.data() + a * b * y1, P2s.data());
+          const CoreSliceSparsity<data_t>* sparse = sparse_cores.empty() ? nullptr : sparse_cores[row][col];
+          if (sparse != nullptr && !sparse->pairs.empty())
+            return bfun3_sparse(*phi_left[row][col], *sparse, P2s, input_blocks[col]);
+          return bfun3(*phi_left[row][col], *operator_cores[row][col], P2s, input_blocks[col]);
+        };
+        struct Task { size_t row, col; index_t y0, y1; };
+        std::vector<Task> tasks;
+        std::vector<std::pair<size_t, size_t>> blocks_nz;
+        std::vector<double> cost;
+        double total = 0;
         for (size_t row = 0; row < block_count; row++)
           for (size_t col = 0; col < block_count; col++)
-            if (operator_cores[row][col] != nullptr) tasks.push_back({row, col});
-        precomputed.resize(block_count * block_count);
+            if (operator_cores[row][col] != nullptr)
+            {
+              const CoreSliceSparsity<data_t>* sparse = sparse_cores.empty() ? nullptr : sparse_cores[row][col];
+              const auto& A = *operator_cores[row][col];
+              const double slices = (sparse != nullptr && !sparse->pairs.empty())
+                                      ? double(sparse->pairs.size()) : double(A.sizes(1)) * double(A.sizes(2));
+              const double c = slices * double(A.sizes(0)) * double(A.sizes(3)) * double(input_blocks[col].sizes(0))
+                             * double(phi_right[row][col]->sizes(2));
+              blocks_nz.push_back({row, col}); cost.push_back(c); total += c;
+            }
+        const bool by_block = std::getenv("BOBA_AMEN_APPLY_BY_BLOCK") != nullptr;
+        const double target = total / double(4 * threads);
+        for (size_t k = 0; k < blocks_nz.size(); ++k)
+        {
+          const auto [row, col] = blocks_nz[k];
+          const index_t Y2 = phi_right[row][col]->sizes(2);
+          index_t chunks = by_block ? 1 : static_cast<index_t>(std::ceil(cost[k] / std::max(target, 1.0)));
+          chunks = std::max<index_t>(1, std::min<index_t>(chunks, Y2));
+          for (index_t c = 0; c < chunks; ++c) tasks.push_back({row, col, Y2 * c / chunks, Y2 * (c + 1) / chunks});
+        }
+        // largest tasks first
+        std::stable_sort(tasks.begin(), tasks.end(), [&](const Task& u, const Task& v) {
+          const auto cu = cost[size_t(std::find(blocks_nz.begin(), blocks_nz.end(), std::make_pair(u.row, u.col)) - blocks_nz.begin())] * double(u.y1 - u.y0)
+                          / double(phi_right[u.row][u.col]->sizes(2));
+          const auto cv = cost[size_t(std::find(blocks_nz.begin(), blocks_nz.end(), std::make_pair(v.row, v.col)) - blocks_nz.begin())] * double(v.y1 - v.y0)
+                          / double(phi_right[v.row][v.col]->sizes(2));
+          return cu > cv; });
+        std::vector<tensor3_t> pieces(tasks.size());
         std::atomic<size_t> next{0};
         const int nthreads = static_cast<int>(std::min<size_t>(static_cast<size_t>(threads), tasks.size()));
         std::vector<std::exception_ptr> errors(static_cast<size_t>(std::max(nthreads, 1)));
@@ -360,7 +406,11 @@ struct CoupledSolve3DGMRESOperator
           try
           {
             for (size_t q; (q = next.fetch_add(1)) < tasks.size();)
-              precomputed[tasks[q].first * block_count + tasks[q].second] = block_apply(tasks[q].first, tasks[q].second);
+            {
+              const Task& tk = tasks[q];
+              const index_t Y2 = phi_right[tk.row][tk.col]->sizes(2);
+              pieces[q] = (tk.y0 == 0 && tk.y1 == Y2) ? block_apply(tk.row, tk.col) : block_apply_slice(tk.row, tk.col, tk.y0, tk.y1);
+            }
           }
           catch (...) { errors[static_cast<size_t>(t)] = std::current_exception(); next = tasks.size(); }
         };
@@ -369,6 +419,19 @@ struct CoupledSolve3DGMRESOperator
         work(0);
         for (auto& th : pool) th.join();
         for (auto& e : errors) if (e) std::rethrow_exception(e);
+        // reassemble each block from its ry2 chunks (contiguous ranges of the last index)
+        precomputed.resize(block_count * block_count);
+        for (size_t q = 0; q < tasks.size(); ++q)
+        {
+          const Task& tk = tasks[q];
+          const index_t Y2 = phi_right[tk.row][tk.col]->sizes(2);
+          tensor3_t& dst = precomputed[tk.row * block_count + tk.col];
+          if (tk.y0 == 0 && tk.y1 == Y2) { dst = std::move(pieces[q]); continue; }
+          const tensor3_t& src = pieces[q];
+          if (dst.size() == 0) dst = tensor3_t({src.sizes(0), src.sizes(1), Y2});
+          const index_t plane = src.sizes(0) * src.sizes(1);
+          std::copy(src.data(), src.data() + plane * (tk.y1 - tk.y0), dst.data() + plane * tk.y0);
+        }
       }
     }
     for (size_t row = 0; row < block_count; row++)
