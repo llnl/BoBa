@@ -573,32 +573,43 @@ inline data_t short_matrix_norm(const data_t* matrix, index_t rows, index_t cols
   return result;
 }
 
-/**
-  * @brief Performs reduction of a portion of the matrix rows
-  */
+/** @brief Reduces column portions for neighboring rows with coalesced loads. */
 
-constexpr size_t reduction_block_rows = 1024;
+constexpr size_t matrix_linf_row_tile_size = 32;
+constexpr size_t matrix_linf_column_groups = 8;
 
 template<typename data_t, typename index_t>
 __global__
-void reduce_row_portion(const data_t* input, index_t rows, index_t cols, data_t* output, index_t size_cols_portion)
+void reduce_row_tile_portion(const data_t* input, index_t rows, index_t cols, data_t* output, index_t size_cols_portion)
 {
-  const index_t row = blockIdx.x % rows;
-  const index_t column_block = blockIdx.x / rows;
+  const index_t num_row_tiles = 1 + (rows - 1) / matrix_linf_row_tile_size;
+  const index_t row_tile = blockIdx.x % num_row_tiles;
+  const index_t column_block = blockIdx.x / num_row_tiles;
+  const index_t row = row_tile * matrix_linf_row_tile_size + threadIdx.x;
   const index_t first_col = column_block * size_cols_portion;
   const index_t last_col = first_col + boba::min(size_cols_portion, cols - first_col);
 
-  data_t sum{0.0};
-  for(index_t col = first_col + threadIdx.x; col < last_col; col += blockDim.x)
+  data_t partial_sum{};
+  if (row < rows)
   {
-    sum += boba::abs(input[row + col * rows]);
+    for (index_t col = first_col + threadIdx.y; col < last_col; col += blockDim.y)
+    {
+      partial_sum += boba::abs(input[row + col * rows]);
+    }
   }
 
-  const data_t portion_sum = block_reduce<reduction_t::sum>(sum);
+  __shared__ data_t group_sums[matrix_linf_column_groups][matrix_linf_row_tile_size];
+  group_sums[threadIdx.y][threadIdx.x] = partial_sum;
+  __syncthreads();
 
-  if(threadIdx.x == 0)
+  if (threadIdx.y == 0 && row < rows)
   {
-    output[row + column_block * rows] = portion_sum;
+    data_t sum{};
+    for (size_t group = 0; group < matrix_linf_column_groups; ++group)
+    {
+      sum += group_sums[group][threadIdx.x];
+    }
+    output[row + column_block * rows] = sum;
   }
 }
 
@@ -607,14 +618,14 @@ inline void row_wise_reduction(const data_t* input, index_t rows, index_t cols, 
 {
   size_t shared_memory_bytes = 0;
   cudaStream_t stream = 0;
-  static constexpr size_t block_size0 = reduction_block_rows;
+  const index_t num_row_tiles = 1 + (rows - 1) / matrix_linf_row_tile_size;
   const index_t num_cols_portions = 1 + (cols - 1) / cols_per_portion;
-  const index_t grid_size = rows * num_cols_portions;
+  const index_t grid_size = num_row_tiles * num_cols_portions;
   void* args[] = {(void*)&input, (void*)&rows, (void*)&cols, (void*)&d_output, (void*)&cols_per_portion};
   cuda_assert(cudaLaunchKernel(
-    (const void*)reduce_row_portion<data_t, index_t>,
+    (const void*)reduce_row_tile_portion<data_t, index_t>,
     dim3(grid_size),
-    dim3(block_size0),
+    dim3(matrix_linf_row_tile_size, matrix_linf_column_groups),
     args,
     shared_memory_bytes,
     stream));
@@ -626,15 +637,19 @@ inline data_t matrix_linf_norm(const data_t* matrix, index_t rows, index_t cols)
 {
   data_t result;
 #ifdef BOBA_CUDA
-  if (cols > 1 && cols < reduction_block_size)
+  if (rows == 1)
+  {
+    result = reduction_driver<reduction_t::sum>(matrix, cols, []__boba_host_device__(data_t x){ return ::abs(x); });
+  }
+  else if (cols > 1 && cols <= 32)
   {
     result = short_matrix_norm<true>(matrix, rows, cols);
   }
   else if(cols > 1)
   {
-    const index_t block_parallelism = 132;
-    const index_t target_portions = 1 + (block_parallelism - 1) / rows;
-    const index_t cols_per_portion = boba::max(index_t{2}, 1 + (cols - 1) / target_portions);
+    const index_t num_row_tiles = 1 + (rows - 1) / matrix_linf_row_tile_size;
+    const index_t target_portions = 1 + (reduction_block_size - 1) / num_row_tiles;
+    const index_t cols_per_portion = boba::max(index_t{32}, 1 + (cols - 1) / target_portions);
     const index_t num_cols_portions = 1 + (cols - 1) / cols_per_portion;
     const index_t workspace_size = rows * num_cols_portions;
 
