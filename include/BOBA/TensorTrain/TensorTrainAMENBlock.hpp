@@ -475,6 +475,10 @@ struct TensorTrainAMENBlock
   /// remaining error is small relative to the update).  The residual test stays as a limit.  0: residual test only.
   double cg_energy_tolerance = 0;
   size_t cg_energy_delay = 4;
+  /// CPU, coupled blocks (no intermediate normalization): update the operator environments (phia, phiza) of the nonzero
+  /// block pairs on this many std::threads (0: site_apply_threads, or BOBA_AMEN_THREADS); 1: serial.  Each pair writes
+  /// its own environment from the shared site cores.  BOBA_AMEN_SERIAL_ENVIRONMENTS=1 forces the serial loops.
+  int environment_threads = 0;
   /// Number of site solves that fell back from CG to GMRES (diagnostics).
   size_t cg_fallbacks = 0;
   /// Assemble a reference matrix and compare it with the matrix-free action.
@@ -921,14 +925,9 @@ struct TensorTrainAMENBlock
 
         // Update right-to-left operator and RHS environments after every block
         // has contributed its newly orthogonalized site core.
-        for (size_t row = 0; row < Kay; row++)
-        {
-          for (size_t col = 0; col < Kay; col++)
-          {
-            if (crA({row, col}).get_number_elements() == 0)
-            {
-              continue;
-            }
+        // operator environments of the nonzero pairs (in parallel without intermediate normalization), then the
+        // per-row RHS environments
+        for_each_block_pair(crA, Kay, !normalize_intermediate_quantities, [&](size_t row, size_t col) {
             auto phia_external_norm = normalize_intermediate_quantities
                                         ? ((row == col) ? static_cast<data_t>(-1.0) : static_cast<data_t>(1.0))
                                         : static_cast<data_t>(1.0);
@@ -950,7 +949,9 @@ struct TensorTrainAMENBlock
             {
               nrmsa[row][col][i - 1] = 1.0;
             }
-          }
+        });
+        for (size_t row = 0; row < Kay; row++)
+        {
 
           std::tie(phiy[row].cores[i], nrmsy[row][i - 1]) =
             compute_next_phi_block<dimension>(
@@ -973,17 +974,8 @@ struct TensorTrainAMENBlock
         if ((kickrank > 0) && (!last_sweep))
         {
           // Mirror the same environment propagation for the enrichment tensor z.
-          for (size_t row = 0; row < Kay; row++)
-          {
-            rz[row][i] = rznew[row];
-
-            for (size_t col = 0; col < Kay; col++)
-            {
-              if (crA({row, col}).get_number_elements() == 0)
-              {
-                continue;
-              }
-
+          for (size_t row = 0; row < Kay; row++) rz[row][i] = rznew[row];
+          for_each_block_pair(crA, Kay, !normalize_intermediate_quantities, [&](size_t row, size_t col) {
               auto phiza_external_norm = static_cast<data_t>(1.0);
               if (normalize_intermediate_quantities && (row == col))
               {
@@ -1002,7 +994,9 @@ struct TensorTrainAMENBlock
                   col,
                   i,
                   "rl-phiza");
-            }
+          });
+          for (size_t row = 0; row < Kay; row++)
+          {
 
             std::tie(phizy[row].cores[i], std::ignore) =
               compute_next_phi_block<dimension>(
@@ -1953,15 +1947,7 @@ struct TensorTrainAMENBlock
           timing_.mark(6);
           // Refresh the left-to-right environments so the next site sees the
           // updated solution and enrichment bases.
-          for (size_t row = 0; row < Kay; row++)
-          {
-            for (size_t col = 0; col < Kay; col++)
-            {
-              if (crA({row, col}).get_number_elements() == 0)
-              {
-                continue;
-              }
-
+          for_each_block_pair(crA, Kay, !normalize_intermediate_quantities, [&](size_t row, size_t col) {
               auto phia_external_norm = normalize_intermediate_quantities
                                           ? ((row == col) ? static_cast<data_t>(-1.0) : static_cast<data_t>(1.0))
                                           : static_cast<data_t>(1.0);
@@ -1983,7 +1969,9 @@ struct TensorTrainAMENBlock
               {
                 nrmsa[row][col][i] = 1.0;
               }
-            }
+          });
+          for (size_t row = 0; row < Kay; row++)
+          {
 
             std::tie(phiy[row].cores[i + 1], nrmsy[row][i]) =
               compute_next_phi_block<dimension>(
@@ -2005,14 +1993,7 @@ struct TensorTrainAMENBlock
 
           if ((kickrank > 0) && (!last_sweep))
           {
-            for (size_t row = 0; row < Kay; row++)
-            {
-              for (size_t col = 0; col < Kay; col++)
-              {
-                if (crA({row, col}).get_number_elements() == 0)
-                {
-                  continue;
-                }
+            for_each_block_pair(crA, Kay, !normalize_intermediate_quantities, [&](size_t row, size_t col) {
                 auto phiza_external_norm = static_cast<data_t>(1.0);
                 if (normalize_intermediate_quantities && (row == col))
                 {
@@ -2031,7 +2012,9 @@ struct TensorTrainAMENBlock
                     col,
                     i,
                     "lr-phiza");
-              }
+            });
+            for (size_t row = 0; row < Kay; row++)
+            {
 
               std::tie(phizy[row].cores[i + 1], std::ignore) =
                 compute_next_phi_block<dimension>(
@@ -2351,6 +2334,38 @@ private:
     }
     for (index_t k = 0; k < op.offsets.back(); ++k) d[k] = (d[k] != 0 && std::isfinite(d[k])) ? 1 / d[k] : data_t{1};
     return dinv;
+  }
+
+  /// Run f(row, col) for the nonzero block pairs of A, on environment_threads std::threads when parallel is true.
+  template <typename op_t, typename F>
+  void for_each_block_pair(const op_t& crA, size_t Kay, bool parallel, F&& f)
+  {
+    std::vector<std::pair<size_t, size_t>> work;
+    for (size_t row = 0; row < Kay; row++)
+      for (size_t col = 0; col < Kay; col++)
+        if (crA({row, col}).get_number_elements() != 0) work.push_back({row, col});
+    int threads = environment_threads > 0 ? environment_threads : site_apply_threads;
+    if (threads <= 0) if (const char* env = std::getenv("BOBA_AMEN_THREADS")) threads = std::max(1, std::atoi(env));
+    if (!parallel || threads <= 1 || work.size() <= 1 || std::getenv("BOBA_AMEN_SERIAL_ENVIRONMENTS"))
+    {
+      for (const auto& pr : work) f(pr.first, pr.second);
+      return;
+    }
+    // largest pairs first (dynamic scheduling): the diagonal and field blocks dominate
+    std::stable_sort(work.begin(), work.end(), [&](const auto& a, const auto& b) {
+      return crA({a.first, a.second}).get_number_elements() > crA({b.first, b.second}).get_number_elements(); });
+    std::atomic<size_t> next{0};
+    std::vector<std::exception_ptr> errors(static_cast<size_t>(threads));
+    auto worker = [&](int t) {
+      try { for (size_t k; (k = next.fetch_add(1)) < work.size();) f(work[k].first, work[k].second); }
+      catch (...) { errors[static_cast<size_t>(t)] = std::current_exception(); next = work.size(); }
+    };
+    std::vector<std::thread> pool;
+    const int used = std::min<int>(threads, static_cast<int>(work.size()));
+    for (int t = 1; t < used; ++t) pool.emplace_back(worker, t);
+    worker(0);
+    for (auto& th : pool) th.join();
+    for (auto& e : errors) if (e) std::rethrow_exception(e);
   }
 
   template <execution_space space_local>
