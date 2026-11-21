@@ -12,6 +12,9 @@ namespace boba
  * Given a function `f(i, j, k, ...)`, this class builds a tensor train that
  * approximates `f` with a DMRG cross sweep.
  *
+ * Reference: D. Savostyanov, I. Oseledets, "Fast adaptive interpolation of multi-dimensional arrays in tensor train
+ * format", 2011 International Workshop on Multidimensional (nD) Systems, 1-8. doi:10.1109/nDS.2011.6076873
+ *
  * @tparam data_t Scalar value type.
  * @tparam index_t Index type.
  */
@@ -23,6 +26,8 @@ struct DMRGCross
   bool verbose = false;
   index_t kickrank = 2;
   size_t max_sweeps = 10;
+  /// Stop when every two-site update in a half-sweep (left-to-right or right-to-left) changes its block by less
+  /// than this, relative to the block's Frobenius norm.
   real_data_t convergence_tolerance = 1.0e-7;
 
   /// Relative truncation tolerance for the SVD of each two-site cross block.
@@ -247,6 +252,15 @@ struct DMRGCross
     BOBA_CALI_SWITCH("DMRGCross_core_setup", "DMRGCross_sweep");
     while ((sweep_count < max_sweeps) && not_converged)
     {
+      // At an end bond, the incoming update's interpolation indices and transfer matrix would be replaced
+      // immediately by the outgoing update. Turn before processing the bond so it is analyzed only once.
+      const bool turn_at_right = (dimension > 2) && sweep_right && (core_id == dimension - 2);
+      const bool turn_at_left = (dimension > 2) && !sweep_right && (core_id == 0);
+      if (turn_at_right || turn_at_left)
+      {
+        sweep_right = !sweep_right;
+      }
+
       checkpoint();
       auto left_core = approximated_tt.cores[core_id];
       auto right_core = approximated_tt.cores[core_id + 1];
@@ -445,7 +459,8 @@ struct DMRGCross
           {
             index_t value = 0;
 
-            if (core_id == previous_indices_view.sizes(1))
+            // New left index = the selected row's previous left index, followed by its mode index in the last column.
+            if (k == previous_indices_view.sizes(1))
             {
               value = mode_index;
             }
@@ -458,14 +473,6 @@ struct DMRGCross
         }
 
         interpolation_indices[core_id + 1] = updated_indices;
-        if (core_id == dimension - 2)
-        {
-          sweep_right = not(sweep_right);
-        }
-        else
-        {
-          core_id += 1;
-        }
       }
       else
       {
@@ -552,10 +559,22 @@ struct DMRGCross
 
         interpolation_indices[core_id + 1] = updated_indices;
 
-        if (core_id == 0)
+        checkpoint();
+      }
+
+      if constexpr (dimension == 2)
+      {
+        // The single two-site block is the entire target tensor.
+        not_converged = false;
+      }
+      else
+      {
+        if (turn_at_right || turn_at_left)
         {
-          sweep_right = not(sweep_right);
-          sweep_count = sweep_count + 1;
+          if (turn_at_left)
+          {
+            sweep_count += 1;
+          }
           if (max_relative_error < convergence_tolerance)
           {
             not_converged = false;
@@ -565,11 +584,15 @@ struct DMRGCross
             max_relative_error = 0.0;
           }
         }
+
+        if (sweep_right)
+        {
+          core_id += 1;
+        }
         else
         {
-          core_id--;
+          core_id -= 1;
         }
-        checkpoint();
       }
       checkpoint();
     }
